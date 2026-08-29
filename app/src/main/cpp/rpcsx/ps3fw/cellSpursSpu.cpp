@@ -4114,8 +4114,10 @@ void spursTasksetDispatch(spu_thread& spu)
 	// maxContention = 1 on the queue's taskset, one SPU spinning there locks every
 	// other SPU out, and the boot never drains - which is the 2-in-3 failure.
 	//
-	// Releasing here is safe: the SPU is about to leave the workload anyway, and
-	// if work arrives it (or another SPU) re-acquires through the normal gate.
+	// Release only an idle slot. The running bitmap counts tasks that another SPU
+	// still executes. The shared count must not become less than that count.
+	// This distinction stops an idle SPU from opening a maxContention = 1 gate
+	// while another SPU still executes the only task.
 	//
 	//   debug.rpcsx.thor.release_idle_taskset = 0 disables
 	if (taskId >= CELL_SPURS_MAX_TASK && thor_release_idle_taskset())
@@ -4126,6 +4128,8 @@ void spursTasksetDispatch(spu_thread& spu)
 		if (held < CELL_SPURS_MAX_WORKLOAD && kctxt->wklLocContention[held])
 		{
 			const u8 readyCount = kctxt->spurs->readyCount(held).load();
+			const v128 runningTasks = vm::_ref<v128>(ctxt->taskset.addr() + OFFSET_OF(CellSpursTaskset, running));
+			const u8 runningTaskCount = static_cast<u8>(std::min<u32>(rx::popcnt128(runningTasks._u), CELL_SPURS_MAX_SPU));
 
 			// A nonzero ready count with no selectable task caused the measured
 			// workload 7 redispatch storm. Keep this exceptional probe bounded.
@@ -4141,10 +4145,10 @@ void spursTasksetDispatch(spu_thread& spu)
 						return +vm::_ref<be_t<u32>>(ctxt->taskset.addr() + off);
 					};
 
-					cellSpurs.error("Thor TASKSET IDLE-READY #%u: taskset=0x%x wid=%u readyCount=%u "
+					cellSpurs.error("Thor TASKSET IDLE-READY #%u: taskset=0x%x wid=%u readyCount=%u runningTaskCount=%u "
 						"contention{shared=%u pending=%u local=%u localPending=%u} "
 						"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} spu=%u",
-						n, ctxt->taskset.addr(), held, readyCount,
+						n, ctxt->taskset.addr(), held, readyCount, runningTaskCount,
 						+kctxt->spurs->wklCurrentContention[held], +kctxt->spurs->wklPendingContention[held],
 						+kctxt->wklLocContention[held], +kctxt->wklLocPendingContention[held],
 						rd(OFFSET_OF(CellSpursTaskset, running)), rd(OFFSET_OF(CellSpursTaskset, ready)),
@@ -4154,8 +4158,15 @@ void spursTasksetDispatch(spu_thread& spu)
 			}
 
 			vm::_ref<atomic_t<u8>>(kctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + held)
-				.atomic_op([](u8& v) { if (v) v--; });
+				.atomic_op([runningTaskCount](u8& current)
+				{
+					if (current > runningTaskCount)
+					{
+						current--;
+					}
+				});
 			kctxt->wklLocContention[held] = 0;
+			thor_release_wkl(held, kctxt->spuNum);
 		}
 	}
 
