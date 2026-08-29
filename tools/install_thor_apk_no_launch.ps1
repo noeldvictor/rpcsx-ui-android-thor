@@ -87,20 +87,16 @@ foreach ($metadata in $requiredGateMetadata) {
 $coolGateSamples = @(
     Get-Content -LiteralPath $coolGateThermalPath |
         ForEach-Object {
-            $match = [regex]::Match($_, 'stage=pre-run-(\d+)-of-(\d+).*?silicon_temperature_c=([0-9]+(?:[.][0-9]+)?)')
+            $match = [regex]::Match($_, 'stage=pre-run\s+gate=fixed-silicon-only.*?silicon_temperature_c=([0-9]+(?:[.][0-9]+)?).*?silicon_limit_c=70(?:[.]0+)?')
             if ($match.Success) {
                 [pscustomobject]@{
-                    Index = [int]$match.Groups[1].Value
-                    Count = [int]$match.Groups[2].Value
-                    TemperatureC = [double]::Parse($match.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
+                    TemperatureC = [double]::Parse($match.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture)
                 }
             }
         }
 )
-if ($coolGateSamples.Count -ne 1 -or
-    @($coolGateSamples | Where-Object { $_.Count -ne 1 }).Count -ne 0 -or
-    (($coolGateSamples | ForEach-Object Index) -join ',') -ne '1') {
-    throw "Cool gate must contain exactly one ordered pre-run sample."
+if ($coolGateSamples.Count -ne 1) {
+    throw "Cool gate must contain exactly one fixed-silicon-only pre-run sample."
 }
 
 $coolGateMaximumC = $coolGateSamples[0].TemperatureC
