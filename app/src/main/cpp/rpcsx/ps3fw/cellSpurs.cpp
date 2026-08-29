@@ -4840,7 +4840,7 @@ static u32 spurs_ring_used(u32 head, u32 tail, u32 depth) noexcept
 
 s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 taskId)
 {
-	cellSpurs.warning("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, taskId=%d)", queue, buffer, taskId);
+	cellSpurs.trace("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, taskId=%d)", queue, buffer, taskId);
 
 	s32 error = CELL_OK;
 
