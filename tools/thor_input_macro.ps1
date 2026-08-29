@@ -23,6 +23,8 @@
     [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
     [int]$ThermalPollIntervalSeconds = 2,
+    [ValidateSet("full", "fast")]
+    [string]$ThermalRuntimeTelemetry = "full",
     [ValidateRange(0, 20)]
     [double]$ThermalRuntimeStopHeadroomC = 4.0,
     [ValidateRange(0, 30)]
@@ -530,7 +532,13 @@ function Save-ThorThreadSnapshot {
 }
 
 function Get-ThorTemperatureSnapshot {
-    $thermalZoneCommand = Get-ThorThermalZoneShellCommand
+    param([switch]$RuntimeFast)
+
+    $thermalZoneCommand = if ($RuntimeFast) {
+        Get-ThorFastThermalZoneShellCommand
+    } else {
+        Get-ThorThermalZoneShellCommand
+    }
     $telemetryCommand = 'printf "__THOR_BATTERY__\n"; dumpsys battery; printf "__THOR_HARDWARE__\n"; dumpsys hardware_properties; printf "__THOR_ZONES__\n"; ' + $thermalZoneCommand
     $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
     $batteryLines = @()
@@ -561,6 +569,7 @@ function Get-ThorTemperatureSnapshot {
 }
 
 $script:ExpectedThorPackageProcessId = $null
+$script:ThorFullThermalBaseline = $null
 
 function Get-ThorPackageProcessId {
     $processIdLines = @(& $Adb shell pidof $Package 2>$null)
@@ -715,6 +724,7 @@ function Assert-ThorThermalBudget {
         [double]$BatteryLimitC = $MaxBatteryTemperatureC,
         [double]$SkinLimitC = $MaxSkinTemperatureC,
         [double]$SiliconLimitC = $MaxSiliconTemperatureC,
+        [switch]$FastTelemetry,
         [switch]$PassThru
     )
 
@@ -722,12 +732,28 @@ function Assert-ThorThermalBudget {
         return
     }
 
-    $snapshot = Get-ThorTemperatureSnapshot
+    $snapshot = Get-ThorTemperatureSnapshot -RuntimeFast:$FastTelemetry
     $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
     $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
     $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
     "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$BatteryLimitC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$SkinLimitC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$SiliconLimitC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($FastTelemetry) {
+        if ($null -eq $script:ThorFullThermalBaseline) {
+            & $Adb shell am force-stop $Package | Out-Null
+            throw "Fast runtime thermal telemetry has no full preflight baseline. Stage '$Stage'. RPCSX was force-stopped."
+        }
+
+        $expectedSources = Get-ThorThermalGuardSourceSignature -Snapshot $script:ThorFullThermalBaseline
+        $actualSources = Get-ThorThermalGuardSourceSignature -Snapshot $snapshot
+        if ($actualSources -cne $expectedSources) {
+            "$(Get-Date -Format o) stage=$Stage status=failed code=fast-thermal-source-mismatch expected_sources=$expectedSources actual_sources=$actualSources" |
+                Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+            & $Adb shell am force-stop $Package | Out-Null
+            throw "Fast runtime thermal telemetry did not match the full preflight sensor set. Stage '$Stage'. RPCSX was force-stopped."
+        }
+    }
 
     $violationParams = @{
         Snapshot = $snapshot
@@ -753,7 +779,7 @@ function Assert-ThorRuntimeThermalBudget {
         return
     }
 
-    $snapshot = Assert-ThorThermalBudget $Stage -PassThru
+    $snapshot = Assert-ThorThermalBudget $Stage -FastTelemetry:($ThermalRuntimeTelemetry -eq "fast") -PassThru
     $decisionParams = @{
         Snapshot = $snapshot
         MaxSiliconTemperatureC = $MaxSiliconTemperatureC
@@ -836,6 +862,8 @@ function Assert-ThorThermalPreflight {
         & $Adb shell am force-stop $Package | Out-Null
         throw "$($trendViolation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
+
+    $script:ThorFullThermalBaseline = $snapshots[-1]
 }
 
 function Wait-ThorThermallyBounded {
@@ -1059,6 +1087,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max launch silicon temperature C: $MaxLaunchSiliconTemperatureC",
     "- Thermal preflight max silicon rise C: $ThermalPreflightMaxRiseC",
     "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
+    "- Runtime thermal telemetry: $ThermalRuntimeTelemetry",
     "- Runtime thermal early-stop headroom C: $ThermalRuntimeStopHeadroomC",
     "- Runtime thermal confirmation window C: $ThermalRuntimeProbeWindowC",
     "- Runtime thermal probe sustain seconds: $ThermalRuntimeProbeSustainSeconds",

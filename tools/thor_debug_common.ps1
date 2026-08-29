@@ -59,6 +59,25 @@ function Get-ThorThermalZoneShellCommand {
     return 'for z in /sys/class/thermal/thermal_zone*; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; IFS= read -r t < "$z/type" 2>/dev/null || t=; IFS= read -r v < "$z/temp" 2>/dev/null || v=; printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
 }
 
+function Get-ThorFastThermalZoneShellCommand {
+    # These are the stable AYN Thor sensor paths measured across the bounded
+    # PS3 routes. Keep every CPU-subsystem, GPU-subsystem, DDR, SoC, and XO
+    # package sensor, every CPU junction sensor, and the battery sensor. The
+    # full preflight still discovers all zones and fails before launch if the
+    # device layout changes. Runtime uses this list to avoid walking unrelated
+    # modem, camera, PMIC, and BCL zones every two seconds.
+    $zoneNumbers = @(
+        31, 32, 33, 34,
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        47, 48, 49,
+        55,
+        63, 64, 65, 66, 67, 68, 69, 70,
+        82, 90, 94
+    )
+    $zonePaths = @($zoneNumbers | ForEach-Object { "/sys/class/thermal/thermal_zone$_" }) -join ' '
+    return 'for z in ' + $zonePaths + '; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; IFS= read -r t < "$z/type" 2>/dev/null || t=; IFS= read -r v < "$z/temp" 2>/dev/null || v=; printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
+}
+
 function Get-ThorTemperatureDomain {
     param([string]$Name)
 
@@ -222,6 +241,17 @@ function Get-ThorThermalGuardSnapshot {
         source_summary = $sourceSummary
         readings = @($readings)
     }
+}
+
+function Get-ThorThermalGuardSourceSignature {
+    param([Parameter(Mandatory = $true)][object]$Snapshot)
+
+    return @(
+        $Snapshot.readings |
+            Where-Object { $_.domain -in @("battery", "skin", "silicon", "junction") } |
+            ForEach-Object { "$($_.domain):$($_.source)" } |
+            Sort-Object -Unique
+    ) -join ','
 }
 
 function Format-ThorTemperatureC {

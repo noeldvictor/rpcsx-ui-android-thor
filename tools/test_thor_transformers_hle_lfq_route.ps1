@@ -86,6 +86,7 @@ $requiredRenderProbeFragments = @(
     'Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
     'ThermalRuntimeStopHeadroomC = 2',
     'ThermalRuntimeProbeWindowC = 2',
+    'ThermalRuntimeTelemetry = "fast"',
     'ThermalPreflightSamples = 1',
     'MaxLaunchSiliconTemperatureC = 70',
     'SpuCachePreloadLimit = 64',
