@@ -6573,3 +6573,34 @@ rendering progress.
 - Next: In a separate independently cool hardware round, repeat the producer
   census with the repaired startup handoff. Stop at the second late-loader
   completion sample and map the live edgeZlib PC with Ghidra.
+
+## 134. The startup permission omitted the loading state
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: Allowing the `Starting` emulator state will remove the
+  experiment 133 slice-loop refusal.
+- Changed files/settings: The run used the same APK, HLE stack, PC census,
+  atomic census, and loader marker as experiment 133. The host included commit
+  `6f50b389e`, which allowed only state `Starting` in the explicit startup
+  handoff.
+- Thor result: The one-sample cold-start gate passed at 44.9 C fixed silicon.
+  The controller again refused before a slice because the earlier boot state
+  was not `Paused`, `Ready`, or `Starting`. The RPCSX state enum identifies the
+  remaining valid early state as `Loading`. The route completed zero slices
+  and produced no HLE, PC, visual, or performance evidence.
+- Thermal result: The independent guard recorded 16 samples. Fixed silicon
+  peaked at 52.6 C, and CPU junction peaked at 68.2 C. No hold or hard stop
+  occurred.
+- Rollback: The wrapper stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared 57 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Final fixed silicon was 47.4 C after both stop
+  and cleanup.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-165711-thor-input-custom`.
+- Decision: Keep the HLE stack unchanged. The opt-in startup handoff now covers
+  both `Loading` and `Starting`. The default call still refuses both. A future
+  refusal records its numeric initial state, process-hold state, and permission
+  value.
+- Next: Repeat the producer census in a separate cool round. Do not give this
+  zero-slice route any HLE or FPS credit.
