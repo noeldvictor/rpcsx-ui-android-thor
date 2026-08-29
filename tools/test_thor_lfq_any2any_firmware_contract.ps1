@@ -13,7 +13,13 @@ $requiredSyncFragments = @(
     'push.m_h5 = static_cast<u16>(published);',
     'token = queue->m_hs1[slot];',
     'pop.m_h3 = static_cast<u16>((pack & 0x83ff) | (next << 10));',
-    'thor_spurs_notify_lfq(ppu, queue->m_eaSignal.addr(), token)'
+    'thor_spurs_notify_lfq(ppu, queue->m_eaSignal.addr(), token)',
+    'queue.addr() == 0x101b1f80u',
+    'size == 32 && depth == 16',
+    's_edge_items.fetch_add(1)',
+    'n < 128',
+    '"Thor EDGE LFQ ITEM #%u:',
+    '+vm::_ref<be_t<u32>>(addr + 0x1c)'
 )
 
 foreach ($fragment in $requiredSyncFragments) {

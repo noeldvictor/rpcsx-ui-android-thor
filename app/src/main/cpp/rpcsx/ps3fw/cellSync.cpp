@@ -1411,6 +1411,25 @@ error_code _cellSyncLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> qu
 	const u32 addr = vm::cast<u64>((queue->m_buffer.addr() & ~1ull) + size * (pos >= depth ? pos - depth : pos));
 	std::memcpy(vm::base(addr), buffer.get_ptr(), size);
 
+	// Record the complete edgeZlib job after the copy and before publication.
+	// The late loader waits on a state word that the job owns. Keep enough
+	// entries to correlate that word with its queue item without changing it.
+	if (thor_lfq_any2any() && queue.addr() == 0x101b1f80u &&
+		size == 32 && depth == 16 && queue->m_direction == CELL_SYNC_QUEUE_ANY2ANY)
+	{
+		static std::atomic<u32> s_edge_items{0};
+
+		if (const u32 n = s_edge_items.fetch_add(1); n < 128)
+		{
+			cellSync.error("Thor EDGE LFQ ITEM #%u: queue=0x%x slot=%d source=0x%x words=%08x %08x %08x %08x %08x %08x %08x %08x",
+				n, queue.addr(), pos >= depth ? pos - depth : pos, buffer.addr(),
+				+vm::_ref<be_t<u32>>(addr + 0x00), +vm::_ref<be_t<u32>>(addr + 0x04),
+				+vm::_ref<be_t<u32>>(addr + 0x08), +vm::_ref<be_t<u32>>(addr + 0x0c),
+				+vm::_ref<be_t<u32>>(addr + 0x10), +vm::_ref<be_t<u32>>(addr + 0x14),
+				+vm::_ref<be_t<u32>>(addr + 0x18), +vm::_ref<be_t<u32>>(addr + 0x1c));
+		}
+	}
+
 	if (queue->m_direction != CELL_SYNC_QUEUE_ANY2ANY)
 	{
 		return _cellSyncLFQueueCompletePushPointer(ppu, queue, pos, vm::null);

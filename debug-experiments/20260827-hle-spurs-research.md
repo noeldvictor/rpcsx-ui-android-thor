@@ -5410,3 +5410,71 @@ rendering progress.
   PC in the saved legal edgeZlib image before a semantic repair. Do not claim
   full HLE or 30 FPS until a correct moving 3D scene and a comparable sustained
   measurement both pass.
+
+## 114. The edge task does not have one stable blocked PC
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: The corrected edgeZlib PC census will find one stable guest PC
+  while the late loader completion word stays at one.
+- Changed files/settings: The run used candidate APK SHA-256
+  `700CBA11F366281AD3992ADE081C0F8DDB1CA1C5A29DE80447E14DAD544AC041`,
+  size 116,142,809 bytes. It contains commit `05939113d`. The exact no-launch
+  install passed. The semantic HLE settings matched experiment 113. The guest
+  started paused. The controller used one-second slices and stopped when the
+  second late completion sample appeared.
+- Rollback: RPCSX was stopped after the capture. `pidof` was empty, and `top`
+  had zero RPCSX rows. The cleanup cleared all 50 nonempty
+  `debug.rpcsx.thor.*` properties and found zero remaining values. The fixed
+  silicon value after the stop was 49.8 C.
+- Windows result: The successor ANY2ANY LFQueue contract and hot-log budget
+  contract pass. `git diff --check` passes. The normal Android debug build
+  passes. Successor APK SHA-256
+  `A000C7FC292737D05F44AE780C86A1D393126863B2C6EB90D32681C28EE7FEDB`
+  is 116,143,185 bytes.
+- Thor result: The strict cool gate passed at 43.3 C fixed silicon. The route
+  reached the second late completion sample after 19 one-second slices and
+  about 80 seconds of host time. All pause requests occurred at 1.000 to 1.016
+  seconds. The maximum fixed-silicon value was 71.9 C, below the 72 C hard
+  stop.
+- HLE evidence: The exact edge queue is `0x101b1f80`. Its buffer is
+  `0x101b2000`, its item size is 32 bytes, and its depth is 16. The task
+  processed queue items, ran decompression work, sent event notifications, and
+  returned zero from the recorded event operations. Four late samples kept the
+  first completion state at `0x1111dff0` equal to one. The worker queue was
+  empty, and the active list had ten completion items. No fatal error, access
+  violation, or native signal occurred.
+- Ghidra result: A headless Ghidra 12.0.4 pass used the saved legal 256 KiB
+  edgeZlib local-store image with language `SPU:BE:128:default`. The sampled
+  PCs map to callback, queue, DMA, decompression, atomic, and event-notification
+  paths. PC `0x08d54` is an indirect callback return. PCs `0x094fc` and
+  `0x09940` are queue and atomic paths. PCs `0x042e0`, `0x050e8`, `0x06774`,
+  `0x066d0`, `0x05e34`, and `0x048bc` are helper or data paths. PC `0x088d8`
+  is an event-flag atomic helper. The task enters the mailbox helper at
+  `0x0a4d8` and returns at `0x08ca8`. This is normal task progress, not one
+  stable blocked PC.
+- Research result: Public Sony material confirms that EDGE zlib used SPUs and
+  that its source was supplied with the PS3 SDK. No public queue-item ABI source
+  was found. Current public RPCS3 sources do not supply this missing item
+  contract. Do not use proprietary SDK leaks as a source.
+- Visual correctness: Not proved. The paused image shows the black Transformers
+  loading screen and its Autobot loading icon. It does not show gameplay.
+- FPS/frame-time: No credit. The paused overlay showed 31.02 FPS. This is a
+  paused loading screen, not a sustained moving gameplay sample.
+- Capture paths: `20260829-123125-thor-input-strict-cool-gate`,
+  `20260829-123141-transformers-edge-pc-census-install`, and
+  `20260829-123308-thor-input-custom`. The Ghidra output is
+  `ghidra-edge-zlib-pc-census-20260829/edge-pc-census-ghidra.txt`.
+- Decision: Reject the stable-PC hypothesis. Keep the current semantic HLE
+  repairs. Do not force the completion word to zero, and do not classify the
+  task ID 128 selection on a second SPU as a scheduler failure. The successor
+  adds a bounded, read-only census for the first 128 items on the exact
+  32-byte edgeZlib LFQueue. It records each item after the producer copy and
+  before publication.
+- Next: Commit and push the successor. In a later independently cool Thor
+  round, install the exact successor without launch. Start immediately below
+  70 C and stop at 72 C. Run one late-load route. Match the persistent
+  completion-state address against the eight words in each `Thor EDGE LFQ ITEM`
+  row. Identify the item field and the guest or HLE owner of its zero store
+  before any semantic repair. Require correct moving 3D output and a comparable
+  sustained 30 FPS measurement before a full-HLE or performance claim.
