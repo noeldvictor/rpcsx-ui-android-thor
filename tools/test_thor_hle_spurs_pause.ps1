@@ -24,13 +24,28 @@ $main = Get-FunctionBody `
     -StartMarker 'void spursSysServiceMain(spu_thread& spu, u32 pollStatus)' `
     -EndMarker '// Process any requests'
 
-$stateCheck = 'if (spu.state && spu.check_state())'
+$stateLoad = 'const auto threadState = spu.state.load();'
+$stateCheck = 'if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())'
 foreach ($entry in @(
     @{ Name = "idle handler"; Body = $idle },
     @{ Name = "system service"; Body = $main }
 )) {
+    if ($entry.Body.Contains('if (spu.state && spu.check_state())')) {
+        throw "The HLE SPURS $($entry.Name) still processes normal scheduler state bits."
+    }
+
+    foreach ($schedulerState in @('is_paused(threadState)', 'threadState & cpu_flag::pause')) {
+        if ($entry.Body.Contains($schedulerState)) {
+            throw "The HLE SPURS $($entry.Name) processes the normal scheduler state '$schedulerState'."
+        }
+    }
+
+    if (-not $entry.Body.Contains($stateLoad)) {
+        throw "The HLE SPURS $($entry.Name) does not take one state snapshot."
+    }
+
     if (-not $entry.Body.Contains($stateCheck)) {
-        throw "The HLE SPURS $($entry.Name) does not honor the SPU pause and stop state."
+        throw "The HLE SPURS $($entry.Name) does not limit the state check to pause and stop."
     }
 
     $loopIndex = $entry.Body.IndexOf('while (true)')

@@ -2511,8 +2511,10 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 	while (true)
 	{
 		// HLE callbacks can stay in this loop without returning to the SPU
-		// dispatcher. Honor pause and stop here as the normal dispatcher does.
-		if (spu.state && spu.check_state())
+		// dispatcher. Process only debugger pause and stop states here. RPCSX
+		// also uses suspend and internal pause bits during normal coordination.
+		const auto threadState = spu.state.load();
+		if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
 		{
 			return;
 		}
@@ -2698,8 +2700,10 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 	while (true)
 	{
 		// The system service can poll here for the whole emulation session.
-		// Do not bypass the SPU pause and stop state while it is in HLE code.
-		if (spu.state && spu.check_state())
+		// Process only debugger pause and stop states here. RPCSX also uses
+		// suspend and internal pause bits during normal coordination.
+		const auto threadState = spu.state.load();
+		if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
 		{
 			return;
 		}

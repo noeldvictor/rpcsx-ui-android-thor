@@ -3858,3 +3858,45 @@ host route correction. It does not change the APK. The next hardware action is
 one default HLE route with the installed exact APK. The cold-start gate permits
 one fixed-silicon sample below 70 C and refuses a sample at or above 70 C. The
 runtime guard still stops before 72 C silicon or 95 C junction.
+
+## 73. Normal suspend state must not enter the HLE pause path
+
+Commit `fc700406a` made both long HLE SPURS service loops call
+`cpu_thread::check_state()` for every nonzero thread state. A nonzero state is
+not limited to a user pause or a stop. It also includes normal scheduler
+signals, suspend state, pending work, memory work, yield, and preemption.
+
+The all-repair HLE capture `20260828-233804-thor-input-custom` and its cached-
+reservation-off control `20260828-234247-thor-input-custom` both created the
+Bink task and set event flag `0x1f7d580`. Neither capture dispatched workload
+7, and both kept the RSX draw count at zero. Thus, the PPU reservation repair
+was not the cause of this scheduler boundary.
+
+Exact APK
+`B01DA8912F501A926E10F74FA06BF8A233DB8F32F2DD402F11C1299AE96759F9`
+limited the service-loop check to the existing `is_paused` and `is_stopped`
+helpers plus the internal pause bit. Capture
+`20260828-235228-thor-input-custom` still did not dispatch workload 7. The
+remaining `suspend` and internal pause bits are also used during normal RPCSX
+coordination.
+
+Exact APK
+`AAA0A8F34F3E4ED91E590D5F08DC75B3D7F0D4BC7EB78AA3DCF08988313CACD9`
+checks only stop state, `dbg_global_pause`, and `dbg_pause`. Android Pause sets
+`dbg_global_pause` on all PPU and SPU threads. The change therefore keeps the
+device pause action without sending normal SPURS scheduler state through the
+full CPU state machine.
+
+Capture `20260828-235658-thor-input-custom` proves the repaired boundary.
+Workload 7 dispatched at guest time 11.376 seconds, the Bink task started, and
+the event flag arrived at 11.380 seconds. After the route resumed, workload 7
+dispatched again. Two RSX draws used mapped nonzero Y, Cr, and Cb planes. The
+first paused screenshot reported 1.4 percent total CPU, so the HLE loops still
+honor the global pause.
+
+This is a scheduler repair, not a complete render proof. Only two draws were
+recorded after resume, both screenshots were black, and no later draw census
+sample was available before the second pause. The next run must keep the route
+uninterrupted through the first Bink draw sequence. It must also compare the
+cached PPU reservation repair off because that change followed the last known
+good HLE build.
