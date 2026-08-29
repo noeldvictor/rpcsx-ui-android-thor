@@ -712,6 +712,38 @@ def t_slice_loop(a):
                 "reason": ("maxSiliconC must be above maxStartC, and "
                            "resumeTargetC must be below maxSiliconC")}
 
+    initial_pause_probe = None
+    initial_pause_state = initial_state
+    initial_pause_attempts = 0
+    if not process_held and not paused_state and allow_starting:
+        # The status request can race the native start-paused Ready gate. Ask
+        # the live control endpoint to confirm that gate before SIGSTOP. A
+        # process hold taken first prevents the endpoint from releasing the
+        # gate on the first bounded slice.
+        for attempt in range(1, 9):
+            initial_pause_attempts = attempt
+            initial_pause_probe = api("/pause", "POST", timeout=0.5)
+            initial_pause_state = emulation_state()
+            if ((isinstance(initial_pause_probe, dict) and
+                 initial_pause_probe.get("paused")) or
+                    initial_pause_state in (
+                        EMU_STATE_PAUSED, EMU_STATE_READY)):
+                paused_state = True
+                break
+            if initial_pause_state in (
+                    EMU_STATE_STOPPED, EMU_STATE_STOPPING, EMU_STATE_FROZEN):
+                return {
+                    "refused": True,
+                    "reason": "the emulator left its startup handoff",
+                    "initialState": initial_state,
+                    "initialPauseProbe": initial_pause_probe,
+                    "initialPauseState": initial_pause_state,
+                    "initialPauseAttempts": initial_pause_attempts,
+                    "processHeld": False,
+                    "allowStarting": allow_starting,
+                }
+            time.sleep(0.1)
+
     initial_process_hold = None
     if not process_held and not paused_state:
         initial_process_hold = stop_process_for_slice(p)
@@ -719,6 +751,9 @@ def t_slice_loop(a):
             stop = t_stop({})
             return {"error": "the startup process could not enter its initial hold",
                     "initialState": initial_state,
+                    "initialPauseProbe": initial_pause_probe,
+                    "initialPauseState": initial_pause_state,
+                    "initialPauseAttempts": initial_pause_attempts,
                     "initialProcessHold": initial_process_hold,
                     "stop": stop}
 
@@ -727,6 +762,10 @@ def t_slice_loop(a):
     loop_started = time.monotonic()
 
     def finish(fields):
+        if initial_pause_attempts:
+            fields["initialPauseProbe"] = initial_pause_probe
+            fields["initialPauseState"] = initial_pause_state
+            fields["initialPauseAttempts"] = initial_pause_attempts
         if initial_process_hold is not None:
             fields["initialProcessHold"] = initial_process_hold
         fields["completedSlices"] = len(records)

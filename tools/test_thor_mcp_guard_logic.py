@@ -361,6 +361,51 @@ result = SERVER.t_slice_loop({
 assert result["markerReached"] is True and startup_holds == ["123"], (
     "The explicit startup handoff rejected a transient status failure."
 )
+assert result["initialPauseAttempts"] == 8, (
+    "The transient status fallback did not exhaust the bounded pause probe."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
+startup_holds.clear()
+handshake_calls = []
+handshake_states = iter([None, SERVER.EMU_STATE_READY])
+
+
+def ready_handshake_state():
+    return next(handshake_states, SERVER.EMU_STATE_READY)
+
+
+def ready_handshake_api(path, method="GET", timeout=8):
+    handshake_calls.append((path, method, timeout))
+    if path == "/pause":
+        return {"ok": True, "paused": True}
+    return {"ok": True}
+
+
+SERVER.emulation_state = ready_handshake_state
+SERVER.api = ready_handshake_api
+result = SERVER.t_slice_loop({
+    "seconds": 0.5, "maxSlices": 1, "allowStarting": True,
+})
+assert result["markerReached"] is True, (
+    "The confirmed native Ready gate did not enter the slice loop."
+)
+assert startup_holds == [] and "initialProcessHold" not in result, (
+    "The controller stopped the process after the native Ready handshake."
+)
+assert result["initialPauseProbe"]["paused"] is True, (
+    "The slice result lost the native pause acknowledgement."
+)
+assert result["initialPauseState"] == SERVER.EMU_STATE_READY, (
+    "The slice result lost the confirmed Ready state."
+)
+assert result["initialPauseAttempts"] == 1, (
+    "The ready handshake used more than one bounded pause request."
+)
+assert ("/pause", "POST", 0.5) in handshake_calls, (
+    "The startup handoff did not use the bounded pause endpoint."
+)
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 
