@@ -5878,3 +5878,61 @@ rendering progress.
   through the first EDGE wait before the 72 C stop. Correlate the dispatch
   delta if the later PoolThread wait remains active. Do not claim gameplay or
   sustained 30 FPS until moving 3D output is visible and measured.
+
+## 122. The warm runtime cache reaches the EDGE wait sooner
+
+- Status: failed, not-comparable
+- Scope: config-driver, performance
+- Hypothesis: The populated runtime SPU object cache will load more than 65
+  native objects and give the title enough useful time to pass the first EDGE
+  wait before the thermal stop.
+- Changed files/settings: The run used the same exact APK as experiment 121.
+  Its SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  and its size was 116,143,682 bytes. The HLE settings matched experiments 120
+  and 121. The wait trace was on, the full runtime census was off, and the
+  guest started unpaused. The SPU preload limit was 64, and the native-object
+  cache was on.
+- Rollback: The external device guard stopped RPCSX at its hard limit. The
+  process was absent after the run, and the Android launcher was on top. No
+  fatal signal, tombstone, access violation, or native crash appears. Do not
+  launch the Thor again in this hardware round.
+- Thor result: The independent strict gate passed at 42.9 C fixed silicon. The
+  route pre-run value was 44.1 C. Runtime fixed-silicon samples were 48.6,
+  59.8, 54.2, 57.0, 64.6, 69.9, and 73.5 C. The last sample exceeded the
+  72.0 C hard limit. The CPU junction peaked at 87.9 C, below its separate
+  95.0 C limit. The post-stop fixed-silicon value was 45.3 C.
+- Cache evidence: The log contains 125 `LLVM: Loaded module` rows. The first
+  64 rows are startup loads, and 61 rows are post-startup runtime loads. This
+  passes the required total of more than 65. The title PPU cache tree increased
+  from 438,682 KiB to 439,766 KiB, an increase of 1,084 KiB. This is consistent
+  with more persisted runtime objects.
+- Event-wait evidence: The PoolThread armed exact flag `0x01e54800`, mask one,
+  AND mode, slot zero, queue `0x8d005600`, and port 17 at guest time 13.686
+  seconds. Experiment 120 armed the same wait at 17.435 seconds. The warm-cache
+  run reached the boundary about 3.749 guest seconds sooner. A preceding
+  `Thor EDGE WAKE #0` row shows task set `0x101b4e80`, task zero, after the LFQ
+  notification and gate succeeded.
+- Wait result: No `Thor EDGE EFWAIT EVENT`, census, wake, or return row appears
+  after the arm row. The pulled log ends at guest time 14.752 seconds, about
+  1.065 seconds after the wait armed. The known-good first wait in experiment
+  118 took about 4.55 seconds. The missing wake therefore does not identify a
+  notification fault.
+- Visual correctness: Not proved. The guard stopped the process before the
+  requested screenshot.
+- FPS/frame-time: No credit. The run did not produce a valid moving-gameplay
+  sample. The internal thermal guard reported a junction limit near the end,
+  but that loading-window report is not comparable performance evidence.
+- Capture paths: `20260829-144210-thor-input-strict-cool-gate` and
+  `20260829-144228-thor-input-custom`.
+- Decision: Keep the runtime native-object cache and the exact event
+  correlation probe. Do not change event-flag or loader semantics. The warm
+  cache works, but an unpaused boot still heat-soaks before the known wait
+  latency can expire. Another identical unpaused run would repeat the same
+  invalid test.
+- Next: Use the proved paused-slice controller with one-second active slices.
+  Cool the device while RPCSX is paused, keep the full runtime census off, and
+  stop on the exact `Thor EDGE EFWAIT EVENT` marker or at 72 C fixed silicon.
+  Correlate the PPU wait with the exact SPU event-send delta before a semantic
+  repair. Require correct moving 3D output and a comparable sustained 30 FPS
+  measurement before a full-HLE or performance claim.
