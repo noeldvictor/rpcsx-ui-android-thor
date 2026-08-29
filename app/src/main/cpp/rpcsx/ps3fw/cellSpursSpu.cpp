@@ -3368,6 +3368,90 @@ enum SpursTasksetRequest
 	SPURS_TASKSET_REQUEST_RECV_WKL_FLAG = 6,
 };
 
+enum class thor_edge_task_transition : u32
+{
+	start,
+	resume,
+	syscall_enter,
+	syscall_leave,
+	exit,
+	count,
+};
+
+// Track the HLE owner of the first workload-0 taskset. The running bitmap can
+// name a task after no SPU executes it. A workload contention count cannot
+// distinguish that stale state from a task that is still active on another
+// SPU. This diagnostic records the HLE transitions that create and release the
+// owner. It does not change guest state or scheduling.
+static std::atomic<u32> g_thor_edge_taskset_addr{0};
+static std::atomic<u32> g_thor_edge_task_owner{0};
+static std::atomic<u32> g_thor_edge_task_owner_epoch{0};
+static std::atomic<u32> g_thor_edge_task_transition_counts[static_cast<u32>(thor_edge_task_transition::count)]{};
+
+static bool thor_is_tracked_edge_task(spu_thread& spu, SpursTasksetContext* ctxt) noexcept
+{
+	if (!thor_edge_task_census() || !ctxt->taskset)
+	{
+		return false;
+	}
+
+	const auto kernelCtxt = spu._ptr<SpursKernelContext>(0x100);
+	const u32 tasksetAddr = ctxt->taskset.addr();
+
+	if (kernelCtxt->wklCurrentId == 0)
+	{
+		u32 expected = 0;
+		g_thor_edge_taskset_addr.compare_exchange_strong(expected, tasksetAddr);
+	}
+
+	return g_thor_edge_taskset_addr.load() == tasksetAddr;
+}
+
+static void thor_log_edge_task_transition(spu_thread& spu, SpursTasksetContext* ctxt,
+	thor_edge_task_transition transition, const char* name, u32 detail) noexcept
+{
+	if (!thor_is_tracked_edge_task(spu, ctxt))
+	{
+		return;
+	}
+
+	const u32 index = static_cast<u32>(transition);
+	const u32 n = g_thor_edge_task_transition_counts[index]++;
+
+	if (n >= 16 && (n & 0x3f) != 0)
+	{
+		return;
+	}
+
+	const auto kernelCtxt = spu._ptr<SpursKernelContext>(0x100);
+	const auto rd = [&](u32 off)
+	{
+		return +vm::_ref<be_t<u32>>(ctxt->taskset.addr() + off);
+	};
+
+	cellSpurs.error("Thor EDGE TASK %s #%u: taskset=0x%x task=%u detail=0x%x pc=0x%05x lr=0x%05x "
+		"spu=%u wkl=%u owner=%u epoch=%u holders=0x%02x state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x}",
+		name, n, ctxt->taskset.addr(), +ctxt->taskId, detail, spu.pc, spu.gpr[0]._u32[3],
+		+ctxt->spuNum, +kernelCtxt->wklCurrentId, g_thor_edge_task_owner.load(),
+		g_thor_edge_task_owner_epoch.load(), g_thor_wkl_holders[0].load(),
+		rd(OFFSET_OF(CellSpursTaskset, running)), rd(OFFSET_OF(CellSpursTaskset, ready)),
+		rd(OFFSET_OF(CellSpursTaskset, pending_ready)), rd(OFFSET_OF(CellSpursTaskset, waiting)),
+		rd(OFFSET_OF(CellSpursTaskset, enabled)), rd(OFFSET_OF(CellSpursTaskset, signalled)));
+}
+
+static void thor_set_edge_task_owner(spu_thread& spu, SpursTasksetContext* ctxt,
+	thor_edge_task_transition transition, const char* name) noexcept
+{
+	if (!thor_is_tracked_edge_task(spu, ctxt))
+	{
+		return;
+	}
+
+	g_thor_edge_task_owner.store(+ctxt->spuNum + 1);
+	g_thor_edge_task_owner_epoch++;
+	thor_log_edge_task_transition(spu, ctxt, transition, name, 0);
+}
+
 // Taskset PM entry point
 bool spursTasksetEntry(spu_thread& spu)
 {
@@ -3478,8 +3562,11 @@ bool spursTasksetSyscallEntry(spu_thread& spu)
 		//
 		//   debug.rpcsx.thor.taskset_syscall_fix = 0 restores the throw
 		const u32 pc_before = spu.pc;
+		const u32 syscallNum = spu.gpr[3]._u32[3];
+		thor_log_edge_task_transition(spu, ctxt, thor_edge_task_transition::syscall_enter, "SYSCALL-ENTER", syscallNum);
 
-		spu.gpr[3]._u32[3] = spursTasksetProcessSyscall(spu, spu.gpr[3]._u32[3], spu.gpr[4]._u32[3]);
+		spu.gpr[3]._u32[3] = spursTasksetProcessSyscall(spu, syscallNum, spu.gpr[4]._u32[3]);
+		thor_log_edge_task_transition(spu, ctxt, thor_edge_task_transition::syscall_leave, "SYSCALL-LEAVE", syscallNum);
 
 		if (!thor_taskset_syscall_fix())
 		{
@@ -3500,6 +3587,7 @@ bool spursTasksetSyscallEntry(spu_thread& spu)
 void spursTasksetResumeTask(spu_thread& spu)
 {
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
+	thor_set_edge_task_owner(spu, ctxt, thor_edge_task_transition::resume, "RESUME");
 
 	// Restore task context
 	spu.gpr[0] = ctxt->savedContextLr;
@@ -3518,6 +3606,7 @@ void spursTasksetStartTask(spu_thread& spu, CellSpursTaskArgument& taskArgs)
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
 	thor_refresh_taskset_snapshot(spu, ctxt);
 	auto taskset = spu._ptr<CellSpursTaskset>(0x2700);
+	thor_set_edge_task_owner(spu, ctxt, thor_edge_task_transition::start, "START");
 
 	spu.gpr[2].clear();
 	spu.gpr[3] = v128::from64r(taskArgs._u64[0], taskArgs._u64[1]);
@@ -4078,6 +4167,14 @@ void spursTasksetExit(spu_thread& spu)
 {
 	auto ctxt = spu._ptr<SpursTasksetContext>(0x2700);
 
+	if (thor_is_tracked_edge_task(spu, ctxt))
+	{
+		thor_log_edge_task_transition(spu, ctxt, thor_edge_task_transition::exit, "EXIT", 0);
+		u32 expected = +ctxt->spuNum + 1;
+		g_thor_edge_task_owner.compare_exchange_strong(expected, 0);
+		g_thor_edge_task_owner_epoch++;
+	}
+
 	// Trace - STOP
 	CellSpursTracePacket pkt{};
 	pkt.header.tag = 0x54; // Its not clear what this tag means exactly but it seems similar to CELL_SPURS_TRACE_TAG_STOP
@@ -4312,10 +4409,13 @@ void spursTasksetDispatch(spu_thread& spu)
 
 					cellSpurs.error("Thor TASKSET IDLE-READY #%u: taskset=0x%x wid=%u readyCount=%u runningTaskCount=%u "
 						"contention{shared=%u pending=%u local=%u localPending=%u} "
+						"owner{spu=%u epoch=%u holders=0x%02x} "
 						"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} spu=%u",
 						n, ctxt->taskset.addr(), held, readyCount, runningTaskCount,
 						+kctxt->spurs->wklCurrentContention[held], +kctxt->spurs->wklPendingContention[held],
 						+kctxt->wklLocContention[held], +kctxt->wklLocPendingContention[held],
+						g_thor_edge_task_owner.load(), g_thor_edge_task_owner_epoch.load(),
+						g_thor_wkl_holders[held].load(),
 						rd(OFFSET_OF(CellSpursTaskset, running)), rd(OFFSET_OF(CellSpursTaskset, ready)),
 						rd(OFFSET_OF(CellSpursTaskset, pending_ready)), rd(OFFSET_OF(CellSpursTaskset, waiting)),
 						rd(OFFSET_OF(CellSpursTaskset, enabled)), rd(OFFSET_OF(CellSpursTaskset, signalled)), +ctxt->spuNum);
