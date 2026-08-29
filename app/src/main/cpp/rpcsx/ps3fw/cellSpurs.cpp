@@ -3807,7 +3807,7 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 	u8 ppuWaitSlot;
 	u16 ppuEvents;
 	u16 pendingRecv;
-	u16 pendingRecvTaskEvents[16];
+	u16 pendingRecvTaskEvents[16]{};
 
 	ppu.state += cpu_flag::wait;
 
@@ -3855,7 +3855,8 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 					{
 						eventsToClear |= spuTaskRelevantEvents;
 						pendingRecv |= 1 << j;
-						pendingRecvTaskEvents[j] = spuTaskRelevantEvents;
+						// The low bit maps to wait slot 15, and the high bit maps to slot 0.
+						pendingRecvTaskEvents[i] = spuTaskRelevantEvents;
 					}
 				}
 

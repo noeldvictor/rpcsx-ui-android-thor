@@ -20,6 +20,16 @@ if ($setBody.Contains($rejectedSetDirection)) {
     throw "The PPU event-flag Set function incorrectly allows only SPU-to-PPU flags."
 }
 
+$requiredSlotWrite = 'pendingRecvTaskEvents[i] = spuTaskRelevantEvents;'
+if (-not $setBody.Contains($requiredSlotWrite)) {
+    throw "The SPURS event-flag Set function does not save events in the selected wait slot."
+}
+
+$rejectedSlotWrite = 'pendingRecvTaskEvents[j] = spuTaskRelevantEvents;'
+if ($setBody.Contains($rejectedSlotWrite)) {
+    throw "The SPURS event-flag Set function saves events in the mirrored wait slot."
+}
+
 $requiredFragment = 'receivedEvents = eventFlag->pendingRecvTaskEvents[i];'
 if (-not $cellSpurs.Contains($requiredFragment)) {
     throw "The blocking SPURS event-flag wait does not keep the received event mask."
