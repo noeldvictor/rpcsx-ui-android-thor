@@ -4682,3 +4682,75 @@ sample was 83.1 C, and the last fixed-silicon sample was 61.8 C. The device
 guard stopped only after the package stopped normally. The next software probe
 must record why LFQueue ring record 8 suppresses its notification and whether
 the edge task is running, waiting, or between those states at that write.
+
+## 100. The atomic demand claim exposes the selector return boundary
+
+Later source inspection corrects the pause theory in sections 98 and 99.
+`cpu_thread::check_state` blocks a paused SPU thread and resumes it at the same
+PC. A lifecycle pause does not lose the HLE entry PC. Also, ring record 8 in
+section 99 correctly did not send a notification. Its notification head and
+tail were equal. The HLE entry signal handoff changed scheduling and crossed
+the old boundary, but it did not repair the stated pause mechanism.
+
+Commit `cf2edd0a7` replaces that handoff with one reservation operation on the
+first 128-byte `CellSpurs` line. The operation rechecks demand and contention,
+increments current contention, and consumes the selected signal or flag as one
+atomic claim. The selector and dispatch paths do not clear the same signal a
+second time. The atomic-demand, contention-claim, selector-signal, LFQueue-route,
+and SPURS probe-build contracts passed. The full Android debug build passed.
+Exact APK
+`E7609694169E16C3A2FC66EC62F428C11290667D3202D6D1A5A7F4F6221DA8EF`
+is 116,140,573 bytes.
+
+The strict one-sample gate is capture
+`20260829-074823-thor-input-strict-cool-gate`. Fixed silicon was 44.1 C. The
+exact no-launch installation is capture
+`20260829-074846-transformers-atomic-workload-claim-install`. The expected,
+host, and installed hashes matched. RPCSX was not active after installation.
+
+Capture `20260829-074922-thor-input-custom` repeated the long direct-Start route
+with the edge-task and atomic censuses off. The atomic claim removed the prior
+multi-SPU workload-0 fanout. The first LFQueue notification at guest time
+2:03.993 woke workload 0 and dispatched it on SPU 5. After resume, two edge
+event-interpreter calls completed. Ring record 2 sent the second notification
+at 2:58.571. The task was waiting and was signalled. The gate then showed
+current contention 0 and maximum contention 8. However, no later workload-0
+dispatch occurred. The next workload records were system service and workload
+7. The pool thread waited on event flag `0x1e54800`.
+
+The capture has three ring records, two notifications, two workload wakes, and
+two edge event-interpreter entries and exits. It has no access violation,
+verification failure, fatal thread stop, or native crash. Visual inspection of
+`01-atomic-demand-boundary.png` shows the Transformers loading emblem. Its
+SHA-256 is
+`FCCC11E8A4CEB77C99C0995DFB653974BDE029E69B5EB700849269670D55806B`.
+The image includes a pause notice, so its 29.64 FPS value has no speed credit.
+Fixed silicon reached 68.7 C, maximum junction reached 87.9 C, and the last
+fixed-silicon sample was 53.4 C. RPCSX stopped normally.
+
+## 101. The HLE selector now returns through the SPU link register
+
+`spu_thread::RunHleFunction` calls a registered host function and continues the
+SPU CPU loop. It does not change the PC. The SPURS kernel registers the kernel 1
+selector at local-store address `0x290`. The HLE selector returns its result in
+register 3, but it previously left the PC at `0x290`. A guest call to this
+address could consume the workload signal and then call the same HLE selector
+again instead of returning to the kernel dispatch code.
+
+Headless Ghidra analysis of the genuine LLE kernel dump proves the required
+control flow. The selector ends at `0x6bc` with `bi lr`. Its workload-exit
+caller sets the stack at `0x808`, calls selector `0x290` with `brsl lr` at
+`0x810`, and continues at `0x814`, where it calls dispatch `0x6c0`. The saved
+Ghidra windows are:
+
+    debug-captures/ghidra-spurs-selector-return-20260829/spu-hot-window-ghidra.txt
+    debug-captures/ghidra-spurs-selector-tail-20260829/spu-hot-window-ghidra.txt
+
+Commit `d2a55df7c` makes both kernel selectors emulate `bi lr` when the SPU
+entered at the registered selector address. It sets the PC from SPU link
+register 0. A guard keeps direct host calls unchanged. The new selector-return
+contract and the five related SPURS contracts passed. The full Android debug
+build passed. Candidate APK
+`A8BBB5EABAB8A73C7DDA4D7CCB48A4AF242137E3C14334310785164C6408FC6B`
+is 116,139,585 bytes. The next cooled Thor run must verify that the second wake
+now returns to dispatch and produces more than three LFQueue ring records.
