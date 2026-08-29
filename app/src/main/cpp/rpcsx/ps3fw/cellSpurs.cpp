@@ -5790,11 +5790,49 @@ s32 cellSpursCreateTaskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<Ce
 	return _spurs::create_taskset(ppu, spurs, taskset, args, priority, maxContention, vm::null, sizeof(CellSpursTaskset), 0);
 }
 
-s32 cellSpursJoinTaskset(vm::ptr<CellSpursTaskset> taskset)
+s32 cellSpursJoinTaskset(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset)
 {
 	cellSpurs.warning("cellSpursJoinTaskset(taskset=*0x%x)", taskset);
 
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	if (!taskset)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	if (!taskset.aligned())
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	const u32 wid = taskset->wid;
+	const auto spurs = +taskset->spurs;
+
+	if (wid >= CELL_SPURS_MAX_WORKLOAD2)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	auto as_task_error = [](s32 error) -> s32
+	{
+		switch (error + 0u)
+		{
+		case CELL_SPURS_POLICY_MODULE_ERROR_INVAL: return CELL_SPURS_TASK_ERROR_INVAL;
+		case CELL_SPURS_POLICY_MODULE_ERROR_STAT: return CELL_SPURS_TASK_ERROR_STAT;
+		default: return error;
+		}
+	};
+
+	if (auto err = ppu_execute<&cellSpursWaitForWorkloadShutdown>(ppu, spurs, wid))
+	{
+		return as_task_error(err);
+	}
+
+	if (auto err = ppu_execute<&cellSpursRemoveWorkload>(ppu, spurs, wid))
+	{
+		return as_task_error(err);
+	}
+
+	taskset->wid = CELL_SPURS_MAX_WORKLOAD2;
 	return CELL_OK;
 }
 
