@@ -4460,3 +4460,55 @@ The launch sample was 44.1 C. Fixed silicon reached 65.4 C and stayed below
 the 72 C stop limit. The direct Start action did not reach the loading frame
 in this repeat. The next proof must make the Start transition deterministic,
 then take two active samples after the transition.
+
+## 95. The firmware diagnostic path exposes a task-state stall
+
+Commit `a7f89c09c` makes direct pad input fail closed. The debug receiver now
+returns an explicit acceptance result. The macro saves this result and stops
+if the active app does not accept the pulse. The macro also accepts a bounded
+duration in a token such as `direct:start:240`. The focused input contract,
+the HLE route contract, and the thermal guard contract passed.
+
+Exact APK
+`F0DDA4250A1FE1842F8B12259BA79E60D70BB9D0EABF44A3C688549F3E953415`
+is 116,135,772 bytes. The exact no-launch installation is in:
+
+    20260829-052052-thor-input-strict-cool-gate
+    20260829-052104-transformers-direct-pad-ack-install
+
+Capture `20260829-052134-thor-input-custom` used three 240 ms Start pulses.
+All three receiver results were `result=-1, data="accepted"`. The route reached
+the loading screen. At guest time 5:24.890, `cellSpursEventFlagSet` tried to
+signal task 0 in taskset `0x1f73f00`. `_cellSpursSendSignal` returned
+`0x80410905` (`SRCH`). The firmware-matched diagnostic logged the result, and
+the rendering thread did not terminate.
+
+This result removes the host fatal, but it does not remove the guest stall.
+No rendering-thread work appears after that signal result. The final core
+sample records zero new frames in the active interval. Two screenshots taken
+2.81 seconds apart show the loading emblem and report 29.75 FPS, but their
+common SHA-256 is
+`59E070CC78DB69C4FA140E48F0E53B6598D6E3D732121B551F729D20FA64A22A`.
+The byte-identical images and zero core frames make that overlay value stale.
+They have no speed credit. Fixed silicon reached 67.8 C, and RPCSX stopped at
+the macro stop.
+
+Commit `f9ffdadb8` adds the six task bitmaps to the bounded event-signal
+diagnostic. The event-flag, selector, activation, queue-log, and HLE route
+contracts passed. The full Android debug build and the ARM64 APK contract
+passed. Exact APK
+`E23065E7C39AE08EFB5406E611793CD3AE9FDB42A8CB67F217FBD176D016CB37`
+is 116,136,399 bytes.
+
+The exact no-launch installation is in:
+
+    20260829-053211-thor-input-strict-cool-gate
+    20260829-053225-transformers-event-state-install
+
+Capture `20260829-053243-thor-input-custom` stopped about 0.15 guest seconds
+before the event result appeared. It contains no event-state diagnostic. The
+last taskset rows before the stop are valid: task 0 has running, ready, and
+enabled set to `0x80000000`; pending-ready, waiting, and signaled are clear.
+Fixed silicon reached 69.9 C, and RPCSX stopped normally. The next cooled probe
+must add one more two-second post-Start slice and stop after it records the
+event-state line.
