@@ -540,6 +540,36 @@ function Invoke-ThorControlPause {
     throw "The Thor control API did not confirm the paused state within 8000 ms."
 }
 
+function Invoke-ThorControlResume {
+    & $Adb -s $DeviceSerial forward tcp:8099 tcp:8099 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not forward the Thor control port."
+    }
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $attempt = 0
+    while ($timer.ElapsedMilliseconds -lt 8000) {
+        $attempt++
+        try {
+            $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/resume" -TimeoutSec 2
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) response=$($response | ConvertTo-Json -Compress)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-resume.log") -Append -Encoding UTF8
+            if ($response.ok -and -not $response.paused) {
+                $response | ConvertTo-Json -Compress |
+                    Set-Content -LiteralPath (Join-Path $captureDir "control-resume.json") -Encoding UTF8
+                return
+            }
+        } catch {
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) error=$($_.Exception.Message)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-resume.log") -Append -Encoding UTF8
+        }
+
+        Assert-ThorDeviceThermalGuardAlive
+        Start-Sleep -Milliseconds 100
+    }
+    throw "The Thor control API did not confirm the running state within 8000 ms."
+}
+
 function Save-ThorScreenshot {
     param(
         [string]$Label,
@@ -1267,7 +1297,7 @@ if ($ThermalRuntimeTelemetry -eq "device" -and -not $StopAfterMacro -and
     "- Stop after macro: $StopAfterMacro",
     "- Macro: $resolvedMacro",
     "",
-    'Syntax: `wait:MS`, `pause`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Syntax: `wait:MS`, `pause`, `resume`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
     'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
     'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
     'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
@@ -1758,6 +1788,9 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         } elseif ($token -eq 'pause') {
             Invoke-ThorControlPause
             Assert-ThorRuntimeThermalBudget "control-pause"
+        } elseif ($token -eq 'resume') {
+            Invoke-ThorControlResume
+            Assert-ThorRuntimeThermalBudget "control-resume"
         } elseif ($token -eq 'stop') {
             Stop-ThorPackageAndVerify -EvidencePrefix "macro-stop"
         } elseif ($token -match '^threads:(.+)$') {

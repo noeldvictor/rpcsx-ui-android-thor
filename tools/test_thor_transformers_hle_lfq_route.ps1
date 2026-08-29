@@ -93,7 +93,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
     'Macro = $Macro',
-    'ThermalRuntimeStopHeadroomC = 2',
+    'ThermalRuntimeStopHeadroomC = 0',
     'ThermalRuntimeProbeWindowC = 2',
     'ThermalRuntimeTelemetry = "device"',
     'ThermalPreflightSamples = 1',

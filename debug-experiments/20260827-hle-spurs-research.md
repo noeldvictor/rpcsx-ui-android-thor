@@ -3792,3 +3792,27 @@ The comparison route `20260828-224150-thor-input-custom` used the normal yield
 path. A 10-second continuous resume window caused the device guard to stop
 RPCSX. The stop occurred before 72 C. The post-stop launcher screenshot has no
 visual credit. Correct gameplay and sustained 30 FPS are still not proved.
+
+## 71. Cooled slices keep the HLE route below 72 C
+
+Ghidra mapped the paused main-thread PC `0x00349364` to a timebase wait helper.
+The helper has 17 direct callers. The live sample was taken while RPCSX was
+paused, so this address is not evidence of a new HLE deadlock. The focused
+PowerPC call finder is in `tools/ghidra_scripts/FindPowerPcCalls.java`.
+
+The no-input control is in `20260828-230613-thor-input-custom`. It used eight
+4-second resume windows with 8-second cooling pauses. The legal frame stayed
+valid. Live transition readouts ranged from 30.29 to 31.59 FPS. Fixed silicon
+peaked at 68.7 C, and the normal macro stop ended the run. The conditional-
+store counter ended at five exact stale-128 failures and nine other failures.
+The old exact-128 failure storm did not return.
+
+The input macro now accepts `resume`, so a bounded route can pause, cool, and
+resume without an external manual call. The Transformers route uses zero
+runtime stop headroom. Its device guard therefore stops at the documented
+72 C silicon limit. The launch gate is unchanged: one valid sample below 70 C
+can start, and a sample at or above 70 C cannot start.
+
+The no-input route did not leave the legal frame. A single START press after a
+visually checked legal frame is the next correctness test. Correct gameplay and
+sustained 30 FPS are still not proved.
