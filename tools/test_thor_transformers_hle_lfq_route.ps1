@@ -14,6 +14,8 @@ $spuLlvmPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell
 $spuLlvm = Get-Content -LiteralPath $spuLlvmPath -Raw
 $spuCommonPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUCommonRecompiler.cpp"
 $spuCommon = Get-Content -LiteralPath $spuCommonPath -Raw
+$ppuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\PPUThread.cpp"
+$ppuThread = Get-Content -LiteralPath $ppuThreadPath -Raw
 
 $requiredFragments = @(
     '[string]$LfqAny2Any = "off"',
@@ -63,6 +65,8 @@ $requiredRenderProbeFragments = @(
     '[string]$TasksetSelectAtomic = "off"',
     '[string]$EdgeEventInterp = "off"',
     '[string]$TaskAttrFix = "on"',
+    '[string]$YieldFastPath = "on"',
+    '[string]$PpuCachedRtimeFix = "on"',
     '[string]$SpursProbe = "off"',
     '[string]$RuntimeCensus = "off"',
     'LfqAny2Any = $LfqAny2Any',
@@ -70,6 +74,8 @@ $requiredRenderProbeFragments = @(
     'TasksetSelectAtomic = $TasksetSelectAtomic',
     '"debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.yield_fast_path" = if ($YieldFastPath -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.ppu_cached_rtime_fix" = if ($PpuCachedRtimeFix -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spurs_atomic_census" = "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
@@ -83,6 +89,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
     'Macro = $Macro',
     'ThermalRuntimeStopHeadroomC = 2',
@@ -136,6 +143,20 @@ $requiredEventCensusFragments = @(
 	'Thor EDGE EVENT result #%u',
     'Thor SPU EVENT #%u'
 )
+
+$requiredPpuCachedRtimeFragments = @(
+    'static bool thor_ppu_cached_rtime_fix() noexcept',
+    '"debug.rpcsx.thor.ppu_cached_rtime_fix"',
+    'if (!thor_ppu_cached_rtime_fix())',
+    'ppu.rtime -= 128;',
+    'ppu.rtime += 128;'
+)
+
+foreach ($fragment in $requiredPpuCachedRtimeFragments) {
+    if (-not $ppuThread.Contains($fragment)) {
+        throw "The PPU cached reservation fix is missing: $fragment"
+    }
+}
 
 foreach ($fragment in $requiredEventCensusFragments) {
     if (-not $spuThread.Contains($fragment)) {

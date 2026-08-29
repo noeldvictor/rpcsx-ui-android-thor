@@ -292,6 +292,26 @@ private:
 atomic_t<u64> g_ppu_stcx_stale_128{0};
 atomic_t<u64> g_ppu_stcx_other_fail{0};
 
+// Keep the reservation generation that the preceding successful conditional
+// store recorded. Subtracting one generation here makes the next store fail
+// by exactly 128, even when no other thread changed the line.
+//
+//   debug.rpcsx.thor.ppu_cached_rtime_fix = 1
+static bool thor_ppu_cached_rtime_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool enabled = []
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.ppu_cached_rtime_fix", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return enabled;
+#else
+	return false;
+#endif
+}
+
 // Budget for concurrent PPU LLVM compilation.
 //
 // Upstream sizes this as a fraction of total system memory, which assumes a
@@ -5045,7 +5065,10 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 	{
 		// Reload "cached" reservation of previous succeeded conditional store
 		// This seems like a hardware feature according to cellSpursAddUrgentCommand function
-		ppu.rtime -= 128;
+		if (!thor_ppu_cached_rtime_fix())
+		{
+			ppu.rtime -= 128;
+		}
 	}
 	else
 	{

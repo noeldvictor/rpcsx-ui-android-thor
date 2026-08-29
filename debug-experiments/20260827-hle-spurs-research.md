@@ -3740,3 +3740,36 @@ progress frames differed, so these two instantaneous values are directional
 evidence, not a sustained speed comparison. Removing the repeated save failure
 is structural evidence. The Transformers HLE route now enables the fallback by
 default. Correct 3D output and sustained 30 FPS are still not proved.
+
+## 69. The cached PPU reservation time caused exact 128 failures
+
+The HLE route in `20260828-222314-thor-input-custom` enabled the SPURS yield
+fast path. The last 10-second sample recorded 281,608 conditional-store
+failures with an exact stale difference of 128. It recorded only eight other
+failures. This ratio identified a reservation-time error, not normal access
+contention.
+
+ARMSX3 commit `ca3b755fd` keeps the cached reservation time after a successful
+conditional store. The RPCSX code already added 128 after a successful store,
+but the next cached reservation subtracted 128. The next store therefore used
+the old reservation generation and failed when no other thread changed the
+line.
+
+The new Android property is:
+
+    debug.rpcsx.thor.ppu_cached_rtime_fix=1
+
+The property keeps the generation that the successful store recorded. The
+change is off by default in the core and on by default in the Transformers HLE
+route. Exact APK
+`45495E4027789740D3D47BAAED48BE60C4BE2E5EDCE1E49A08B12106AD014F03`
+ran in `20260828-223303-thor-input-custom`. All reported stale-128 and other
+conditional-store failure counts stayed at zero. The log reached Bink setup.
+It had no save-context failure, access violation, native fatal error, or signal
+fault.
+
+The first screenshot was still at SPU cache module 63 of 64. The second
+screenshot was a black transition frame at 26.82 FPS. The route started at
+45.8 C silicon and reached 68.7 C before the macro stopped RPCSX. The device
+guard did not have to stop the process. This run proves the reservation-time
+repair. It does not prove correct 3D output or sustained 30 FPS.

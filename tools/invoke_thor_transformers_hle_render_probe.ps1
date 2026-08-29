@@ -14,6 +14,10 @@ param(
     [ValidateSet("on", "off")]
     [string]$TaskAttrFix = "on",
     [ValidateSet("on", "off")]
+    [string]$YieldFastPath = "on",
+    [ValidateSet("on", "off")]
+    [string]$PpuCachedRtimeFix = "on",
+    [ValidateSet("on", "off")]
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
@@ -45,7 +49,8 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.hle_spurs_kernel" = "1"
     "debug.rpcsx.thor.real_spu_kernel" = "0"
     "debug.rpcsx.thor.real_taskset_pm" = "0"
-    "debug.rpcsx.thor.yield_fast_path" = "0"
+    "debug.rpcsx.thor.yield_fast_path" = if ($YieldFastPath -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.ppu_cached_rtime_fix" = if ($PpuCachedRtimeFix -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.pm_capture" = "0"
     "debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_atomic_census" = "0"
@@ -124,6 +129,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"
 }
 
 $captureCandidates = @(
