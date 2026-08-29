@@ -114,6 +114,23 @@ def temp_c():
     return max(vals) if vals else -1
 
 
+def fixed_silicon_c():
+    """Read the fixed silicon domain used by the PS3 thermal guard.
+
+    Per-core cpu-* sensors are junction readings. They can exceed 70 C during
+    normal work and must not decide the cold-start gate. The cpuss, gpuss, DDR,
+    SoC and XO sensors are the fixed domain used by the repository guard.
+    """
+    raw = sh(r"""for z in /sys/class/thermal/thermal_zone*; do t=$(cat $z/temp 2>/dev/null); n=$(cat $z/type 2>/dev/null); case $n in cpuss-*|gpuss-*|ddr|socd|xo-therm) [ -n "$t" ] && echo "$t";; esac; done""")
+    vals = []
+    for token in raw.split():
+        if not token.strip().isdigit():
+            continue
+        value = int(token)
+        vals.append(value / 1000.0 if value >= 1000 else float(value))
+    return round(max(vals), 1) if vals else -1
+
+
 def api(path, method="GET", timeout=8):
     """Call the in-emulator control API through the adb forward."""
     url = f"http://127.0.0.1:{PORT}/{path.lstrip('/')}"
@@ -164,6 +181,7 @@ def t_state(a):
         "paused": paused,
         "pid": pid() or None,
         "cpuJunctionC": temp_c(),
+        "fixedSiliconC": fixed_silicon_c(),
         "battery": sh("cat /sys/class/power_supply/battery/capacity").strip(),
         "status": api("/status"),
         "device": api("/device"),
@@ -190,10 +208,13 @@ def t_cooldown(a):
 
 
 def t_boot(a):
-    t = temp_c()
-    ceiling = int(a.get("maxStartC", 70))
+    t = fixed_silicon_c()
+    ceiling = float(a.get("maxStartC", 70))
+    if t < 0:
+        return {"refused": True, "fixedSiliconC": t,
+                "reason": "the fixed-silicon sensor domain is unavailable"}
     if t >= ceiling:
-        return {"refused": True, "cpuJunctionC": t,
+        return {"refused": True, "fixedSiliconC": t,
                 "reason": f"device is {t} C, at or above the {ceiling} C start ceiling. "
                           "Booting now measures the throttle and cooks the device. "
                           "Call thor_cooldown first."}
@@ -211,7 +232,9 @@ def t_boot(a):
        f"--es path '{iso}' --es titleId {title} --es thorDebugBootRequestId mcp "
        f"--ez thorRequireManagedProfile false --ez thorReplaceCustomProfile false")
     ensure_forward()
-    return {"booted": True, "titleId": title, "freshCompile": a.get("freshCompile", True)}
+    return {"booted": True, "titleId": title,
+            "freshCompile": a.get("freshCompile", True),
+            "startFixedSiliconC": t}
 
 
 def t_wait_ready(a):
@@ -220,14 +243,29 @@ def t_wait_ready(a):
     can take ten minutes."""
     limit = int(a.get("timeoutS", 300))
     want = float(a.get("minFps", 10))
+    hard_limit = float(a.get("maxSiliconC", 72))
     waited, last = 0, {}
     while waited < limit:
-        time.sleep(10)
-        waited += 10
+        interval = min(2, limit - waited)
+        time.sleep(interval)
+        waited += interval
+
+        silicon = fixed_silicon_c()
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"ready": False, "waitedS": waited,
+                    "thermalStop": True, "triggerFixedSiliconC": silicon,
+                    "maxSiliconC": hard_limit,
+                    "reason": ("the fixed-silicon sensor domain became unavailable"
+                               if silicon < 0 else
+                               f"fixed silicon reached the {hard_limit} C hard limit"),
+                    "stop": stop}
+
         dev = api("/device")
         last = dev
         if isinstance(dev, dict) and float(dev.get("device", {}).get("fps", 0) or 0) >= want:
-            return {"ready": True, "waitedS": waited, "device": dev}
+            return {"ready": True, "waitedS": waited, "device": dev,
+                    "fixedSiliconC": silicon}
         if not pid():
             return {"ready": False, "waitedS": waited, "error": "process gone",
                     "log": api("/log?match=Fatal&n=10")}
@@ -309,6 +347,7 @@ def t_screenshot(a):
 def t_sample(a):
     """Measure, and REFUSE when the window is not measurable."""
     secs = int(a.get("seconds", 40))
+    hard_limit = float(a.get("maxSiliconC", 72))
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
@@ -327,7 +366,20 @@ def t_sample(a):
 
     c0 = proc_jiffies(p)
     th0 = api(f"/threads?match={a.get('threadMatch', '')}")
-    time.sleep(secs)
+    elapsed = 0
+    while elapsed < secs:
+        interval = min(2, secs - elapsed)
+        time.sleep(interval)
+        elapsed += interval
+        silicon = fixed_silicon_c()
+        if silicon < 0 or silicon >= hard_limit:
+            stop = t_stop({})
+            return {"void": True, "thermalStop": True,
+                    "triggerFixedSiliconC": silicon, "maxSiliconC": hard_limit,
+                    "reason": ("the fixed-silicon sensor domain became unavailable"
+                               if silicon < 0 else
+                               f"fixed silicon reached the {hard_limit} C hard limit"),
+                    "stop": stop}
     c1 = proc_jiffies(p)
     th1 = api(f"/threads?match={a.get('threadMatch', '')}")
     s1 = api("/scene")
@@ -402,13 +454,13 @@ def t_stop(_):
 TOOLS = [
     ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state.", {"type": "object", "properties": {}}, t_state),
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
-    ("thor_boot", "Boot a title. freshCompile (default true) turns the SPU object cache OFF, so a diagnosis is against a fresh compile rather than a replayed object.", {"type": "object", "properties": {"titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}}, "required": ["titleId", "isoPath"]}, t_boot),
-    ("thor_wait_ready", "Wait until the title actually renders, instead of sleeping a fixed time.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}}}, t_wait_ready),
+    ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF.", {"type": "object", "properties": {"titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
+    ("thor_wait_ready", "Wait until the title renders. Poll fixed silicon every two seconds and stop at the hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
     ("thor_press", "Press pad buttons. RESUMES first if paused, presses, then re-pauses, because a paused guest cannot see a button.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
-    ("thor_sample", "Measure process and per-thread CPU. REFUSES while PAUSED, while a movie plays, or while the thermal guard is engaged.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}}}, t_sample),
+    ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
@@ -467,15 +519,17 @@ def main():
             # says what to do about it. A number nobody asked for is the only
             # kind that gets seen in time.
             if isinstance(out, dict):
-                t = temp_c()
-                out["cpuJunctionC"] = t
-                if t >= 90:
-                    out["THERMAL"] = ("CRITICAL %d C. Stop the run. Call thor_stop, then VERIFY "
-                                      "with top, not pidof: force-stop loses to the respawn." % t)
-                elif t >= 80:
-                    out["THERMAL"] = "HOT %d C. Shorten the window and cool between runs." % t
-                elif t >= 70:
-                    out["THERMAL"] = "WARM %d C. Fine for a short window, not a long arm." % t
+                junction = temp_c()
+                silicon = fixed_silicon_c()
+                out["cpuJunctionC"] = junction
+                out["fixedSiliconC"] = silicon
+                if silicon < 0:
+                    out["THERMAL"] = "The fixed-silicon sensor domain is unavailable. Stop the run."
+                elif silicon >= 72:
+                    out["THERMAL"] = ("HARD LIMIT %.1f C fixed silicon. Stop the run and verify "
+                                      "with top, not pidof." % silicon)
+                elif silicon >= 70:
+                    out["THERMAL"] = "WARM %.1f C fixed silicon. Do not start another arm." % silicon
             send({"jsonrpc": "2.0", "id": rid, "result": {
                 "content": [{"type": "text", "text": json.dumps(out, indent=2)}]}})
         elif rid is not None:

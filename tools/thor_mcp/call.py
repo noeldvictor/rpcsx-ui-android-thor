@@ -8,6 +8,9 @@ into the agent session - same code path, no ad-hoc bash reimplementation.
   python tools/thor_mcp/call.py tools/list
   python tools/thor_mcp/call.py thor_state
   python tools/thor_mcp/call.py thor_boot '{"titleId":"BLUS30357"}'
+
+PowerShell can remove the JSON key quotes from a native command argument. Set
+THOR_CALL_ARGS to pass the same JSON without native argument conversion.
 """
 import json, os, subprocess, sys
 
@@ -18,7 +21,10 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__); return 2
     name = sys.argv[1]
-    args = json.loads(sys.argv[2]) if len(sys.argv) > 2 else {}
+    args_text = os.environ.get("THOR_CALL_ARGS")
+    if args_text is None:
+        args_text = sys.argv[2] if len(sys.argv) > 2 else "{}"
+    args = json.loads(args_text)
 
     env = dict(os.environ)
     env.setdefault("THOR_SERIAL", "192.168.1.3:5555")

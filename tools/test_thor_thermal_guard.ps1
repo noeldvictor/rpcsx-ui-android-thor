@@ -192,18 +192,18 @@ if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
 if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$telemetryCommand') {
     throw "The input route does not use the lossless native argument capture path for combined thermal telemetry."
 }
-if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*3') {
-    throw "The input route does not default to three thermal preflight samples."
+if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*1') {
+    throw "The input route does not default to one thermal preflight sample."
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to a two-second thermal preflight interval."
 }
-if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.0') {
-    throw "The input route does not reserve five degrees of launch headroom."
+if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*0\.0') {
+    throw "The input route does not use the exact launch ceiling."
 }
-if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*40\.0' -or
+if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*70\.0' -or
     $inputMacroSource -notmatch '\[double\]\$ThermalPreflightMaxRiseC\s*=\s*2\.0') {
-    throw "The input route does not enforce the cool-silicon launch ceiling and stable preflight trend."
+    throw "The input route does not enforce the below-70 C launch ceiling and stable preflight trend."
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to two-second runtime thermal polling."
