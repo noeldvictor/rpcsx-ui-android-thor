@@ -4018,3 +4018,74 @@ while the device still had heat from the prior run. The 72 C guard stopped it
 at 73.1 C during startup and before the guest slice. The device process is
 stopped. The next run must use the same 64-program route after a longer passive
 cooldown.
+
+## 80. A host pause can lose the startup race
+
+Capture `20260829-015022-thor-input-custom` started below 70 C and used the
+first start-paused implementation. The control pause arrived while the
+emulator was still in the Starting state. The main SPURS service thread then
+entered workload 7 after the pause request. Silicon reached 72.3 C, and the
+guard stopped RPCSX before the planned guest slice.
+
+This result proves that host polling cannot close the startup race. A pause
+request during Starting must not depend on a later state change.
+
+## 81. Startup now applies the pause before it releases guest threads
+
+Commit `6f711245f` adds a one-use startup pause request to `Emulator`. The
+Android Ready gate arms this request before it starts the emulator. The normal
+`FinalizeRunRequest` pause path then adds `dbg_global_pause` before it changes
+the emulator to Running. Boot, kill, and shutdown clear the request.
+
+The Transformers route contract, SPURS pause contract, Git whitespace check,
+and full ARM64 native build passed. Exact ARM64-only debug APK
+`25815E0FE22B2F28BB1EF561A52B0CD04942085694D1E496B9E96F48BE717F87`
+is 116,136,072 bytes. The exact no-launch installation is in:
+
+    20260829-015917-thor-input-strict-cool-gate
+    20260829-015932-transformers-startup-handoff-install
+
+The install gate read 44.1 C. The host and installed APK hashes matched, and
+RPCSX was not active after installation.
+
+## 82. The startup handoff stays idle while it is paused
+
+Capture `20260829-020015-thor-input-custom` reached the new handoff marker and
+entered the Paused state. It recorded zero SPURS `ADDWKL` and `WKLOAD` rows.
+The host route first classified the run as a failure because the pause request
+returned `ok=false, paused=true`. The core did not change state because it was
+already paused. Commit `8676b4646` makes the host accept the reported Paused
+state. The device thermal guard and route contracts pass.
+
+The completed repeat is in `20260829-020201-thor-input-custom`. It held the
+startup handoff for 30 seconds. It recorded one handoff marker and zero SPURS
+workload rows. A three-sample thread snapshot found the PPU, SPU, RSX, and
+other RPCSX threads asleep. The final `top` sample reported 0.0 percent for
+all listed RPCSX threads. Fixed silicon had a 59.0 C startup peak and then
+stayed near 45 C during the paused hold. The screenshot shows the RPCSX pause
+overlay. It is not a rendered-game proof.
+
+## 83. The reserved SPU takes Transformers workload 7
+
+Capture `20260829-020351-thor-input-custom` used one 2.65-second guest slice.
+It reached workload 6, applied the maximum-contention change from five to
+four, and dispatched workload 6 on three SPUs. It paused before workload 7.
+Fixed silicon peaked at 69.1 C, and RPCSX stopped normally.
+
+Capture `20260829-020548-thor-input-custom` did not execute the planned guest
+slice. Its first resume arrived before the Ready gate was armed. The second
+resume performed startup. This is a route timing error, not an HLE result.
+
+Capture `20260829-020727-thor-input-custom` added an explicit Ready checkpoint
+and used a 3.3-second guest slice. The exact workload-6 reserve marker appeared.
+Exactly four SPUs dispatched the real workload-6 image. Workload 7 was created
+0.806 seconds later and dispatched immediately on the reserved SPU 5. The Bink
+shader setup path then started. Fixed silicon peaked at 66.6 C. The maximum
+reported CPU-junction value was 93.2 C, below the 95 C stop limit. RPCSX
+stopped normally. There was no access violation, signal fault, or native fatal
+error.
+
+This result proves the HLE scheduler boundary. It does not yet prove a visible
+Bink frame, gameplay, or sustained 30 FPS. The next route must keep the same
+startup handoff and SPU reserve, use cooled guest slices, and inspect each
+screenshot before it sends any game input.
