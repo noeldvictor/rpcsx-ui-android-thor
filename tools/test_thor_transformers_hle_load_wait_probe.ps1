@@ -62,7 +62,16 @@ $requiredFragments = @(
     '"Thor LOAD IO COMPLETION:',
     '"Thor LOAD DATA 00:',
     '"Thor LOAD DATA 20:',
-    '"Thor LOAD DATA 40:'
+    '"Thor LOAD DATA 40:',
+    'static_cast<u32>(ppu.lr) == 0x00523690u',
+    'const u32 data = static_cast<u32>(ppu.gpr[30]);',
+    's_late_load_wait_dumps.load() < 8',
+    '"Thor LATE LOAD WAIT:',
+    '"Thor LATE LOAD IO STATE:',
+    '"Thor LATE LOAD IO ACTIVE 00:',
+    '"Thor LATE LOAD IO ACTIVE 20:',
+    '"Thor LATE LOAD IO ACTIVE 40:',
+    '"Thor LATE LOAD IO COMPLETION:'
 )
 
 foreach ($fragment in $requiredFragments) {

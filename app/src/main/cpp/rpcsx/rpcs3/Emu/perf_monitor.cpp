@@ -451,6 +451,91 @@ void perf_monitor::operator()()
 								}
 							}
 
+							// Ghidra identifies 0x00523690 as the return from the sleep in
+							// a stream-read loop. The loop waits while the second pending
+							// count at stream +0xc4 is not zero. Record this later stream
+							// and the first active IO completion item. This probe is bounded
+							// and uses the existing PPU census gate.
+							static std::atomic<u32> s_late_load_wait_dumps{0};
+							if (id == 0x1000000u && pc == 0x009e4ba4u &&
+								static_cast<u32>(ppu.lr) == 0x00523690u && s_late_load_wait_dumps.load() < 8)
+							{
+								const u32 data = static_cast<u32>(ppu.gpr[30]);
+
+								if (vm::check_addr(data, 0, 0xd0))
+								{
+									const u32 sample = s_late_load_wait_dumps.fetch_add(1);
+									const u32 range_table = +vm::_ref<be_t<u32>>(data + 0xc8);
+									const u32 io_manager = vm::check_addr(0x019d5410u, 0, 4)
+										? +vm::_ref<be_t<u32>>(0x019d5410u) : 0;
+									const bool io_manager_ok = vm::check_addr(io_manager, 0, 0x0c);
+									const u32 io_workers = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 4) : 0;
+									const u32 io_worker_count = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 8) : 0;
+									const u32 io_worker = io_worker_count && vm::check_addr(io_workers, 0, 4)
+										? +vm::_ref<be_t<u32>>(io_workers) : 0;
+									const bool io_worker_ok = vm::check_addr(io_worker, 0, 0x78);
+
+									perf_log.error("Thor LATE LOAD WAIT: sample=%u data=0x%08x size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u source=%08x %08x %08x",
+										sample + 1, data, +vm::_ref<be_t<u32>>(data + 0x98),
+										+vm::_ref<be_t<u32>>(data + 0xa0), +vm::_ref<be_t<u32>>(data + 0xa4),
+										+vm::_ref<be_t<u32>>(data + 0xa8), +vm::_ref<be_t<u32>>(data + 0xb0),
+										+vm::_ref<be_t<u32>>(data + 0xb8), +vm::_ref<be_t<u32>>(data + 0xc0),
+										+vm::_ref<be_t<u32>>(data + 0xac), +vm::_ref<be_t<u32>>(data + 0xb4),
+										+vm::_ref<be_t<u32>>(data + 0xbc), +vm::_ref<be_t<u32>>(data + 0xc4),
+										range_table, +vm::_ref<be_t<u32>>(data + 0xcc),
+										+vm::_ref<be_t<u32>>(data + 0x88), +vm::_ref<be_t<u32>>(data + 0x8c),
+										+vm::_ref<be_t<u32>>(data + 0x90));
+
+									if (io_worker_ok)
+									{
+										const u32 io_active = +vm::_ref<be_t<u32>>(io_worker + 0x58);
+										const u32 io_active_count = +vm::_ref<be_t<u32>>(io_worker + 0x5c);
+
+										perf_log.error("Thor LATE LOAD IO STATE: sample=%u worker=0x%08x queue=0x%08x/%u/%u active=0x%08x/%u/%u wake=0x%08x refs=%u run=%u sequence=%llu",
+											sample + 1, io_worker,
+											+vm::_ref<be_t<u32>>(io_worker + 0x4c), +vm::_ref<be_t<u32>>(io_worker + 0x50),
+											+vm::_ref<be_t<u32>>(io_worker + 0x54), io_active, io_active_count,
+											+vm::_ref<be_t<u32>>(io_worker + 0x60), +vm::_ref<be_t<u32>>(io_worker + 0x64),
+											+vm::_ref<be_t<u32>>(io_worker + 0x68), +vm::_ref<be_t<u32>>(io_worker + 0x6c),
+											static_cast<unsigned long long>(+vm::_ref<be_t<u64>>(io_worker + 0x70)));
+
+										if (io_active_count && vm::check_addr(io_active, 0, 0x50))
+										{
+											perf_log.error("Thor LATE LOAD IO ACTIVE 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x00), +vm::_ref<be_t<u32>>(io_active + 0x04),
+												+vm::_ref<be_t<u32>>(io_active + 0x08), +vm::_ref<be_t<u32>>(io_active + 0x0c),
+												+vm::_ref<be_t<u32>>(io_active + 0x10), +vm::_ref<be_t<u32>>(io_active + 0x14),
+												+vm::_ref<be_t<u32>>(io_active + 0x18), +vm::_ref<be_t<u32>>(io_active + 0x1c));
+											perf_log.error("Thor LATE LOAD IO ACTIVE 20: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x20), +vm::_ref<be_t<u32>>(io_active + 0x24),
+												+vm::_ref<be_t<u32>>(io_active + 0x28), +vm::_ref<be_t<u32>>(io_active + 0x2c),
+												+vm::_ref<be_t<u32>>(io_active + 0x30), +vm::_ref<be_t<u32>>(io_active + 0x34),
+												+vm::_ref<be_t<u32>>(io_active + 0x38), +vm::_ref<be_t<u32>>(io_active + 0x3c));
+											perf_log.error("Thor LATE LOAD IO ACTIVE 40: sample=%u %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x40), +vm::_ref<be_t<u32>>(io_active + 0x44),
+												+vm::_ref<be_t<u32>>(io_active + 0x48), +vm::_ref<be_t<u32>>(io_active + 0x4c));
+
+											const u32 completion_entries = +vm::_ref<be_t<u32>>(io_active + 0x40);
+											const u32 completion_count = +vm::_ref<be_t<u32>>(io_active + 0x44);
+											const u32 completion_item = completion_count && vm::check_addr(completion_entries, 0, 4)
+												? +vm::_ref<be_t<u32>>(completion_entries) : 0;
+											const bool completion_item_ok = completion_item && vm::check_addr(completion_item, 0, 8);
+											const u32 completion_state = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item) : 0;
+											const bool completion_state_ok = completion_state && vm::check_addr(completion_state, 0, 4);
+
+											perf_log.error("Thor LATE LOAD IO COMPLETION: sample=%u entries=0x%08x/%u item0=0x%08x state0=%s:0x%08x value=0x%08x storage=0x%08x",
+												sample + 1, completion_entries, completion_count, completion_item,
+												completion_state_ok ? "mapped" : "unmapped", completion_state,
+												completion_state_ok ? +vm::_ref<be_t<u32>>(completion_state) : 0,
+												completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item + 4) : 0);
+										}
+									}
+								}
+							}
+
 							// A syscall PC can identify only a shared wrapper. Keep its caller,
 							// stack pointer and first argument in the same low-rate sample.
 							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x",
