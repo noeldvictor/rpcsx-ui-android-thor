@@ -5936,3 +5936,24 @@ rendering progress.
   Correlate the PPU wait with the exact SPU event-send delta before a semantic
   repair. Require correct moving 3D output and a comparable sustained 30 FPS
   measurement before a full-HLE or performance claim.
+- Online source check: Current upstream RPCS3 arms the SPURS wait state and
+  then blocks on the attached event queue. It reads the pending event bits and
+  clears `ppuPendingRecv` only after the queue wakes. This matches the local
+  control flow and gives no basis for a synthetic wake. See the upstream
+  [`cellSpurs.cpp`](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Cell/Modules/cellSpurs.cpp).
+- Event-send check: Current upstream RPCS3 sends the SPU user event to the
+  selected queue. It restores the outbound mailbox and retries only for
+  `CELL_EAGAIN`; it reports other failures such as `CELL_ENOTCONN`. The local
+  event marker records this exact result before the same retry decision. See
+  the upstream
+  [`SPUThread.cpp`](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Cell/SPUThread.cpp).
+- AArch64 comparison: An open upstream AArch64 report correlates
+  `CELL_ENOTCONN` with one SPURS deadlock signature on another game and device.
+  It does not provide a fix, but it makes the event result a required part of
+  this test. See [RPCS3 issue 18828](https://github.com/RPCS3/rpcs3/issues/18828).
+- Paper check: The IBM Cell SDK documentation covers SPU events, mailboxes,
+  DMA ordering, and runtime management. The arXiv Cell papers found in this
+  search discuss task and data scheduling, not SPURS event-flag queue
+  semantics. They do not support an emulator change at this boundary. See the
+  [IBM Cell SDK index](https://public.dhe.ibm.com/linux/cellsdk/docs/) and the
+  [representative arXiv scheduling paper](https://arxiv.org/abs/0910.2324).
