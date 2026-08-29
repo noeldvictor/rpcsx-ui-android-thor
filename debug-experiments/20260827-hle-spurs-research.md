@@ -4347,3 +4347,29 @@ The probe started at 44.5 C. Fixed silicon reached 68.2 C and stayed below the
 HLE frame at the 30 FPS cap. It does not yet prove a sustained 30 FPS interval.
 The next proof must take two or more active FPS samples from one visible
 interval.
+
+## 92. The HLE legal screen holds 29.97 FPS
+
+Capture `20260829-040140-thor-input-custom` tried to remove the earlier
+screenshot delays. This also removed guest-active time. Its first measurement
+was still black at 0.86 FPS. The device guard stopped RPCSX during the second
+screenshot when fixed silicon reached 74.3 C. There was no emulator fault. The
+capture has no speed credit.
+
+Capture `20260829-040452-thor-input-custom` moved the remaining decode work
+into four short active slices with cooling pauses. A fifth short interval took
+two screenshots without a pause between them. The captures occurred at
+04:07:25.358 and 04:07:26.862. Both show the complete Unreal and PhysX legal
+screen with no pause toast, and both report 29.97 FPS. Their common SHA-256 is
+`129CD78B8CDBCDE669EF6E64BF59DE4CE346FC47728D4ED6EBFC7317343212BF`.
+
+The two captures are 1.50 seconds apart in one uninterrupted active interval.
+They prove that the static legal screen holds the 30 FPS cap. The complete log
+contains eight workload-7 event sets, no per-call queue-push warning rows, and
+no redispatch storm. No access violation, verification failure, or native
+fatal error occurred.
+
+The strict gate read 45.3 C. The probe started at 52.6 C, reached 69.5 C, and
+stopped normally. HLE SPURS now produces stable, full-speed startup output.
+The result does not prove title-menu or gameplay speed. The next run must move
+past the legal screen and verify the next interactive state.
