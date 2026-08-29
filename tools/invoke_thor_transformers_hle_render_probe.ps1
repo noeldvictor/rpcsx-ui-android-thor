@@ -16,7 +16,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
-    [string]$RuntimeCensus = "off"
+    [string]$RuntimeCensus = "off",
+    [string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,7 +74,7 @@ $profileProperties = [ordered]@{
 $macroParameters = [ordered]@{
     Serial = $Serial
     Profile = "custom"
-    Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"
+    Macro = $Macro
     GamePath = "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
     TitleId = "BLUS30357"
     ThermalPreflightSamples = 1
