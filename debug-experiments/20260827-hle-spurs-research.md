@@ -4754,3 +4754,47 @@ build passed. Candidate APK
 `A8BBB5EABAB8A73C7DDA4D7CCB48A4AF242137E3C14334310785164C6408FC6B`
 is 116,139,585 bytes. The next cooled Thor run must verify that the second wake
 now returns to dispatch and produces more than three LFQueue ring records.
+
+## 102. The selector crosses the edge gate but needs HLE dispatch
+
+The strict one-sample gate is capture
+`20260829-080821-thor-input-strict-cool-gate`. Fixed silicon was 43.3 C. The
+exact no-launch installation is capture
+`20260829-080834-transformers-selector-return-install`. The expected, host, and
+installed APK hashes matched. RPCSX was not active after installation.
+
+Capture `20260829-080902-thor-input-custom` used the candidate from section 101
+and repeated the no-census direct-Start route. The selector return crossed the
+planned gate. Ring record 2 sent wake 1 at guest time 2:04.274. SPU 1 dispatched
+workload 0 in the next 10 microseconds. The bounded log then reached 24 ring
+records, 16 notifications, eight edge wakes, and 16 edge event-interpreter
+entries and exits. Workload 0 was dispatched again after later wakes. The main
+thread continued to create the FMOD taskset and its status thread at 2:59.206.
+
+This candidate is not stable. Two workers entered the real guest dispatch at
+`0x6c0` and reported access violations that read main-memory address `0x100`.
+Their captured link register was `0x814`, which confirms the section 101 return
+path. Ghidra shows that the real selector and dispatcher use local-store DMA
+metadata. The HLE selector updates the HLE context but does not reproduce all
+of that real-selector local-store state. Therefore, returning to guest dispatch
+can use the system-service image sentinel `0x100` as a main-memory DMA source.
+The continued loading progress does not make these violations acceptable.
+
+Visual inspection of `01-selector-return-boundary.png` shows the Transformers
+loading emblem. Its SHA-256 is
+`FFFAF088F00CEF391512709502A9EB9DA08DFC70AEBB791BCA6BB03521385A33`.
+The image includes a pause notice, so its 30.94 FPS value has no speed credit.
+The route started at 43.7 C. Fixed silicon reached 68.7 C, maximum junction
+reached 92.8 C, and the last fixed-silicon sample was 53.4 C. The macro stopped
+RPCSX normally.
+
+Commit `49e5b271e` completes registered selector callbacks with
+`spursKernelDispatchWorkload` instead of guest dispatch. This keeps the selected
+workload and poll status but uses the existing HLE workload-information copy,
+image handling, register setup, and policy-module entry. Direct host selector
+calls keep their existing control flow. The selector-dispatch contract and the
+five related SPURS contracts passed. The full Android debug build passed.
+Candidate APK
+`5854545F1E179D87B01244002599923E1B2F76A20F5081F67CF3CB20459674A9`
+is 116,139,488 bytes. The next cooled validation must retain the 24-ring
+progress and contain no access violation.
