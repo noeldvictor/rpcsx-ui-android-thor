@@ -139,6 +139,36 @@ assert result["fatal"] == "Verification failed", "The slice loop missed a fatal 
 assert stops == [True], "The slice loop did not use the verified fatal stop."
 
 clock.now = 0.0
+prepare_paused_guest()
+SERVER._matching_log_lines = lambda match, count=1: []
+SERVER.t_wait_cool_paused = lambda _: {
+    "cooled": True,
+    "cooledAtFixedSiliconC": 69.9,
+    "waitedS": 0,
+    "paused": True,
+}
+
+
+def deadline_slice(arguments):
+    clock.sleep(8.0)
+    return {
+        "completed": True,
+        "requestedS": arguments["seconds"],
+        "elapsedS": arguments["seconds"],
+        "startFixedSiliconC": 69.9,
+        "endFixedSiliconC": 69.9,
+        "maxFixedSiliconC": 69.9,
+        "paused": True,
+    }
+
+
+SERVER.t_slice = deadline_slice
+result = SERVER.t_slice_loop({"seconds": 0.5, "maxSlices": 10, "maxHostS": 30})
+assert result["hostDeadlineReached"] is True, "The slice loop overran its host deadline."
+assert result["completedSlices"] == 4, "The host deadline lost completed slice records."
+assert result["hostElapsedS"] == 32.0, "The host deadline reported the wrong elapsed time."
+
+clock.now = 0.0
 calls = prepare_paused_guest()
 use_temperatures([42.0, 45.0, 50.0])
 result = SERVER.t_press({"buttons": "START", "settleS": 0.5})

@@ -490,6 +490,7 @@ def t_slice_loop(a):
 
     duration = max(0.1, min(float(a.get("seconds", 1.0)), 5.0))
     max_slices = max(1, min(int(a.get("maxSlices", 64)), 128))
+    max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 420.0))
     start_ceiling = float(a.get("maxStartC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
     cool_timeout = max(2, min(int(a.get("coolTimeoutS", 120)), 300))
@@ -503,11 +504,14 @@ def t_slice_loop(a):
 
     records = []
     max_silicon = -1.0
+    loop_started = time.monotonic()
 
     def finish(fields):
         fields["completedSlices"] = len(records)
         fields["slices"] = records
         fields["maxFixedSiliconC"] = max_silicon
+        fields["hostElapsedS"] = round(time.monotonic() - loop_started, 3)
+        fields["maxHostS"] = max_host_s
         if pid():
             fields["paused"] = is_paused()
             fields["device"] = api("/device")
@@ -517,10 +521,16 @@ def t_slice_loop(a):
         return fields
 
     for index in range(1, max_slices + 1):
+        remaining_host_s = max_host_s - (time.monotonic() - loop_started)
+        if remaining_host_s <= 2.0:
+            return finish({"markerReached": False,
+                           "hostDeadlineReached": True,
+                           "stopMatch": stop_match})
+
         cool = t_wait_cool_paused({
             "targetC": start_ceiling,
             "maxSiliconC": hard_limit,
-            "timeoutS": cool_timeout,
+            "timeoutS": min(cool_timeout, max(2, int(remaining_host_s))),
         })
         cool_silicon = cool.get(
             "cooledAtFixedSiliconC",
@@ -566,6 +576,11 @@ def t_slice_loop(a):
             "maxFixedSiliconC": part.get("maxFixedSiliconC"),
         }
         records.append(record)
+
+        if time.monotonic() - loop_started >= max_host_s:
+            return finish({"markerReached": False,
+                           "hostDeadlineReached": True,
+                           "stopMatch": stop_match})
 
         if part.get("thermalStop"):
             return finish({"markerReached": False, "thermalStop": True,
@@ -726,7 +741,7 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
-    ("thor_slice_loop", "Run each slice as soon as fixed silicon is below the start ceiling. Keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
+    ("thor_slice_loop", "Run each slice as soon as fixed silicon is below the start ceiling. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "markerEvery": {"type": "integer"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon is below targetC. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),

@@ -40,11 +40,30 @@ def main():
                 else {"jsonrpc":"2.0","id":2,"method":"tools/call",
                       "params":{"name":name,"arguments":args}})
 
-    p = subprocess.run(
-        [sys.executable, os.path.join(HERE, "server.py")],
-        input="".join(json.dumps(r) + "\n" for r in reqs).encode(),
-        capture_output=True, cwd=ROOT, env=env,
-        timeout=int(env.get("THOR_CALL_TIMEOUT", "600")))
+    try:
+        p = subprocess.run(
+            [sys.executable, os.path.join(HERE, "server.py")],
+            input="".join(json.dumps(r) + "\n" for r in reqs).encode(),
+            capture_output=True, cwd=ROOT, env=env,
+            timeout=int(env.get("THOR_CALL_TIMEOUT", "600")))
+    except subprocess.TimeoutExpired:
+        stop_result = "not requested"
+        if name != "thor_stop":
+            stop_reqs = reqs[:2] + [{
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {"name": "thor_stop", "arguments": {}},
+            }]
+            try:
+                stopped = subprocess.run(
+                    [sys.executable, os.path.join(HERE, "server.py")],
+                    input="".join(json.dumps(r) + "\n" for r in stop_reqs).encode(),
+                    capture_output=True, cwd=ROOT, env=env, timeout=120)
+                stop_result = stopped.stdout.decode("utf-8", "replace").strip()
+            except subprocess.TimeoutExpired:
+                stop_result = "the verified stop request also timed out"
+        print("ERROR: Thor controller exceeded its host timeout. "
+              "A verified stop was requested. stop_result=" + stop_result[-1200:])
+        return 1
 
     for line in p.stdout.decode("utf-8", "replace").splitlines():
         line = line.strip()

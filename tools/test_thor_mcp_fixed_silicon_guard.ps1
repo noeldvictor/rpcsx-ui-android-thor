@@ -28,6 +28,9 @@ foreach ($required in @(
     '"cooledAtFixedSiliconC": silicon',
     '"the emulator must stay paused while it cools"',
     'def t_slice_loop(a):',
+    'max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 420.0))',
+    '"hostDeadlineReached": True',
+    '"hostElapsedS"',
     '"includeState": False',
     'for fatal_match in ("Access violation", "Verification failed"):',
     '"Thor: SPURS shutdown completion event mask"',
@@ -71,7 +74,10 @@ if (-not $pressMatch.Success -or
 
 foreach ($required in @(
     'args_text = os.environ.get("THOR_CALL_ARGS")',
-    'args = json.loads(args_text)'
+    'args = json.loads(args_text)',
+    'except subprocess.TimeoutExpired:',
+    '"params": {"name": "thor_stop", "arguments": {}}',
+    'A verified stop was requested.'
 )) {
     if (-not $caller.Contains($required)) {
         throw "The PowerShell-safe Thor caller path is missing '$required'."
