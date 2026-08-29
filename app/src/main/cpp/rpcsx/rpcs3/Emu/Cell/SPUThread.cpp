@@ -4676,7 +4676,7 @@ spu_thread::spu_thread(lv2_spu_group* group, u32 index, std::string_view name, u
 #if defined(ARCH_X64)
 		jit = spu_recompiler_base::make_fast_llvm_recompiler();
 #elif defined(ARCH_ARM64)
-		jit = spu_recompiler_base::make_llvm_recompiler();
+		jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 #else
 #error "Unimplemented"
 #endif
@@ -4742,7 +4742,7 @@ spu_thread::spu_thread(utils::serial& ar, lv2_spu_group* group)
 #if defined(ARCH_X64)
 		jit = spu_recompiler_base::make_fast_llvm_recompiler();
 #elif defined(ARCH_ARM64)
-		jit = spu_recompiler_base::make_llvm_recompiler();
+		jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 #else
 #error "Unimplemented"
 #endif

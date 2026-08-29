@@ -6,6 +6,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $spuHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPURecompiler.h"
 $spuCommonPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUCommonRecompiler.cpp"
 $spuLlvmPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPULLVMRecompiler.cpp"
+$spuThreadPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/Emu/Cell/SPUThread.cpp"
 $jitHeaderPath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/JIT.h"
 $jitSourcePath = Join-Path $repoRoot "app/src/main/cpp/rpcsx/rpcs3/util/JITLLVM.cpp"
 $macroPath = Join-Path $repoRoot "tools/thor_input_macro.ps1"
@@ -17,6 +18,7 @@ $cachePreparePath = Join-Path $repoRoot "tools/invoke_thor_cache_prepare.ps1"
 $spuHeader = Get-Content -LiteralPath $spuHeaderPath -Raw
 $spuCommon = Get-Content -LiteralPath $spuCommonPath -Raw
 $spuLlvm = Get-Content -LiteralPath $spuLlvmPath -Raw
+$spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
 $jitHeader = Get-Content -LiteralPath $jitHeaderPath -Raw
 $jitSource = Get-Content -LiteralPath $jitSourcePath -Raw
 $macroSource = Get-Content -LiteralPath $macroPath -Raw
@@ -33,7 +35,6 @@ function Assert-Contains {
 }
 
 Assert-Contains $spuCommon 'bool spu_native_object_cache_enabled() noexcept' "SPU native-cache parser is missing."
-Assert-Contains $spuCommon 'Emu.GetTitleID() != "BLUS30161"' "SPU native cache is not title-gated."
 Assert-Contains $spuCommon '__system_property_get("debug.rpcsx.thor.spu_native_object_cache", property_value)' "SPU native-cache property is missing."
 Assert-Contains $spuCommon 'RPCSX_THOR_SPU_NATIVE_OBJECT_CACHE' "SPU native-cache environment fallback is missing."
 Assert-Contains $spuCommon 'normalized == "1" || normalized == "on" || normalized == "true" || normalized == "yes"' "SPU native-cache parser does not fail closed to its explicit allow-list."
@@ -44,11 +45,15 @@ Assert-Contains $spuCommon 'm_cache_path = rpcs3::cache::get_ppu_cache();' "SPU 
 if (([regex]::Matches($spuCommon, [regex]::Escape('m_cache_path = rpcs3::cache::get_ppu_cache();'))).Count -ne 2) {
     throw "SPU native-cache activation must refresh the cache path once after the constructor path."
 }
-Assert-Contains $spuCommon 'startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.' "Startup-object activation and runtime-miss isolation are not documented."
-Assert-Contains $spuCommon 'spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects:' "Android native-cache activation evidence is not durable."
+Assert-Contains $spuCommon 'bool spu_runtime_native_object_cache_enabled() noexcept' "Android runtime native-cache gate is missing."
+Assert-Contains $spuCommon '#if defined(__ANDROID__) && defined(ARCH_ARM64)' "Runtime native caching is not restricted to Android ARM64."
+Assert-Contains $spuCommon 'startup and Android ARM64 runtime LLVM objects: cold runtime misses populate the exact cache.' "Runtime native-cache activation is not documented."
+Assert-Contains $spuCommon 'spu_log.always()("Thor SPU native-object cache enabled for startup and Android ARM64 runtime LLVM objects:' "Android native-cache activation evidence is not durable."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(11, use_native_object_cache)' "The startup LLVM interpreter does not receive the native-cache capability."
 Assert-Contains $spuCommon 'spu_recompiler_base::make_llvm_recompiler(0, use_native_object_cache)' "Startup workers do not receive the native-cache capability."
-Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler();' "The runtime optimization worker no longer retains the default uncached compiler."
+Assert-Contains $spuCommon 'compiler = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());' "The runtime optimization worker does not receive the Android native-cache capability."
+Assert-Contains $spuCommon 'return spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());' "A runtime retry compiler does not receive the Android native-cache capability."
+Assert-Contains $spuThread 'jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());' "SPU threads do not receive the Android runtime native-cache capability."
 Assert-Contains $spuCommon 'm_cache_path + "spu-native-v2/"' "SPU native objects are not isolated from debug and guest-program caches."
 Assert-Contains $spuCommon '__system_property_get("debug.rpcsx.thor.spu_cache_worker_limit", property_value)' "Stopped-prewarm SPU worker override is missing."
 Assert-Contains $spuCommon 'RPCSX_THOR_SPU_CACHE_WORKER_LIMIT' "Stopped-prewarm SPU worker environment fallback is missing."

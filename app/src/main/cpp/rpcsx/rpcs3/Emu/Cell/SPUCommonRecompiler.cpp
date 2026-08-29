@@ -555,6 +555,17 @@ bool spu_native_object_cache_enabled() noexcept
 	return normalized == "1" || normalized == "on" || normalized == "true" || normalized == "yes";
 }
 
+bool spu_runtime_native_object_cache_enabled() noexcept
+{
+	// Keep the new runtime-cache scope on the measured Android ARM64 target.
+	// Other targets retain their existing runtime compiler construction.
+#if defined(__ANDROID__) && defined(ARCH_ARM64)
+	return spu_native_object_cache_enabled();
+#else
+	return false;
+#endif
+}
+
 static u32 spu_cache_preload_limit() noexcept
 {
 	const char* value = nullptr;
@@ -1481,9 +1492,9 @@ void spu_cache::initialize(bool build_existing_cache)
 		if (use_native_object_cache)
 		{
 #ifdef __ANDROID__
-			spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+			spu_log.always()("Thor SPU native-object cache enabled for startup and Android ARM64 runtime LLVM objects: cold runtime misses populate the exact cache.");
 #else
-			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects.");
 #endif
 		}
 	}
@@ -3094,7 +3105,7 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 #ifdef ARCH_ARM64
 	const auto func = compile_spu_llvm_with_retry(spu.jit, program, []()
 	{
-		return spu_recompiler_base::make_llvm_recompiler();
+		return spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 	});
 #else
 	const auto func = spu.jit->compile(std::move(program));
@@ -9178,7 +9189,7 @@ struct spu_llvm_worker
 			if (!compiler)
 			{
 				// Postponed initialization
-				compiler = spu_recompiler_base::make_llvm_recompiler();
+				compiler = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 				compiler->init();
 
 				ls.resize(SPU_LS_SIZE / sizeof(be_t<u32>));
@@ -9214,7 +9225,7 @@ struct spu_llvm_worker
 #ifdef ARCH_ARM64
 				const auto target = compile_spu_llvm_with_retry(compiler, func2, []()
 				{
-					return spu_recompiler_base::make_llvm_recompiler();
+					return spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 				});
 #else
 				const auto target = compiler->compile(std::move(func2));

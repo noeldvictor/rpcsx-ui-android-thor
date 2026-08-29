@@ -34,7 +34,7 @@ if ($decision -lt 0 -or $compile -le $decision -or $workers -le $compile) {
 if (([regex]::Matches($spuThread, [regex]::Escape('#elif defined(ARCH_ARM64)'))).Count -lt 2) {
     throw "Both normal and restored ARM64 SPU-thread constructors must be architecture-gated."
 }
-if (([regex]::Matches($spuThread, [regex]::Escape('jit = spu_recompiler_base::make_llvm_recompiler();'))).Count -ne 2) {
+if (([regex]::Matches($spuThread, [regex]::Escape('jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());'))).Count -ne 2) {
     throw "Both normal and restored ARM64 LLVM SPU threads must own the regular recompiler."
 }
 if (([regex]::Matches($spuThread, [regex]::Escape('spu_runtime::g_interpreter(*this, _ptr<u8>(0), nullptr);'))).Count -ne 1) {

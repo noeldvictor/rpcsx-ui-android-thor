@@ -5768,3 +5768,63 @@ rendering progress.
   second of active wait. The low-rate PPU census reports the dispatch delta up
   to eight times while the exact wait wrapper is active. The wait-trace property
   enables this PPU census without the full SPU PC and draw censuses.
+
+## 120. Runtime SPU compilation ends the cool window before the EDGE result
+
+- Status: failed, not-comparable
+- Scope: config-driver, static-analysis
+- Hypothesis: Removing the full SPU PC and draw censuses will keep the device
+  cool long enough to correlate the first active EDGE wait with an event send.
+- Changed files/settings: The run used exact APK SHA-256
+  `37F5270E115874155DDE678410D6C3BE34A2687174B1D9E5725D0999BD550005`,
+  size 116,143,256 bytes. The wait trace was on. The full runtime census was
+  off, and the guest started unpaused. The power state matched the prior run:
+  performance mode two, fan mode four, quick performance/fan on, battery saver
+  off, and GPU maximum 680 MHz.
+- Rollback: The external device guard stopped RPCSX at its hard limit. The
+  failure path force-stopped PID 28833 and pulled the guest log. The final
+  fixed-silicon sample after stop was 46.2 C. Do not launch the Thor again in
+  this hardware round.
+- Thor result: The fresh strict gate passed at 42.1 C and ended at 43.7 C. The
+  exact no-launch install left the process absent. The route gate passed again
+  at 43.3 C. Runtime fixed-silicon samples were 48.2, 58.2, 53.4, 57.4, 65.4,
+  69.1, 70.3, and 72.3 C. The last sample exceeded the 72.0 C hard limit.
+- Event-wait evidence: The PoolThread armed exact flag `0x01e54800`, mask one,
+  AND mode, slot zero, queue `0x8d005600`, and port 17 at guest time 17.435
+  seconds. The pulled log ends at 18.747 seconds. No event, census, wake, or
+  return row appears. The active interval was only about 1.31 seconds. This is
+  much shorter than the known-good 4.55-second boot wait, so it cannot identify
+  a missing notification.
+- Compile evidence: Startup loaded only 64 of 879 oldest SPU programs. It left
+  815 programs for the ordinary uncached runtime-miss path. At the last complete
+  performance sample, RPCSX used 88.5% total CPU and produced five frames in ten
+  seconds, or 0.50 FPS. The exact edgeZlib SPU had only reached PC `0x09514`.
+  The low-overhead trace therefore did not remove the dominant boot pressure.
+- Visual correctness: Not proved. The guard stopped the process before the
+  requested screenshot.
+- FPS/frame-time: No credit. The 0.50 FPS value is a loading and compile window,
+  not moving gameplay.
+- Capture paths: `20260829-142433-thor-input-strict-cool-gate`,
+  `20260829-142452-transformers-edge-event-correlation-install`, and
+  `20260829-142523-thor-input-custom`.
+- Decision: Keep the event correlation probe. Do not change event-flag or
+  loader semantics. Extend the existing exact final-IR native-object cache to
+  Android ARM64 runtime LLVM misses. A cold miss must populate the same
+  corruption-checked, target-keyed cache, and a warm miss must load it. Keep
+  other runtime targets unchanged.
+- Next: Build and verify the runtime-cache successor. A later cool run can
+  populate missing runtime objects. A separate warm cool run must show native
+  object loads, a longer pre-72 C window, and the event dispatch delta before
+  any HLE semantic repair.
+- Windows result: The native-object cache, bounded preload, ARM64 interpreter
+  skip, SPURS event-flag wait, Transformers HLE load-wait, Transformers HLE
+  LFQueue route, and Transformers PPU PC contracts pass. `git diff --check`
+  passes. The normal Android debug build passes. Successor APK SHA-256
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`
+  is 116,143,682 bytes.
+- Successor: Android ARM64 runtime SPU thread compilers, optimization workers,
+  dispatch retries, and worker retries now opt in to the same exact native
+  object cache as startup compilation. Other runtime targets keep the existing
+  uncached compiler construction. The object key and corruption checks are
+  unchanged. The next Thor run must prove actual warm object loads and a longer
+  useful window before the thermal limit. No performance credit applies yet.

@@ -92,6 +92,7 @@ bool spu_reduced_loop_reuse_enabled() noexcept;
 bool spu_dynamic_mfc_fast_enabled() noexcept;
 #endif
 bool spu_native_object_cache_enabled() noexcept;
+bool spu_runtime_native_object_cache_enabled() noexcept;
 
 class spu_item
 {
@@ -144,8 +145,8 @@ class spu_runtime
 	// Debug module output location
 	std::string m_cache_path;
 
-	// Exact final-IR native objects used only by the opted-in startup
-	// interpreter and cached-program preload paths.
+	// Exact final-IR native objects used by opted-in startup and Android ARM64
+	// runtime LLVM compilation paths.
 	std::string m_native_object_cache_path;
 
 public:

@@ -68,4 +68,4 @@ if (-not [regex]::IsMatch($llvmSource, $llvmDiagnosticsPattern) -or
     throw "Android non-debug SPU compile diagnostics are no longer gated while desktop/debug diagnostics remain available."
 }
 
-Write-Output "Thor SPU cache preload contract passed: opt-in oldest-first unique bound, all cached identities retained, normal LLVM miss path preserved, duplicate disk appends suppressed, Android non-debug compile diagnostics pruned."
+Write-Output "Thor SPU cache preload contract passed: opt-in oldest-first unique bound, all cached identities retained, runtime LLVM miss dispatch preserved, duplicate disk appends suppressed, Android non-debug compile diagnostics pruned."

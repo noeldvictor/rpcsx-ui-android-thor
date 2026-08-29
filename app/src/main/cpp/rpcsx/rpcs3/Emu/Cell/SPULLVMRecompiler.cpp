@@ -377,8 +377,8 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// JIT Instance
 	jit_compiler m_jit{{}, jit_compiler::cpu(g_cfg.core.llvm_cpu), jit_compiler::spu_codegen_flag};
 
-	// Startup-only exact native-object cache. Runtime compilation keeps the
-	// original uncached path so gameplay misses never add disk I/O.
+	// Exact native-object cache. Startup compilers opt in on supported targets.
+	// Android ARM64 runtime compilers also opt in when the property is enabled.
 	const bool m_use_native_object_cache;
 
 	// Which spelling the eight SPU branch lowerings use for the guarded fast
