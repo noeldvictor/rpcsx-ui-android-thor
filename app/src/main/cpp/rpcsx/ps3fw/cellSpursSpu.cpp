@@ -1117,6 +1117,30 @@ static void spursAtomicClearSelectedSignal(CellSpurs* spurs, u32 selectedId, boo
 	});
 }
 
+// Claim one current-contention slot without exceeding the workload limit.
+// Selection and the old increment were separate operations. Several SPUs could
+// therefore read the same count, select the same workload, and all increment it.
+static bool spursAtomicTryClaimWorkload(SpursKernelContext* ctxt, u32 selectedId) noexcept
+{
+	if (selectedId >= CELL_SPURS_MAX_WORKLOAD)
+	{
+		return false;
+	}
+
+	const u8 maxContention = ctxt->spurs->wklMaxContention[selectedId].load();
+	bool claimed = false;
+	vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + selectedId)
+		.atomic_op([&](u8& current)
+		{
+			if (current < maxContention)
+			{
+				current++;
+				claimed = true;
+			}
+		});
+	return claimed;
+}
+
 static bool thor_hle_once(std::atomic<u32>& bits, u32 spuNum) noexcept
 {
 	const u32 bit = 1u << (spuNum & 31);
@@ -1148,6 +1172,7 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 	u32 wklSelectedId;
 	u32 pollStatus;
+	bool contentionClaimed = false;
 
 	// vm::reservation_op(vm::cast(ctxt->spurs.addr()), 128, [&]()
 	{
@@ -1328,6 +1353,22 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 							pollStatus |= wklFlag ? CELL_SPURS_MODULE_POLL_STATUS_FLAG : 0;
 						}
 					}
+				}
+			}
+
+			// Enforce max contention in the same atomic operation that claims the
+			// slot. A failed claimant stays in the system service and leaves the
+			// workload signal available for a later selector pass.
+			if (!isPoll && thor_contention_atomic_fix() &&
+				wklSelectedId < CELL_SPURS_MAX_WORKLOAD &&
+				!ctxt->wklLocContention[wklSelectedId])
+			{
+				contentionClaimed = spursAtomicTryClaimWorkload(ctxt, wklSelectedId);
+
+				if (!contentionClaimed)
+				{
+					wklSelectedId = CELL_SPURS_SYS_SERVICE_WORKLOAD_ID;
+					pollStatus = 0;
 				}
 			}
 
@@ -1593,8 +1634,11 @@ bool spursKernel1SelectWorkload(spu_thread& spu)
 
 					if (wklSelectedId < CELL_SPURS_MAX_WORKLOAD && !ctxt->wklLocContention[wklSelectedId])
 					{
-						vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + wklSelectedId)
-							.atomic_op([](u8& v) { if (v < 8) v++; });
+						if (!contentionClaimed)
+						{
+							vm::_ref<atomic_t<u8>>(ctxt->spurs.addr() + OFFSET_OF(CellSpurs, wklCurrentContention) + wklSelectedId)
+								.atomic_op([](u8& v) { if (v < 8) v++; });
+						}
 						ctxt->wklLocContention[wklSelectedId] = 1;
 						thor_hold_wkl(wklSelectedId, ctxt->spuNum);
 					}
