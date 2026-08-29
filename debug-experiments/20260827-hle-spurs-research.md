@@ -5255,13 +5255,15 @@ rendering progress.
 - Host verification: Python syntax, the mocked guarded-slice state machine, the
   two-second blocked-telemetry deadline-pause case, the fixed-silicon source
   contract, the cellSync LFQueue log budget, and both SPURS log-budget contracts
-  passed. `git diff --check` passed.
+  passed. `git diff --check` passed. The normal Android debug build passed.
+  Candidate APK SHA-256
+  `0843DE9B58717B0F8F4648FB1A7CF995A49236BE43F77AA411639C56845911AB`
+  is 116,142,104 bytes.
 - Decision: Accept the SPURS log cleanup as a log-volume result. Reject the run
   for HLE and speed proof. Keep the hard stop. Do not run the Thor again in this
   hardware round.
-- Next: Build the deadline-pause and cellSync-log successor. In a later
-  independently cool round, install the exact APK, start below 70 C, stop at
-  72 C, and require the controller to report a pause request near each requested
-  slice deadline. Continue to taskset `0x1158d800` only if that timing contract
-  holds. Require a correct 3D image and a comparable 30 FPS gameplay window
-  before any full-HLE or performance claim.
+- Next: In a later independently cool round, install the exact successor APK,
+  start below 70 C, stop at 72 C, and require the controller to report a pause
+  request near each requested slice deadline. Continue to taskset `0x1158d800`
+  only if that timing contract holds. Require a correct 3D image and a
+  comparable 30 FPS gameplay window before any full-HLE or performance claim.
