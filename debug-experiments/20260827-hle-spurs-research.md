@@ -5040,3 +5040,43 @@ accumulate guest time until the shutdown-completion marker while each slice
 starts below 70 C and the hard limit stays 72 C. The next required proof is the
 helper wake, join return, workload removal, safe taskset reuse, and later
 rendering progress.
+
+## 108. Taskset join reaches the shared-state race
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: The event-helper repair will deliver the shutdown notification
+  and let the rendering thread complete taskset join.
+- Changed files/settings: The installed candidate was unchanged at commit
+  `02b5866b2`. It used HLE `libsre`, the HLE SPURS kernel, profile preservation,
+  the current SPURS repair stack, and start-paused guarded slices. The yield
+  fast path and queue-publication experiment stayed off.
+- Rollback: No device state change remains. RPCSX was stopped and all 52
+  nonempty `debug.rpcsx.thor.*` properties were cleared.
+- Windows result: Not run. The failure boundary is in the Android HLE route.
+- Thor result: The helper entered. The rendering taskset reached
+  `cellSpursShutdownTaskset` and `cellSpursJoinTaskset` at guest time 1:46.715.
+  No shutdown-completion mask or workload removal followed. The rendering
+  thread remained in the workload-shutdown semaphore wait. The caller exceeded
+  its 1,800-second host timeout, and the verified stop left no PID.
+- Visual correctness: Not proved. No screenshot was taken. Draw calls stopped
+  at 154 while flips continued to 51,720.
+- FPS/frame-time: No credit. The result is not comparable and does not prove
+  frame delivery.
+- Capture paths: `20260829-100509-thor-input-strict-cool-gate` and
+  `20260829-103802-transformers-slice-loop-host-timeout`.
+- Decision: Source inspection indicates a race in the shared 128-byte workload
+  state line. Concurrent SPU read-modify-write operations can restore a cleared
+  status bit. This can prevent the final transition to removable and suppress
+  the shutdown event. Commit `ecf235d67` puts the request, status, state, and
+  shutdown-event updates under the guest reservation. This is a host-only
+  successor, not a proved fix. Commit `a2cfd2c09` makes the cold-start decision
+  use one fixed-silicon sample: below 70 C starts immediately, and 70 C or more
+  refuses. Commit `f644623ae` bounds the slice loop to 420 host seconds and
+  requests a verified stop if the caller itself times out.
+- Next: In one later independent hardware round, install exact debug APK
+  `756978BFFD348CA7553A38BB690BC4A28880EE19C5C984BF6568CDD91748CB2B`,
+  size 116,142,297 bytes. Start when fixed silicon is below 70 C. Stop at 72 C.
+  Require the shutdown mask, helper wake, join return, workload removal, safe
+  taskset reuse, later real frames, and a correct 30 FPS scene before any HLE
+  or performance claim.
