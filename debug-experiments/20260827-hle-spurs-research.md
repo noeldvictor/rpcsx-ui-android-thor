@@ -4891,3 +4891,63 @@ taskset-join run. The next less-than-70 C Thor run must show the event-helper
 entry, a shutdown-completion mask, join return, old-workload removal, and safe
 taskset creation at the reused address. Rendering progress after that boundary
 is the required result.
+
+## 105. The event helper starts, but the hard guard stops before shutdown
+
+The strict one-sample gate is capture
+`20260829-091613-thor-input-strict-cool-gate`. Fixed silicon was 42.1 C, so it
+passed the less-than-70 C start rule. The exact no-launch installation is
+capture `20260829-091646-transformers-spurs-shutdown-completion-install`. The
+expected, host, and installed APK hashes matched
+`6D35D17466B099B668D3B9366BD46AD98153D30D30DBDA78C6255248EDF1F21D`.
+RPCSX was not active after installation.
+
+This run used `tools/thor_mcp/call.py` and kept profile replacement off. It used
+the explicit HLE property stack with the selector, contention, taskset, queue,
+task-attribute, edge-event, and two-SPU-reserve repairs on. The yield fast path
+and queue publication experiment stayed off. The run used the installed SPU
+object cache and enabled the draw, PUT, and PPU-PC censuses.
+
+The run proved the first half of commit `4b4d5f82b` on Thor. The main thread
+created and started `SpursHdlr1` at guest time 23.163 seconds. The helper entered
+`event_helper_entry` at once and waited on event queue `0x8d005200`, SPU port
+16. The log has no helper-creation error, fatal error, access violation,
+verification failure, or native crash.
+
+The short active window reached workload 7, queue ring record 576, and bounded
+workload-dispatch record 1408. The draw census reached 840 flips and 13 draws.
+The main thread continued memory allocation through guest time 26.763 seconds.
+This is startup progress only. No screenshot was taken and no FPS value has
+credit.
+
+The run did not reach taskset shutdown. It has no shutdown-completion mask,
+`cellSpursJoinTaskset` call, join return, workload removal, or second taskset
+creation. Therefore, shutdown delivery and the complete join repair remain
+unproved.
+
+The external fixed-silicon guard read 74.7 C on its first runtime sample and
+force-stopped RPCSX at the 72 C hard limit. The stopped-run capture is
+`20260829-092025-transformers-shutdown-helper-thermal-stop`. The maintained
+internal guard also reported a 91 C CPU-junction sample, but the junction domain
+does not decide the fixed-silicon gate. The controlled stop left no PID. The
+harness stop found zero RPCSX rows in `top`, and CPU junction then read 51 C.
+All `debug.rpcsx.thor` properties were cleared after the run.
+
+This attempt is `thermal-stop-before-shutdown`, `not-comparable`, and
+`route-tooling`. It has no render, FPS, gameplay, or full-HLE credit.
+
+The attempt also found two harness defects. PowerShell removed JSON key quotes
+from the caller's native argument. Commit `b7451cef3` adds the
+`THOR_CALL_ARGS` environment path, changes the cold gate to fixed silicon, and
+adds a two-second 72 C guard to ready waits and CPU samples. Commit `0534106e9`
+adds guarded input, bounded 0.1-to-5-second guest slices, and paused cooling.
+Each slice starts only below 70 C, polls fixed silicon every 0.25 seconds, stops
+at 72 C, and ends paused. Source contracts, Python syntax, and mocked safe-slice,
+hard-stop, cool-wait, and input state-machine tests passed.
+
+Do not run another continuous HLE wait. The next independently cool Thor round
+must boot with profile replacement off and use the guarded pause/slice/cool
+loop. It must accumulate enough guest time to reach shutdown while every active
+slice starts below 70 C and stays below 72 C. The required proof remains the
+shutdown mask, helper wake, join return, workload removal, safe taskset reuse,
+and later rendering progress.
