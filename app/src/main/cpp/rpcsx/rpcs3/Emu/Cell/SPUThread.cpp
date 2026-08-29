@@ -9932,12 +9932,15 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				if (get_thor_fmod_event_wait_trace())
 				{
 					const auto fmod_wait = thor::get_fmod_event_wait_snapshot();
+					const u32 current_taskset = static_cast<u32>(+_ref<u64>(0x27b8));
 
-					if (fmod_wait.active && queue && queue->id == fmod_wait.event_queue)
+					if (fmod_wait.active && current_taskset == fmod_wait.taskset &&
+						spup == fmod_wait.event_port)
 					{
 						const u64 dispatch_time_us = get_system_time();
+						const u32 queue_id = queue ? queue->id : 0;
 						const u32 dispatch_total = thor::fmod_event_dispatch(spup, res + 0u,
-							queue->id, dispatch_time_us);
+							queue_id, dispatch_time_us);
 						const u64 active_age_us = fmod_wait.arm_time_us && dispatch_time_us >= fmod_wait.arm_time_us
 							? dispatch_time_us - fmod_wait.arm_time_us : 0;
 						static std::atomic<u32> s_fmod_wait_event_count{0};
@@ -9947,11 +9950,12 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 						{
 							spu_log.error("Thor FMOD EFWAIT EVENT #%u: sequence=%u active_age_us=%llu "
 								"spu=0x%x index=%u pc=0x%05x dispatch=%u/%u delta=%u "
-								"port=%u data0=0x%06x data1=0x%08x result=0x%08x queue=0x%08x",
+								"taskset=0x%08x port=%u data0=0x%06x data1=0x%08x "
+								"result=0x%08x queue=0x%08x expected_queue=0x%08x",
 								n, fmod_wait.sequence, static_cast<unsigned long long>(active_age_us),
 								id, index, pc, dispatch_total, fmod_wait.event_dispatch_at_arm,
-								dispatch_total - fmod_wait.event_dispatch_at_arm, spup,
-								value & 0x00ffffff, data, res + 0u, queue->id);
+								dispatch_total - fmod_wait.event_dispatch_at_arm, current_taskset, spup,
+								value & 0x00ffffff, data, res + 0u, queue_id, fmod_wait.event_queue);
 						}
 					}
 				}

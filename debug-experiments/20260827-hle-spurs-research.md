@@ -6924,3 +6924,29 @@ rendering progress.
   appears, continue to the next startup boundary. Require moving 3D output
   and a comparable sustained 30 FPS measurement before a full-HLE or speed
   claim.
+
+## 140. The FMOD event probe records wrong queue states
+
+- Status: proposed, route-tooling, not-comparable
+- Scope: HLE-SPURS, FMOD, event-delivery
+- Hypothesis: A missing or wrong SPU port connection can prevent the FMOD
+  event from reaching the PPU queue.
+- Changed files/settings: The default-off FMOD probe now identifies the send
+  by the live taskset and port. It records the send result and both the actual
+  and expected queue IDs. It also records a null queue as ID zero. This makes
+  a failed connection visible instead of filtering it out.
+- Rollback: Set `debug.rpcsx.thor.fmod_event_wait_trace` to `0`. The normal
+  event path is unchanged when the probe is off.
+- Windows result: Not run. This is an Android route diagnostic.
+- Thor result: Not run. The Thor stayed stopped after experiment 139.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused Transformers HLE route contract and
+  `git diff --check` passed. The full ARM64 debug APK build passed in 1 minute
+  16 seconds. The host APK is 116,147,159 bytes. Its SHA-256 is
+  `73DA69ADC0359F54C270CBD7ABE166C2728074FAFE5F9FF9FBB7E5182A824927`.
+- Decision: Keep the wider diagnostic match. It changes only default-off
+  logging and makes the next device run conclusive for queue connection.
+- Next: In a separate cool round, install the exact APK and run one bounded
+  HLE route. Stop at `Thor FMOD EFWAIT RETURN #0`. If the return marker does
+  not appear, use the send result and queue IDs to repair the exact boundary.
