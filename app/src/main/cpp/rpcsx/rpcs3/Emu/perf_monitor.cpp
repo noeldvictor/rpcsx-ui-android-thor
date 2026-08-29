@@ -280,11 +280,12 @@ void perf_monitor::operator()()
 
 							// Ghidra identifies 0x005a3298 as a staged title loader. The
 							// sleep at 0x009e4ba4 returns to 0x005a3350 once per loop.
-							// Record three object snapshots, so a later run can show the
-							// exact stage and backing stream that do not finish.
+							// Record a bounded set of object snapshots through the post-Start
+							// transition. The first three samples occur before Transformers
+							// enters the loading screen. They cannot identify the stopped request.
 							static std::atomic<u32> s_load_wait_dumps{0};
 							if (id == 0x1000000u && pc == 0x009e4ba4u &&
-								static_cast<u32>(ppu.lr) == 0x005a3350u && s_load_wait_dumps.load() < 3)
+								static_cast<u32>(ppu.lr) == 0x005a3350u && s_load_wait_dumps.load() < 18)
 							{
 								const u32 object = static_cast<u32>(ppu.gpr[29]);
 

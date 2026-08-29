@@ -15,7 +15,7 @@ $requiredFragments = @(
     'object + 0x58c',
     'object + 0x594',
     'object + 0x598',
-    's_load_wait_dumps.load() < 3',
+    's_load_wait_dumps.load() < 18',
     '"Thor LOAD SOURCE:',
     'data_vtable + 0x3c',
     'data_vtable + 0x50',
