@@ -4282,3 +4282,31 @@ runtime sample was 71.1 C. RPCSX stopped normally. This is a scheduler
 correctness result, not a visible-frame or speed result. The next cooled proof
 must use enough short guest slices to pass the first Bink frames before it
 measures FPS.
+
+## 90. The repaired contention route reaches an active legal frame
+
+Capture `20260829-034741-thor-input-custom` repeated the four-slice cadence
+from section 86. Each screenshot request came before its pause request. The
+first two images were black. The third image still contained the pause toast.
+The fourth image showed the Unreal and PhysX legal screen with no pause toast.
+Its overlay reported 13.69 FPS. This is the first active, visible frame after
+the atomic contention and idle-release repairs.
+
+The strict frame check rejected the dark legal frame because 91.2 percent of
+its pixels were near black. Visual inspection confirms the two logos and the
+copyright text. The image had 382 distinct colors and a size of 156,081 bytes.
+This is a valid render proof, but one frame at 13.69 FPS is not a sustained
+speed proof.
+
+The complete log contains three idle-ready rows. All three belong to workload
+0 during startup. Their shared contention values decreased from 4 to 3 to 2
+while one task remained active. Workload 7 has no idle redispatch storm. Four
+workload-7 event sets occurred, and RSX registered three descriptor sets. The
+four guest diagnostics show active SPURS PCs. No access violation,
+verification failure, or native fatal error occurred.
+
+The fixed-silicon start was 42.9 C, and the maximum runtime sample was 69.9 C.
+The runtime guard did not fire, and RPCSX stopped normally. The log contains
+981 `cellSpursQueuePushBody` warning rows during 12.6 seconds of guest time.
+The next change must remove this hot-path warning cost before another active
+FPS measurement.
