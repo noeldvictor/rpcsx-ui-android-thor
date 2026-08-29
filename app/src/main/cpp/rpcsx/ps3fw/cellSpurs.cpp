@@ -72,13 +72,14 @@ static bool thor_task_attr_fix() noexcept
 #endif
 }
 
-// Keep one SPU free for the later Bink taskset in Transformers.
+// Keep two SPUs free for the later Bink work in Transformers.
 //
 // BLUS30357 adds the edgeZlib workload with a permitted range of one to five
 // SPUs. Some HLE boots allocate all five free SPUs before the Bink workload
 // exists. The new workload then has a pending signal but no SPU can select it.
-// A four-SPU allocation is also within the title's requested range and is the
-// allocation that reached the legal frame in the device capture.
+// A four-SPU allocation lets the Bink taskset start, but it can replace the
+// resident edge taskset. A three-SPU allocation keeps capacity for both
+// tasksets and is within the title's requested range.
 //
 //   debug.rpcsx.thor.transformers_spu_reserve = 1
 static bool thor_transformers_spu_reserve() noexcept
@@ -2758,12 +2759,12 @@ s32 _spurs::add_workload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<u32>
 	}
 
 	// This exact edgeZlib workload can take every SPU that is not in the first
-	// taskset. Keep one SPU available for the Bink taskset that the render thread
-	// adds later. Do not change any other title or workload.
+	// taskset. Keep two SPUs available for the Bink taskset and its downstream
+	// edge taskset. Do not change any other title or workload.
 	if (thor_transformers_spu_reserve() && wnum == 6 && size == 0x4000 && minContention == 1 && maxContention == 5)
 	{
-		maxContention = 4;
-		cellSpurs.notice("Thor Transformers SPU reserve: workload 6 max contention changed from 5 to 4");
+		maxContention = 3;
+		cellSpurs.notice("Thor Transformers SPU reserve: workload 6 max contention changed from 5 to 3");
 	}
 
 	auto& spurs_res = vm::reservation_acquire(spurs.addr());

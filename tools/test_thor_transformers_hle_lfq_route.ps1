@@ -192,7 +192,7 @@ $requiredTransformersSpuReserveFragments = @(
     'wnum == 6',
     'size == 0x4000',
     'minContention == 1 && maxContention == 5',
-    'maxContention = 4;'
+    'maxContention = 3;'
 )
 
 foreach ($fragment in $requiredTransformersSpuReserveFragments) {
