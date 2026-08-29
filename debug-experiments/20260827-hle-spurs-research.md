@@ -5339,3 +5339,74 @@ rendering progress.
   samples. Use the completion word and active-entry fields to select the next
   semantic repair. Do not claim full HLE or 30 FPS until a correct moving 3D
   scene and a comparable sustained measurement both pass.
+
+## 113. The late loader completion stays at one
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: The late-load probe will show whether the active IO worker waits
+  on a backend completion word or on a later stream-state update.
+- Changed files/settings: The run used candidate APK SHA-256
+  `7485031E3F00399F6133A09727B167EE9C5825D902B4CE9B4F0AC99E41D2AD32`,
+  size 116,142,628 bytes. It contains commit `204c2bac8`. The exact no-launch
+  install passed. The run used HLE `libsre`, the HLE SPURS kernel, the firmware
+  LFQueue path, atomic task selection, the edge event interpreter, the task
+  attribute repair, the Transformers SPU reserve, the cached PPU time repair,
+  and all bounded censuses. The guest started paused.
+- Rollback: One first wrapper call failed before launch because a
+  device-telemetry macro did not have a stop token. The cleanup cleared 49
+  properties and found zero remaining values. After the successful run, RPCSX
+  was stopped. `pidof` was empty, `top` had zero RPCSX rows, and the process
+  was quiet. The cleanup cleared 50 properties and found zero remaining
+  values. The final fixed-silicon sample was 50.2 C.
+- Windows result: The LFQueue route contract, the late-load contract, and
+  `git diff --check` passed. The normal Android debug build passed. Successor
+  APK SHA-256 `700CBA11F366281AD3992ADE081C0F8DDB1CA1C5A29DE80447E14DAD544AC041`
+  is 116,142,809 bytes and is built from commit `05939113d`.
+- Thor result: The one-sample gate passed at 43.3 C fixed silicon. The initial
+  paused state was 51.4 C. The controller completed 19 one-second slices and
+  reached the second late completion sample. Every deadline pause request was
+  at 1.000 to 1.016 seconds. The maximum fixed-silicon value was 71.1 C, and
+  the final paused value was 59.4 C. The host duration was 80.125 seconds.
+  No thermal stop occurred.
+- HLE evidence: Four samples over 30 seconds kept the same active IO entry and
+  the same first completion item. The active list had four completion items.
+  The first state word stayed mapped at `0x11301d10` with value `1`. The stream
+  stayed at request `9212500+1018348`; its second cache was pending, and the
+  worker queue was empty. The edgeZlib task processed earlier LFQueue jobs and
+  returned 32 recorded event results. At the late boundary, the taskset state
+  was `running=ready=signalled=0x80000000`, with one running task and shared
+  contention one. A second SPU selected task ID 128 because task 0 was already
+  running. This state does not yet prove whether the running task is stuck in
+  guest code or whether its completion store is missing.
+- Ghidra result: Existing verified BLUS30357 analysis shows that the active IO
+  worker removes a completion item only when its state word becomes zero. The
+  loader creates one state word per chunk, sets it to one, and passes it in the
+  backend job record. Forcing the word to zero would bypass real work and is
+  not an acceptable repair.
+- Probe result: The enabled edgeZlib PC census wrote no samples because it used
+  its 64-sample quota during startup. The monitor ticks every 0.5 second, so
+  the old code stopped after 32 seconds. The title loaded the edgeZlib task at
+  about 46.4 seconds. Commit `05939113d` now increments the quota only after
+  the edgeZlib local-store signature matches. The probe remains bounded to 64
+  matching samples and does not change guest state.
+- Visual correctness: Partial only. The paused image shows the PhysX and Unreal
+  startup legal screen. Draw calls stopped at four. It does not show correct
+  gameplay or moving 3D output.
+- FPS/frame-time: No credit. The paused overlay showed 29.71 FPS. The guest was
+  paused on a startup screen, so this number is not a gameplay measurement.
+- Capture paths: `20260829-120954-thor-input-strict-cool-gate`,
+  `20260829-121016-transformers-late-load-completion-install`,
+  `20260829-121124-thor-input-custom`, and
+  `20260829-121507-transformers-late-load-completion-marker`.
+- Decision: Keep the late-load probe and the current semantic repair stack.
+  Do not change the completion word. Reject this run for full HLE, gameplay,
+  and speed proof. Accept only the corrected PC census as the offline
+  successor.
+- Next: In a later independently cool Thor round, install exact successor APK
+  `700CBA11F366281AD3992ADE081C0F8DDB1CA1C5A29DE80447E14DAD544AC041`.
+  Start immediately below 70 C and stop at 72 C. Require stable late-load
+  completion samples and matching `Thor EDGE PC` samples. Map the stable guest
+  PC in the saved legal edgeZlib image before a semantic repair. Do not claim
+  full HLE or 30 FPS until a correct moving 3D scene and a comparable sustained
+  measurement both pass.
