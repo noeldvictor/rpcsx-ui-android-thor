@@ -18,6 +18,12 @@ $ppuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Ce
 $ppuThread = Get-Content -LiteralPath $ppuThreadPath -Raw
 $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSpurs.cpp"
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
+$androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
+$android = Get-Content -LiteralPath $androidPath -Raw
+$systemHeaderPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\System.h"
+$systemHeader = Get-Content -LiteralPath $systemHeaderPath -Raw
+$systemPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\System.cpp"
+$system = Get-Content -LiteralPath $systemPath -Raw
 
 $requiredFragments = @(
     '[int]$ThermalPreflightSamples = 1',
@@ -73,6 +79,7 @@ $requiredRenderProbeFragments = @(
     '[string]$EdgeEventInterp = "on"',
     '[string]$TaskAttrFix = "on"',
     '[string]$SpuReserve = "on"',
+    '[string]$StartPaused = "on"',
     '[string]$YieldFastPath = "off"',
     '[string]$PpuCachedRtimeFix = "on"',
     '[string]$SpursProbe = "off"',
@@ -88,6 +95,7 @@ $requiredRenderProbeFragments = @(
     '"debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.task_attr_fix" = if ($TaskAttrFix -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_spu_reserve" = if ($Mode -eq "HLE" -and $SpuReserve -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.start_paused" = if ($StartPaused -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.yield_fast_path" = if ($YieldFastPath -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.ppu_cached_rtime_fix" = if ($PpuCachedRtimeFix -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }',
@@ -104,6 +112,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_spu_reserve" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.start_paused" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
@@ -192,6 +201,37 @@ foreach ($fragment in $requiredTransformersSpuReserveFragments) {
 
 if ($cellSpurs.Contains('pm.addr() == 0x02390000')) {
     throw "The Transformers SPU reserve must not depend on a variable policy-image address."
+}
+
+$requiredStartPausedFragments = @(
+    'static std::atomic<bool> g_thor_start_paused_ready{false};',
+    '"debug.rpcsx.thor.start_paused", false',
+    'Emu.SetForceBoot(!startPaused);',
+    'Emu.SetPreventAutostart(startPaused);',
+    'result == game_boot_result::no_errors && Emu.IsReady()',
+    '"Thor start-paused gate is ready."',
+    '"Thor start-paused gate released."',
+    'Emu.Run(true);'
+)
+
+foreach ($fragment in $requiredStartPausedFragments) {
+    if (-not $android.Contains($fragment)) {
+        throw "The Thor start-paused gate is missing: $fragment"
+    }
+}
+
+$requiredAutostartFragments = @(
+    'bool m_prevent_autostart = false;',
+    'void SetPreventAutostart(bool prevent_autostart);',
+    'void Emulator::SetPreventAutostart(bool prevent_autostart)',
+    'm_prevent_autostart = prevent_autostart;',
+    'const bool autostart = !std::exchange(m_prevent_autostart, false) &&'
+)
+
+foreach ($fragment in $requiredAutostartFragments) {
+    if (-not ($systemHeader.Contains($fragment) -or $system.Contains($fragment))) {
+        throw "The one-shot autostart control is missing: $fragment"
+    }
 }
 
 foreach ($fragment in $requiredEventCensusFragments) {

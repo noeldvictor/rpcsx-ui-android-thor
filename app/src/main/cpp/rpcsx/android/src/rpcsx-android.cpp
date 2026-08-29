@@ -108,6 +108,7 @@ static std::atomic<ANativeWindow *> g_native_window;
 static std::atomic<bool> g_thor_fast_forward_enabled{false};
 static std::atomic<int> g_thor_fast_forward_previous_clocks_scale{100};
 static std::atomic<bool> g_home_menu_exit_game_selected{false};
+static std::atomic<bool> g_thor_start_paused_ready{false};
 static constexpr int k_thor_fast_forward_clocks_scale = 200;
 
 extern std::string g_android_executable_dir;
@@ -2494,16 +2495,33 @@ extern "C" bool _rpcsx_collectGameInfo(JNIEnv *env, std::string_view rootDir,
   return true;
 }
 
-extern "C" void _rpcsx_shutdown() { Emu.Kill(); }
+extern "C" void _rpcsx_shutdown() {
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.Kill();
+}
 
 extern "C" int _rpcsx_boot(std::string_view path_) {
-  Emu.SetForceBoot(true);
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  const bool startPaused = android_property_enabled(
+      "debug.rpcsx.thor.start_paused", false);
+
+  Emu.SetForceBoot(!startPaused);
+  Emu.SetPreventAutostart(startPaused);
+
   std::string path = std::string(path_);
   while (path.ends_with('/')) {
     path.pop_back();
   }
 
-  return static_cast<int>(Emu.BootGame(path, "", false, cfg_mode::custom));
+  const auto result = Emu.BootGame(path, "", false, cfg_mode::custom);
+  if (startPaused) {
+    if (result == game_boot_result::no_errors && Emu.IsReady()) {
+      g_thor_start_paused_ready.store(true, std::memory_order_release);
+      rpcsx_android.always()("Thor start-paused gate is ready.");
+    }
+  }
+
+  return static_cast<int>(result);
 }
 
 extern "C" int _rpcsx_getState() {
@@ -2516,8 +2534,21 @@ extern "C" bool _rpcsx_consumeHomeMenuExitGameSelected() {
   return g_home_menu_exit_game_selected.exchange(false,
                                                  std::memory_order_acq_rel);
 }
-extern "C" void _rpcsx_kill() { Emu.Kill(); }
-extern "C" void _rpcsx_resume() { Emu.Resume(); }
+extern "C" void _rpcsx_kill() {
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.Kill();
+}
+extern "C" void _rpcsx_resume() {
+  if (g_thor_start_paused_ready.exchange(false,
+                                         std::memory_order_acq_rel) &&
+      Emu.IsReady()) {
+    rpcsx_android.always()("Thor start-paused gate released.");
+    Emu.Run(true);
+    return;
+  }
+
+  Emu.Resume();
+}
 
 extern "C" void _rpcsx_openHomeMenu() {
   // Named so a log can tell this apart from the other two ways the menu opens:
@@ -2704,8 +2735,19 @@ extern "C" std::string _rpcsx_deviceInfo() {
 // keeps running, and by the time a button is pressed the screen has moved on.
 // That is a contamination source, not a convenience. Pause, look, decide,
 // resume, press.
-extern "C" bool _rpcsx_pause() { return Emu.Pause(); }
-extern "C" bool _rpcsx_isPaused() { return Emu.IsPaused(); }
+extern "C" bool _rpcsx_pause() {
+  if (g_thor_start_paused_ready.load(std::memory_order_acquire) &&
+      Emu.IsReady()) {
+    return true;
+  }
+
+  return Emu.Pause();
+}
+extern "C" bool _rpcsx_isPaused() {
+  return (g_thor_start_paused_ready.load(std::memory_order_acquire) &&
+          Emu.IsReady()) ||
+         Emu.IsPaused();
+}
 
 extern "C" std::string _rpcsx_sceneInfo() {
   const u64 age = thor::vdec_age_us();

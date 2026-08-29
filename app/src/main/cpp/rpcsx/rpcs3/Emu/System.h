@@ -163,6 +163,7 @@ class Emulator final
 	// 1. It forces an application to boot immediately by calling Run() in Load().
 	// 2. It signifies that we don't want to exit on Kill(), for example if we want to transition to another application.
 	bool m_force_boot = false;
+	bool m_prevent_autostart = false;
 
 	bool m_continuous_mode = false;
 	bool m_has_gui = true;
@@ -423,6 +424,7 @@ public:
 	bool BootRsxCapture(const std::string& path);
 
 	void SetForceBoot(bool force_boot);
+	void SetPreventAutostart(bool prevent_autostart);
 	void SetContinuousMode(bool continuous_mode);
 
 	game_boot_result Load(const std::string& title_id = "", bool is_disc_patch = false, usz recursion_count = 0);

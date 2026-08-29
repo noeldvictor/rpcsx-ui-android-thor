@@ -968,6 +968,11 @@ game_boot_result Emulator::BootGame(std::string path, const std::string& title_i
 
 	auto restore_on_no_boot = [&](game_boot_result result)
 	{
+		if (result != game_boot_result::no_errors)
+		{
+			m_prevent_autostart = false;
+		}
+
 		if (m_state == system_state::stopped || result != game_boot_result::no_errors)
 		{
 			ensure(IsStopped());
@@ -1058,6 +1063,11 @@ game_boot_result Emulator::BootGame(std::string path, const std::string& title_i
 void Emulator::SetForceBoot(bool force_boot)
 {
 	m_force_boot = force_boot;
+}
+
+void Emulator::SetPreventAutostart(bool prevent_autostart)
+{
+	m_prevent_autostart = prevent_autostart;
 }
 
 void Emulator::SetContinuousMode(bool continuous_mode)
@@ -2738,7 +2748,8 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			}
 		}
 
-		const bool autostart = m_ar || (std::exchange(m_force_boot, false) || g_cfg.misc.autostart);
+		const bool autostart = !std::exchange(m_prevent_autostart, false) &&
+			(m_ar || (std::exchange(m_force_boot, false) || g_cfg.misc.autostart));
 
 		if (IsReady())
 		{
