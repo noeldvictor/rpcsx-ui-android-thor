@@ -213,6 +213,7 @@ $requiredStartPausedFragments = @(
     'result == game_boot_result::no_errors && Emu.IsReady()',
     '"Thor start-paused gate is ready."',
     '"Thor start-paused gate released."',
+    'Emu.SetPauseAfterStartup(true);',
     'Emu.Run(true);'
 )
 
@@ -227,7 +228,14 @@ $requiredAutostartFragments = @(
     'void SetPreventAutostart(bool prevent_autostart);',
     'void Emulator::SetPreventAutostart(bool prevent_autostart)',
     'm_prevent_autostart = prevent_autostart;',
-    'const bool autostart = !std::exchange(m_prevent_autostart, false) &&'
+    'const bool autostart = !std::exchange(m_prevent_autostart, false) &&',
+    'atomic_t<bool> m_pause_after_startup = false;',
+    'void SetPauseAfterStartup(bool pause_after_startup);',
+    'void Emulator::SetPauseAfterStartup(bool pause_after_startup)',
+    'm_pause_after_startup = pause_after_startup;',
+    'const bool pause_after_startup = m_pause_after_startup.exchange(false);',
+    'const bool autostart = !pause_after_startup && (!m_ar || !!g_cfg.misc.autostart);',
+    '"Thor start-paused startup handoff is ready."'
 )
 
 foreach ($fragment in $requiredAutostartFragments) {

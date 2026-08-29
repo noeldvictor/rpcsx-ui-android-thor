@@ -1070,6 +1070,11 @@ void Emulator::SetPreventAutostart(bool prevent_autostart)
 	m_prevent_autostart = prevent_autostart;
 }
 
+void Emulator::SetPauseAfterStartup(bool pause_after_startup)
+{
+	m_pause_after_startup = pause_after_startup;
+}
+
 void Emulator::SetContinuousMode(bool continuous_mode)
 {
 	m_continuous_mode = continuous_mode;
@@ -2866,7 +2871,13 @@ void Emulator::FixGuestTime()
 
 void Emulator::FinalizeRunRequest()
 {
-	const bool autostart = !m_ar || !!g_cfg.misc.autostart;
+	const bool pause_after_startup = m_pause_after_startup.exchange(false);
+	const bool autostart = !pause_after_startup && (!m_ar || !!g_cfg.misc.autostart);
+
+	if (pause_after_startup)
+	{
+		sys_log.success("Thor start-paused startup handoff is ready.");
+	}
 
 	rx::EnumBitSet<cpu_flag> add_flags = cpu_flag::dbg_global_pause;
 

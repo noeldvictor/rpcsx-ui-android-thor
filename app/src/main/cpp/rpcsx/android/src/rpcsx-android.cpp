@@ -2497,11 +2497,13 @@ extern "C" bool _rpcsx_collectGameInfo(JNIEnv *env, std::string_view rootDir,
 
 extern "C" void _rpcsx_shutdown() {
   g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
   Emu.Kill();
 }
 
 extern "C" int _rpcsx_boot(std::string_view path_) {
   g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
   const bool startPaused = android_property_enabled(
       "debug.rpcsx.thor.start_paused", false);
 
@@ -2536,6 +2538,7 @@ extern "C" bool _rpcsx_consumeHomeMenuExitGameSelected() {
 }
 extern "C" void _rpcsx_kill() {
   g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
   Emu.Kill();
 }
 extern "C" void _rpcsx_resume() {
@@ -2543,6 +2546,7 @@ extern "C" void _rpcsx_resume() {
                                          std::memory_order_acq_rel) &&
       Emu.IsReady()) {
     rpcsx_android.always()("Thor start-paused gate released.");
+    Emu.SetPauseAfterStartup(true);
     Emu.Run(true);
     return;
   }
