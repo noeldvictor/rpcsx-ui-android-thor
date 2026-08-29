@@ -39,20 +39,21 @@ foreach ($entry in @(
             throw "The HLE SPURS $($entry.Name) processes the normal scheduler state '$schedulerState'."
         }
     }
+}
 
-    if (-not $entry.Body.Contains($stateLoad)) {
-        throw "The HLE SPURS $($entry.Name) does not take one state snapshot."
-    }
+if (-not $idle.Contains($stateLoad) -or -not $idle.Contains($stateCheck)) {
+    throw "The HLE SPURS idle handler does not limit its state check to debug pause and stop."
+}
 
-    if (-not $entry.Body.Contains($stateCheck)) {
-        throw "The HLE SPURS $($entry.Name) does not limit the state check to pause and stop."
-    }
+$noWorkIndex = $idle.IndexOf('if (spuIdling && shouldExit == false && foundReadyWorkload == false)')
+$checkIndex = $idle.IndexOf($stateCheck, $noWorkIndex)
+$sleepIndex = $idle.IndexOf('thread_ctrl::wait_for(1000);', $noWorkIndex)
+if ($noWorkIndex -lt 0 -or $checkIndex -le $noWorkIndex -or $sleepIndex -le $checkIndex) {
+    throw "The HLE SPURS state check is not in the idle no-work branch before its sleep."
+}
 
-    $loopIndex = $entry.Body.IndexOf('while (true)')
-    $checkIndex = $entry.Body.IndexOf($stateCheck, $loopIndex)
-    if ($loopIndex -lt 0 -or $checkIndex -le $loopIndex) {
-        throw "The HLE SPURS $($entry.Name) state check is not inside its long loop."
-    }
+if ($main.Contains($stateLoad) -or $main.Contains('spu.check_state()')) {
+    throw "The HLE SPURS system-service loop adds a state load to active scheduling."
 }
 
 Write-Output "Thor HLE SPURS pause contract passed."

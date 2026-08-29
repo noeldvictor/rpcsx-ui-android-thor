@@ -3900,3 +3900,41 @@ sample was available before the second pause. The next run must keep the route
 uninterrupted through the first Bink draw sequence. It must also compare the
 cached PPU reservation repair off because that change followed the last known
 good HLE build.
+
+## 74. Active SPURS scheduling must not read the pause state
+
+The reservation-off capture `20260829-000242-thor-input-custom` reached the
+Bink task with the scheduler repair from section 73. It did not produce a draw
+before guest second 16, and its final performance sample recorded 281,638
+exact stale-128 conditional-store failures and nine other failures. This
+reproduces the old reservation failure storm. The cached PPU reservation repair
+is necessary and stays enabled.
+
+The remaining pause check still loaded the SPU thread state on every pass
+through the active HLE system-service loop. The successor removes that load
+from active scheduling. It checks debug pause and stop only in the idle
+no-work branch, immediately before the existing 1 ms sleep. Active work returns
+to the normal SPU dispatcher, which already processes thread state.
+
+Exact APK
+`A39E7A9C835E4C2EBE65F54FAC7D69DAB25F5C31CE3CB03F7DB406970C81C1E6`
+proves that the active-loop load affected the event chain. The uninterrupted
+capture `20260829-000733-thor-input-custom` dispatched Bink workload 7 at
+11.826 seconds and again at 18.300 seconds. Event flag `0x1f7d580` arrived for
+both dispatches. Two mapped Bink texture draws followed at 18.381 and 18.413
+seconds. The cached reservation counter ended at five stale-128 failures and
+13 other failures, not the failed off-route storm. No save-context failure,
+access violation, signal fault, or native fatal error occurred.
+
+The device guard stopped that run at 72.7 C fixed silicon before a screenshot.
+The cooled capture `20260829-000850-thor-input-custom` proves that the new idle
+check still pauses RPCSX: 10-second paused performance samples were 0.5 and 0.2
+percent total CPU. Its fixed-silicon peak was 67.8 C. However, the first pause
+occurred just after the first Bink event and before workload 7 won an SPU. That
+changed the scheduler race, so the route did not produce a draw.
+
+The live-frame retry `20260829-001101-thor-input-custom` started at 47.0 C and
+was stopped by the guard at 74.7 C during cold compilation, before its first
+screenshot. The next proof must keep the active-loop repair and cached PPU
+reservation repair. It must disable optional runtime census overhead and take
+live screenshots without an intermediate pause.

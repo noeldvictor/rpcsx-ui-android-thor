@@ -2510,15 +2510,6 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 
 	while (true)
 	{
-		// HLE callbacks can stay in this loop without returning to the SPU
-		// dispatcher. Process only debugger pause and stop states here. RPCSX
-		// also uses suspend and internal pause bits during normal coordination.
-		const auto threadState = spu.state.load();
-		if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
-		{
-			return;
-		}
-
 		// REFRESH THE SNAPSHOT BEFORE READING IT.
 		//
 		// LS 0x100 is `SpursKernelContext::tempArea[0x80]` - a 128-byte scratch at
@@ -2627,6 +2618,14 @@ void spursSysServiceIdleHandler(spu_thread& spu, SpursKernelContext* ctxt)
 		if (spuIdling && shouldExit == false && foundReadyWorkload == false)
 		{
 			// The system service blocks by making a reservation and waiting on the lock line reservation lost event.
+			// Check debug pause and stop before the existing sleep. Do not add
+			// thread-state loads to active SPURS scheduling.
+			const auto threadState = spu.state.load();
+			if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
+			{
+				return;
+			}
+
 			thread_ctrl::wait_for(1000);
 			continue;
 		}
@@ -2699,15 +2698,6 @@ void spursSysServiceMain(spu_thread& spu, u32 pollStatus)
 
 	while (true)
 	{
-		// The system service can poll here for the whole emulation session.
-		// Process only debugger pause and stop states here. RPCSX also uses
-		// suspend and internal pause bits during normal coordination.
-		const auto threadState = spu.state.load();
-		if ((is_stopped(threadState) || threadState & (cpu_flag::dbg_global_pause | cpu_flag::dbg_pause)) && spu.check_state())
-		{
-			return;
-		}
-
 		// Process requests for the system service
 		spursSysServiceProcessRequests(spu, ctxt);
 
