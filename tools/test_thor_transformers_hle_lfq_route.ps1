@@ -152,7 +152,12 @@ foreach ($fragment in $requiredRenderProbeFragments) {
 $requiredPcCensusFragments = @(
     '"debug.rpcsx.thor.spu_pc_census"',
     'static constexpr u32 max_samples = 64;',
+	'const u32 sample = s_sample + 1;',
+	'bool matched = false;',
     'std::memcmp(spu._ptr<u8>(0x3000), edge_signature.data(), edge_signature.size())',
+	'matched = true;',
+	'if (matched)',
+	's_sample++;',
     'Thor EDGE PC sample=%u',
 	'r3=0x%08x r4=0x%08x r5=0x%08x',
 	'out=%u intr=%u in=%u state=0x%08x',
@@ -167,6 +172,10 @@ foreach ($fragment in $requiredPcCensusFragments) {
     if (-not ($pcCensus.Contains($fragment) -or $perfMonitor.Contains($fragment))) {
         throw "The edgeZlib SPU PC census is missing: $fragment"
     }
+}
+
+if ($pcCensus.IndexOf('s_sample++') -lt $pcCensus.IndexOf('matched = true;')) {
+    throw "The edgeZlib SPU PC census must not use its quota before a task matches."
 }
 
 $requiredEventCensusFragments = @(

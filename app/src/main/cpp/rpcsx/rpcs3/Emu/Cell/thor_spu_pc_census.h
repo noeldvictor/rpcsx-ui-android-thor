@@ -60,7 +60,11 @@ namespace thor
 			return;
 		}
 
-		const u32 sample = ++s_sample;
+		// Do not use the quota before edgeZlib is in local store. The title loads
+		// the task after about 46 seconds, but the monitor ticks every 0.5 second.
+		// The old counter used all 64 samples before the task could match.
+		const u32 sample = s_sample + 1;
+		bool matched = false;
 
 		// These are the first four instructions at edgeZlib LS address 0x3000.
 		static constexpr std::array<u8, 16> edge_signature = {
@@ -74,6 +78,8 @@ namespace thor
 				{
 					return;
 				}
+
+				matched = true;
 
 				const auto tname = spu.spu_tname.load();
 				const char* name = tname ? tname->c_str() : "";
@@ -94,5 +100,10 @@ namespace thor
 					spu.block_counter, spu.block_recover, spu.block_failure, spu.block_hash,
 					spu.interp_fallback ? 1 : 0, name);
 			});
+
+		if (matched)
+		{
+			s_sample++;
+		}
 	}
 } // namespace thor
