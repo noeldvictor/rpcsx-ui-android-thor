@@ -2679,9 +2679,10 @@ extern "C" std::string _rpcsx_diagInfo() {
         items += ",";
       }
       fmt::append(items,
-                  R"({"index":%u,"pc":"0x%05x","spursAddr":"0x%08x","group":"%s",)"
+                  R"({"index":%u,"pc":"0x%05x","state":"0x%x","spursAddr":"0x%08x","group":"%s",)"
                   R"("maxNum":%u,"maxRun":%u,"spursRunning":%u,"waited":%s,"enteredWait":%s})",
-                  spu.index, spu.pc, spu.spurs_addr, group->name, group->max_num,
+                  spu.index, spu.pc, static_cast<u32>(spu.state.load()),
+                  spu.spurs_addr, group->name, group->max_num,
                   group->max_run, +group->spurs_running,
                   spu.spurs_waited ? "true" : "false",
                   spu.spurs_entered_wait ? "true" : "false");
