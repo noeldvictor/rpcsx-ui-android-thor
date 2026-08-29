@@ -5478,3 +5478,63 @@ rendering progress.
   row. Identify the item field and the guest or HLE owner of its zero store
   before any semantic repair. Require correct moving 3D output and a comparable
   sustained 30 FPS measurement before a full-HLE or performance claim.
+
+## 115. Boot jobs exhausted the first-item trace
+
+- Status: failed
+- Scope: config-driver
+- Hypothesis: The first 128 edgeZlib queue items will include the late loader
+  completion address.
+- Changed files/settings: The run used exact APK SHA-256
+  `A000C7FC292737D05F44AE780C86A1D393126863B2C6EB90D32681C28EE7FEDB`,
+  size 116,143,185 bytes. The HLE settings matched experiment 114. The guest
+  started paused. The controller used one-second slices and searched for the
+  second late-load completion sample.
+- Rollback: The fixed-silicon guard stopped RPCSX when slice 29 sampled 72.3 C.
+  The verified stop found no PID and zero RPCSX rows in `top`. The host then
+  pulled the unchanged guest log. The cleanup cleared all 50 nonempty
+  `debug.rpcsx.thor.*` properties and found zero remaining values. The final
+  fixed-silicon value was 48.6 C. Do not launch the Thor again in this hardware
+  round.
+- Thor result: The strict gate passed at 42.5 C fixed silicon. The exact
+  no-launch install passed. The route completed 28 one-second slices before
+  the hard-stop sample during slice 29. Host elapsed time was 144.625 seconds.
+  The late-load boundary did not occur. This result is
+  `thermal-stop-before-late-boundary`, `failed`, and `not-comparable`.
+- Queue evidence: The log contains all 128 bounded `Thor EDGE LFQ ITEM` rows.
+  Word 4 is `0x00000001` in every row. The trace contains no
+  `0x1111dff0` value and no other counter-backed item. These rows are the early
+  event-backed boot jobs. They do not contain the late completion request.
+- Atomic evidence: The table has 87 new entries and stops at slot 86. It did
+  not saturate. It contains no EDGE completion GETLLAR or PUTLLC at PCs
+  `0x0a1f0`, `0x0a22c`, `0x0a2b0`, or `0x0a2ec`. The run therefore does not
+  show a counter-backed completion operation.
+- Ghidra result: The legal PPU image shows that function `0x00a88564` stores
+  the completion address and low mode bit at item offset `0x10`. The legal
+  edgeZlib image loads the second item quadword at `0x031fc`, clears the low
+  bit at `0x03200`, and calls the decrement helper at `0x0322c` when the
+  masked value is nonzero. A raw word-4 value of one selects the event-backed
+  path. Therefore, a counter-backed-only trace is sufficient and more precise.
+- Visual correctness: Not proved. The guard stopped the process before the
+  requested late-load screenshot.
+- FPS/frame-time: No credit. No moving gameplay measurement exists.
+- Capture paths: `20260829-130157-thor-input-strict-cool-gate`,
+  `20260829-130209-transformers-edge-lfq-item-install`, and
+  `20260829-130239-thor-input-custom/RPCSX.log`.
+- Decision: Reject the first-128 strategy. The successor counts all exact-queue
+  jobs but spends its bounded log quota only when `(word4 & ~1) != 0`. It logs
+  the total item number, the raw word, and the masked completion address. The
+  atomic census now prints periodic rows every 4096 hits, as its comment
+  specifies, instead of every 64 hits. New triples and the first eight hits
+  remain visible.
+- Windows result: The ANY2ANY LFQueue, Transformers HLE route, LFQueue log
+  budget, and late-load wait contracts pass. `git diff --check` passes. The
+  normal Android debug build passes. Successor APK SHA-256
+  `E27DD6841EC555A721DA6469DD66D7EA8627217B4D80B09F383B605BA1DFFDB6`
+  is 116,143,403 bytes.
+- Next: Commit the successor. In a later independently cool Thor round, install
+  the exact successor without launch. Start immediately below 70 C and stop at
+  72 C. Stop the slice loop on `Thor EDGE LFQ COUNTER ITEM #0`. Match its
+  completion address with the EDGE LL/SC rows and the late-loader state before
+  a semantic repair. Require correct moving 3D output and a comparable sustained
+  30 FPS measurement before a full-HLE or performance claim.

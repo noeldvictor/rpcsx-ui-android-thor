@@ -16,9 +16,14 @@ $requiredSyncFragments = @(
     'thor_spurs_notify_lfq(ppu, queue->m_eaSignal.addr(), token)',
     'queue.addr() == 0x101b1f80u',
     'size == 32 && depth == 16',
-    's_edge_items.fetch_add(1)',
+    'const u32 item = s_edge_items.fetch_add(1);',
+    'const u32 completion_raw = +vm::_ref<be_t<u32>>(addr + 0x10);',
+    'const u32 completion = completion_raw & ~1u;',
+    'if (completion)',
+    's_edge_counter_items.fetch_add(1)',
     'n < 128',
-    '"Thor EDGE LFQ ITEM #%u:',
+    '"Thor EDGE LFQ COUNTER ITEM #%u:',
+    'completion=0x%x raw=0x%x',
     '+vm::_ref<be_t<u32>>(addr + 0x1c)'
 )
 

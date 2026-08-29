@@ -180,6 +180,7 @@ if ($pcCensus.IndexOf('s_sample++') -lt $pcCensus.IndexOf('matched = true;')) {
 
 $requiredEventCensusFragments = @(
     '"debug.rpcsx.thor.spu_event_census"',
+	'(n % 4096) == 0',
     'static std::atomic<u32> s_event_count{0};',
     'if (n < 32)',
 	'queue_depth = static_cast<u32>(queue->events.size());',
@@ -193,6 +194,10 @@ $requiredEventCensusFragments = @(
 	'Thor EDGE EVENT result #%u',
     'Thor SPU EVENT #%u'
 )
+
+if ($spuThread.Contains('(n % 64) == 0')) {
+    throw "The SPURS atomic census reintroduced the high-rate 64-hit log interval."
+}
 
 $requiredPpuCachedRtimeFragments = @(
     'static bool thor_ppu_cached_rtime_fix() noexcept',

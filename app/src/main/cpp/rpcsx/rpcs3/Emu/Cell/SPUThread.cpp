@@ -4107,7 +4107,7 @@ static thread_local std::map<u32, bool (*)(spu_thread&)> g_thor_spu_hle_function
 // can be observed at full speed.
 //
 // Records (pc, ea, cmd) triples with outcome counts and prints each new triple
-// once, then every 4096th hit. Bounded to 48 slots so a runaway loop cannot
+// once, then every 4096th hit. Bounded to 256 slots so a runaway loop cannot
 // flood the log.
 //
 //   debug.rpcsx.thor.spurs_atomic_census = 1
@@ -4190,7 +4190,7 @@ void thor_spurs_atomic_census(u32 pc, u32 ea, u32 cmd, u32 spu_index, const void
 		{
 			const u64 n = ++s_slots[i].hits;
 
-			if (n <= 8 || (n % 64) == 0)
+			if (n <= 8 || (n % 4096) == 0)
 			{
 				spu_log.error("Thor ATOMIC #%u %s pc=0x%05x ea=0x%08x spu=%u hits=%llu",
 					i, s_names[cmd & 3], pc, ea, spu_index, n);
