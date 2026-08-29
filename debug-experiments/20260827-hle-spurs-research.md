@@ -6784,3 +6784,79 @@ rendering progress.
   Use that evidence to repair the exact lost-owner transition. Require moving
   3D output and a comparable sustained 30 FPS measurement before a full-HLE
   or performance claim.
+
+## 138. The WAIT_SIGNAL race repair passes the old EDGE stall
+
+- Status: android-pass, HLE-progress, not-comparable
+- Scope: HLE-SPURS, task-syscall, event-delivery, asynchronous-loader,
+  thermal-safety
+- Hypothesis: A signal can arrive after the task polls its signal bit and
+  before it submits the atomic `WAIT_SIGNAL` request. The firmware returns one
+  in this case. The HLE path returned zero, so the caller dispatched again and
+  stranded the task with its running bit set.
+- Ownership evidence: Capture
+  `debug-captures/android-speed-sprint/20260829-180945-thor-input-custom`
+  recorded the failure on SPU 3. Task selection 23 resumed edgeZlib task 0
+  from `waiting=80000000` and consumed its signal. A new signal arrived before
+  the next selection. Selection 24 then saw the same task as both running and
+  ready. The taskset recorded `running=80000000`, `ready=80000000`, and
+  `signalled=80000000`. The same SPU had returned to taskset dispatch. No
+  different live SPU owned the task.
+- Static evidence: The real taskset program first calls `POLL_SIGNAL` at
+  runtime address `0x1d80`. It saves the task context, calls `WAIT_SIGNAL` at
+  `0x1dac`, and uses a zero result for the dispatch path. The Ghidra raw-image
+  base correction maps runtime address `0x0fd8` to file offset `0x05d8`. The
+  firmware request-2 handler tests the current signal bit, returns one when
+  the bit is set, and does not park the task. This proves that the HLE zero
+  result was wrong. The read-only output is in
+  `debug-captures/ghidra-taskset-wait-race-20260829/`.
+- Changed files/settings: Commit `c9c0f9495` sets the `WAIT_SIGNAL` return
+  code from the current signal bit in both the atomic and legacy request
+  paths. It parks the task only when that result is zero. The guarded source
+  test checks both paths. `test_thor_taskset_select_atomic.ps1`,
+  `test_thor_transformers_hle_lfq_route.ps1`, `git diff --check`, the ARM64
+  native build, and debug APK packaging passed. The exact installed APK
+  SHA-256 was
+  `1851434A95AFCB695BBF5F2AF9D357A1D1BF2C72FEEABD1B8162DD8039B6DB36`.
+- Thor result: Capture
+  `debug-captures/android-speed-sprint/20260829-183029-thor-input-custom`
+  passed the one-sample cold-start gate at 44.5 C fixed silicon. The
+  controller completed 70 half-second slices in 603.469 host seconds. It
+  accumulated 43.395 active seconds, with active windows from 0.578 to 0.734
+  seconds and 148 seconds of cooldown waits. It reached the host deadline
+  before the requested second late-loader completion sample.
+- Event evidence: The old boundary is gone. Experiment 137 stopped with EDGE
+  sequence 283 and dispatch 281. This run produced event sequences 1, 79, and
+  608. Its later census reported sequence 722 and dispatch 721/720. The title
+  also reached late-load I/O completion sample 1 with 15 entries. One
+  `TASKSET IDLE-READY` line occurred at sequence 79, but event delivery
+  continued through sequence 722. It is not the old persistent stall.
+- New boundary: After late-load completion sample 1, the main thread created
+  the FMOD taskset and audio port. At emulator times 8:10 and 9:44, the main
+  thread stayed at the HLE event-flag wait address `0x02003c54` with link
+  register `0x00e2bab4`. The final two performance intervals reported 0.42
+  FPS and then 0.00 FPS. This is the next boundary to trace. The current
+  evidence does not yet identify whether the missing action is an FMOD task
+  event, an event-flag wake, or an earlier task failure.
+- Visual correctness: Not proved. The route did not reach the second marker,
+  so it did not save a boundary image. No moving gameplay output exists.
+- FPS/frame-time: No sustained-performance credit. The final performance
+  interval was 0.00 FPS, and paused slices are not a comparable gameplay
+  measurement.
+- Thermal result: The controller maximum was 65.4 C fixed silicon. The
+  independent device guard recorded 1,027 temperature samples. Fixed silicon
+  peaked at 69.9 C, and CPU junction peaked at 81.5 C. It recorded 16 early
+  holds at or above 66 C. It recorded no 72 C fixed-silicon hard stop and no
+  95 C junction hard stop.
+- Rollback: The verified stop found no RPCSX PID and zero RPCSX rows in
+  `top`. Property cleanup cleared 57 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Final fixed silicon was 51.8 C.
+- Decision: Keep the firmware-matching `WAIT_SIGNAL` return repair. It passes
+  the old EDGE stall and permits substantially later title startup. Do not
+  call this full HLE, moving gameplay, or a speed result. Keep the taskset
+  event and completion semantics unchanged until the FMOD wait has a precise
+  producer-side trace.
+- Next: Map the main-thread call site at `0x00e2bab4` and the FMOD SPU task
+  path. Add a bounded FMOD task and event-flag trace before another device
+  run. Require moving 3D output and a comparable sustained 30 FPS measurement
+  before a full-HLE or performance claim.
