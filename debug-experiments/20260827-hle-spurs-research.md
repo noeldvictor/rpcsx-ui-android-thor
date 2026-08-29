@@ -6149,7 +6149,7 @@ rendering progress.
 
 ## 126. Half-second process slices stay below 70 C and reach SPU startup
 
-- Status: route-tooling, not-comparable
+- Status: failed, route-tooling, not-comparable
 - Scope: config-driver, thermal-safety
 - Hypothesis: An API-free startup deadline and half-second slices will keep
   fixed silicon below 70 C while the title advances toward the EDGE event
@@ -6330,3 +6330,72 @@ rendering progress.
 - Primary sources:
   `https://github.com/RPCS3/rpcs3`, `https://github.com/ARMSX2/ARMSX3`, and
   `https://public.dhe.ibm.com/linux/cellsdk/docs/`.
+
+## 130. Stable resumes expose an expired SPU cache profile
+
+- Status: route-tooling, not-comparable
+- Scope: config-driver, thermal-safety, performance
+- Hypothesis: Three stable cooldown samples and a 66 C device hold will keep
+  one preserved startup process below the 72 C hard limit until it reaches the
+  exact EDGE event marker.
+- Changed files/settings: The run used exact installed APK
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  size 116,143,682 bytes, and host commits through `7c2f04166`. It used the
+  experiment 129 HLE stack, 0.25-second slices, a 70 C cold-start ceiling, a
+  three-sample later-resume gate below 60 C, a 66 C device hold, and a 72 C
+  hard stop. The maximum host time was 600 seconds. The EDGE event-wait trace
+  was on, and the full runtime census was off.
+- Thor result: The route completed its bounded controller path. It completed
+  75 slices and accumulated 26.879 active seconds in 603.266 host seconds.
+  Active windows were 0.313 to 0.422 seconds. Cooldown waits totaled 159
+  seconds. The controller maximum was 64.2 C. It ended at the host deadline
+  with the same PID held and paused.
+- Independent guard: The guard recorded 1,049 temperature samples for PID
+  17540. It held and released the same process four times. Fixed silicon
+  peaked at 71.1 C, below the 72 C hard limit, and CPU junction peaked at
+  85.1 C, below its separate 95 C limit. No hard stop occurred. This proves
+  the stable-resume repair and the preserved-process thermal route.
+- Startup evidence: PPU function analysis ended after about 2 minutes 6
+  seconds. Block analysis ended after about 2 minutes 30 seconds. The title
+  reused 225 PPU objects and later reused one more object. It entered the SPU
+  runtime after about 5 minutes 15 seconds, recorded 17 GETLLAR pattern rows,
+  and continued compiling SPU blocks until the host deadline.
+- HLE evidence: No `Thor EDGE EFWAIT ARM` or `Thor EDGE EFWAIT EVENT` row
+  appears. No fatal error, access violation, out-of-memory report, or
+  verification failure appears. The title produced zero frames. The result
+  provides no event-delivery or HLE semantic evidence.
+- Visual correctness: Not proved. The marker did not appear, so the route did
+  not capture a boundary image or reach moving 3D output.
+- FPS/frame-time: No credit. The title produced zero frames during startup.
+- Cache diagnosis: The requested property readback recorded
+  `debug.rpcsx.thor.spu_native_object_cache=on` before launch. The inner input
+  macro then set that property to `off` at 16:03:23, when its empty macro
+  returned. Slow paused startup did not call `spu_cache::initialize` until
+  about five minutes later. The log therefore has no native-object activation
+  row, no bounded preload row, and no native SPU object-load row. The
+  `BLUS30357` cache stayed at 439,777 KiB. Earlier runs with the same exact APK
+  prove that the core contains this cache and can load it. This is a property
+  lifetime defect in the slice route, not a missing APK feature.
+- Rollback: The wrapper stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared 56 values and found zero remaining
+  `debug.rpcsx.thor.*` values. Its final fixed-silicon value was 53.0 C. Do not
+  launch the Thor again in this hardware round.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-160316-thor-input-custom`.
+- Decision: Keep the 70 C one-sample cold-start gate, the stable later-resume
+  gate, and the independent device guard. Do not change HLE semantics. The
+  host successor reapplies the complete slice-loop profile after the inner
+  launcher clears its properties. It reads back every value into
+  `slice-loop-profile-effective.txt` and force-stops the app on any mismatch.
+  The outer cleanup path still clears all properties after the controller.
+- Windows result: Both changed PowerShell files parse. The Transformers HLE
+  route, native SPU object-cache, guarded slice state machine, and strict
+  70 C cold-start contracts pass. `git diff --check` passes. This is a host
+  route change and does not need a new APK.
+- Next: In a separate independently cool hardware round, use the same exact
+  APK and route. Require exact slice-loop property readback, the native-object
+  activation row, bounded preload, and native SPU object loads before the
+  first runtime compile. Continue to `Thor EDGE EFWAIT EVENT` or the bounded
+  host deadline. Correlate the event result and SPU dispatch delta before an
+  HLE semantic change. Require correct moving 3D output and a comparable
+  sustained 30 FPS measurement before a full-HLE or performance claim.

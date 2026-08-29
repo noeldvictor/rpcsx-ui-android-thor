@@ -264,6 +264,53 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.yield_redispatch_fix" = "1"
 }
 
+# The input macro owns its launch properties and clears them when it returns.
+# A normal macro keeps running until the title stops, but an empty slice-loop
+# macro returns while the preserved process is still in startup. Reapply every
+# route property here so delayed SPU initialization sees the requested cache
+# and HLE controls for the full process lifetime.
+$sliceLoopProperties = [ordered]@{}
+foreach ($property in $profileProperties.GetEnumerator()) {
+    $sliceLoopProperties[$property.Key] = [string]$property.Value
+}
+$sliceLoopProperties["debug.rpcsx.thor.spu_cache_preload_limit"] = "$SpuCachePreloadLimit"
+$sliceLoopProperties["debug.rpcsx.thor.spu_cache_compile_budget_ms"] = "50"
+$sliceLoopProperties["debug.rpcsx.thor.spu_native_object_cache"] = "on"
+$sliceLoopProperties["debug.rpcsx.thor.cache_worker_affinity_mask"] = "7"
+$sliceLoopProperties["debug.rpcsx.thor.lfq_any2any"] = if ($hleLfqAny2Any -eq "on") { "1" } else { "0" }
+$sliceLoopProperties["debug.rpcsx.thor.spurs_sel_cond_fix"] = if ($hleSpursSelectorFixes -eq "on") { "1" } else { "0" }
+$sliceLoopProperties["debug.rpcsx.thor.spurs_signal_fix"] = if ($hleSpursSelectorFixes -eq "on") { "1" } else { "0" }
+$sliceLoopProperties["debug.rpcsx.thor.taskset_select_atomic"] = if ($hleTasksetSelectAtomic -eq "on") { "1" } else { "0" }
+
+function Set-ThorRenderProbeSliceProfile {
+    param([Parameter(Mandatory = $true)][string]$CaptureDir)
+
+    foreach ($property in $sliceLoopProperties.GetEnumerator()) {
+        Set-ThorRenderProbeProperty -Name $property.Key -Value $property.Value
+    }
+
+    $propertyNames = @($sliceLoopProperties.Keys)
+    $readbackCommand = 'for p in ' + ($propertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
+    $readbackPath = Invoke-ThorAdbText $adb $CaptureDir "slice-loop-profile-effective.txt" @("shell", $readbackCommand)
+    $effective = @{}
+    foreach ($line in Get-Content -LiteralPath $readbackPath) {
+        if ($line.StartsWith("#")) {
+            continue
+        }
+        if ($line -match '^([^=\s]+)=(.*)$') {
+            $effective[$Matches[1]] = $Matches[2]
+        }
+    }
+
+    foreach ($property in $sliceLoopProperties.GetEnumerator()) {
+        $actual = if ($effective.ContainsKey($property.Key)) { [string]$effective[$property.Key] } else { "<missing>" }
+        if ($actual -cne [string]$property.Value) {
+            & $adb -s $Serial shell am force-stop net.rpcsx.easy | Out-Null
+            throw "Thor slice-loop property '$($property.Key)' read back as '$actual', expected '$($property.Value)'. RPCSX was force-stopped."
+        }
+    }
+}
+
 $macroParameters = [ordered]@{
     Serial = $Serial
     Profile = "custom"
@@ -308,6 +355,7 @@ try {
     $captureDir = Resolve-ThorRenderProbeCaptureDirectory -Output $captureOutput
 
     if ($SliceLoop) {
+        Set-ThorRenderProbeSliceProfile -CaptureDir $captureDir
         Start-ThorSliceDeviceGuard -CaptureDir $captureDir
         @(
             "",
@@ -320,6 +368,7 @@ try {
             "- Runtime slice resume target C: 60",
             "- Runtime resume stable samples: $SliceResumeStableSamples",
             "- Runtime resume sample interval seconds: $SliceResumeSampleIntervalSeconds",
+            "- Slice-loop property readback: slice-loop-profile-effective.txt",
             "- Device watchdog early stop C: 66",
             "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch"
