@@ -350,7 +350,7 @@ try {
                 }
         )
         if ($pidRows.Count -gt 0 -and $sliceResult.markerReached -and
-            $sliceResult.paused -and $sliceResult.holdMode -ne "process") {
+            $sliceResult.paused) {
             $screenshotArguments = @{ path = (Join-Path $captureDir "slice-loop-boundary.png") }
             $null = Invoke-ThorRenderProbeController `
                 -Name "thor_screenshot" `

@@ -156,13 +156,13 @@ $requiredRenderProbeFragments = @(
     'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
     '$sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json',
     'maxStartC = 70',
+    'resumeTargetC = 60',
     'maxSiliconC = 72',
     'markerEvery = 1',
     '-Name "thor_screenshot"',
     '$pidRows = @(',
     'Get-Content -LiteralPath $pidEvidence',
     '$sliceResult.markerReached',
-    '$sliceResult.holdMode -ne "process"',
     'Write-ThorStandardSnapshot -Adb $adb -CaptureDir $captureDir -Package "net.rpcsx.easy" -Prefix "slice-loop"',
     '-Name "thor_stop"',
     'for ($stopAttempt = 1; $stopAttempt -le 5; $stopAttempt++)',
@@ -178,6 +178,10 @@ foreach ($fragment in $requiredRenderProbeFragments) {
 
 if ($renderProbe.Contains('Get-ThorEvidenceBody')) {
     throw "The Transformers HLE render probe uses a private input-macro helper."
+}
+
+if ($renderProbe.Contains('$sliceResult.holdMode -ne "process"')) {
+    throw "The Transformers HLE route skips a stable process-held screenshot."
 }
 
 $requiredPcCensusFragments = @(

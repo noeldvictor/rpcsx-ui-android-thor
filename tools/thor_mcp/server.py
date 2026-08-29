@@ -802,17 +802,22 @@ def t_slice_loop(a):
 
 def t_screenshot(a):
     """Pause, capture, and STAY paused so the picture is still true when you act."""
-    paused = hold(a)
+    p = pid()
+    process_held = bool(p) and held_process_pid() == p
+    paused = True if process_held else hold(a)
     out = a.get("path") or os.path.join(os.getcwd(), "thor_shot.png")
     data = adb(["exec-out", "screencap", "-p"], binary=True)
     if len(data) < 1024:
         return {"error": f"screencap returned {len(data)} bytes"}
     with open(out, "wb") as f:
         f.write(data)
-    return {"path": out, "bytes": len(data), "scene": api("/scene"),
-            "paused": paused,
-            "note": "still PAUSED; the picture stays true until you resume. "
-                    "thor_press resumes for you and re-pauses after."}
+    result = {"path": out, "bytes": len(data), "paused": paused,
+              "holdMode": "process" if process_held else "emulator",
+              "note": "still PAUSED; the picture stays true until you resume. "
+                      "thor_press resumes for you and re-pauses after."}
+    if not process_held:
+        result["scene"] = api("/scene")
+    return result
 
 
 def t_sample(a):

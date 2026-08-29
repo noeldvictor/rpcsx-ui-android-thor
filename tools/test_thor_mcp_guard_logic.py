@@ -2,6 +2,7 @@
 """Test the Thor MCP thermal state machine without a device."""
 
 import importlib.util
+import tempfile
 from pathlib import Path
 
 
@@ -101,6 +102,32 @@ SERVER._process_state = lambda process_id: "T"
 assert SERVER.held_process_pid() == "123", (
     "The controller did not adopt an independent device-watchdog hold."
 )
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
+original_adb = SERVER.adb
+original_hold = SERVER.hold
+original_api = SERVER.api
+with tempfile.TemporaryDirectory() as screenshot_dir:
+    screenshot_calls = []
+    SERVER._process_hold_pid = None
+    SERVER.pid = lambda: "123"
+    SERVER._process_state = lambda process_id: "T"
+    SERVER.hold = lambda _: screenshot_calls.append("hold") or False
+    SERVER.api = lambda path, method="GET", timeout=8: screenshot_calls.append(path) or {}
+    SERVER.adb = lambda args, timeout=300, binary=False: b"x" * 2048
+    screenshot_result = SERVER.t_screenshot({
+        "path": str(Path(screenshot_dir) / "held.png"),
+    })
+    assert screenshot_result["holdMode"] == "process", (
+        "A process-held screenshot lost its stable-state evidence."
+    )
+    assert screenshot_calls == [], (
+        "A process-held screenshot called the stopped in-process API."
+    )
+SERVER.adb = original_adb
+SERVER.hold = original_hold
+SERVER.api = original_api
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 
