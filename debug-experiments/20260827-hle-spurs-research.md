@@ -3938,3 +3938,83 @@ was stopped by the guard at 74.7 C during cold compilation, before its first
 screenshot. The next proof must keep the active-loop repair and cached PPU
 reservation repair. It must disable optional runtime census overhead and take
 live screenshots without an intermediate pause.
+
+## 75. A workload signal notification reached Bink once
+
+Commit `5f0b6e74c` adds the same `vm::light_op<true>` notification that the
+upstream signal route uses. The first exact-APK run is in
+`20260829-004628-thor-input-custom`. Workload 7 dispatched soon after its PPU
+signal. The route showed the Unreal, PhysX, and legal frames. A paused legal
+frame reported 27.88 FPS. Fixed silicon peaked at 67.8 C.
+
+The repeat in `20260829-005019-thor-input-custom` did not give the same result.
+All five available SPUs took workload 6. Workload 7 did not get an SPU. The
+notification repair is necessary, but it does not reserve an SPU for Bink.
+
+## 76. Transformers keeps one SPU free for Bink
+
+Commit `57dbf4061` adds a BLUS30357-only workload-6 contention cap. The first
+version also matched a policy-module address. That address changed between
+runs. Commit `21ecbf983` removes the unstable address check. The final match is
+BLUS30357, workload 6, module size `0x4000`, minimum contention 1, and requested
+maximum contention 5. It changes only that maximum from 5 to 4.
+
+The first corrected-device run is in
+`20260829-010428-thor-input-custom`. It matched a policy module at
+`0x02370000`. Three SPUs took workload 6 before the short run ended. Later
+attempts were stopped by the 72 C guard before they could prove workload 7.
+
+## 77. The Android route can stop before guest execution
+
+Commit `6c24ff9ff` adds `debug.rpcsx.thor.start_paused`. A start-paused boot
+loads the title into the Ready state and does not start guest threads. The
+first resume completes startup. A later resume starts guest execution. Normal
+launches do not use this gate.
+
+Exact APK
+`F7A9933936D321A3F2DD75EBC6209899C46AE57D4B9E060D7C71DC27684F0B9B`
+proved the gate. Capture `20260829-012258-thor-input-custom` stayed between
+41.7 and 48.6 C for 19 fixed-silicon samples while it was Ready. Capture
+`20260829-013043-thor-input-custom` separated the startup transition from the
+first SPURS workloads. The first transition took about 6.8 seconds. The next
+short resume created workloads 0 through 2 and then paused.
+
+The Android native build, APK build, route contract, pause contract, selector
+contract, PowerShell parse, and Git whitespace checks passed. The device had
+the exact APK before these runs.
+
+## 78. One preloaded SPU program is too few
+
+Commit `f38646c59` made the Transformers SPU preload limit selectable and first
+used a default of one. Capture `20260829-013837-thor-input-custom` built one
+startup object and left 877 objects for normal on-demand LLVM compilation.
+The first 2.5-second guest slice reached only workloads 0 through 2. A later
+slice reached workloads 3 and 4. The guard stopped the second slice at 73.5 C.
+
+The paused screenshot after the first slice reported 30.34 FPS, but the frame
+was black. It has no 3D or sustained-FPS credit. The one-program limit also
+delayed workload creation when compared with the 64-program route. Commit
+`c0ac70dc5` therefore restores 64 as the default and keeps the new override.
+
+## 79. The workload-6 cap holds four SPUs
+
+Capture `20260829-014229-thor-input-custom` used the 64-program preload and one
+short guest slice. It reached workloads 3 and 4. The macro stopped RPCSX at an
+observed fixed-silicon peak of 61.4 C.
+
+Capture `20260829-014457-thor-input-custom` extended the slice by 0.5 seconds.
+It created workloads 5 and 6. The log contains the exact reserve marker:
+
+    Thor Transformers SPU reserve: workload 6 max contention changed from 5 to 4
+
+Exactly four SPUs then dispatched the real workload-6 image. This is direct
+live evidence that the title gate and contention cap work. The macro stopped
+RPCSX at an observed fixed-silicon peak of 63.4 C. The final paused frame was
+black and reported 10.10 FPS. It has no render or sustained-FPS credit.
+
+Workload 7 was not created before that pause. The next boundary is about 0.2
+seconds later. A first retry in `20260829-014639-thor-input-custom` started
+while the device still had heat from the prior run. The 72 C guard stopped it
+at 73.1 C during startup and before the guest slice. The device process is
+stopped. The next run must use the same 64-program route after a longer passive
+cooldown.
