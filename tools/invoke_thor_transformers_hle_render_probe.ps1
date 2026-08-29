@@ -27,6 +27,8 @@ param(
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
+    [ValidateRange(1, 4096)]
+    [int]$SpuCachePreloadLimit = 1,
     [string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"
 )
 
@@ -104,7 +106,7 @@ $macroParameters = [ordered]@{
     MaxBatteryTemperatureC = 34
     MaxSkinTemperatureC = 40
     MaxSiliconTemperatureC = 72
-    SpuCachePreloadLimit = 64
+    SpuCachePreloadLimit = $SpuCachePreloadLimit
     SpuCacheCompileBudgetMs = 50
     SpuNativeObjectCache = "on"
     LfqAny2Any = $hleLfqAny2Any
