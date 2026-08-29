@@ -4,6 +4,8 @@ $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSp
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
 $probePath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\thor_spurs_event_wait_probe.h"
 $probe = Get-Content -LiteralPath $probePath -Raw
+$spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.cpp"
+$spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
 
 $setComment = $cellSpurs.IndexOf('/// Set a SPURS event flag')
 $setStart = $cellSpurs.IndexOf('s32 cellSpursEventFlagSet(', $setComment)
@@ -94,14 +96,32 @@ $requiredProbeFragments = @(
     'inline void spurs_event_wait_arm(',
     'inline void spurs_event_wait_wake(',
     'inline void spurs_event_wait_finish(',
-    'inline spurs_event_wait_snapshot get_spurs_event_wait_snapshot()',
-    'state.active.store(1, std::memory_order_release);',
+	'inline u32 spurs_event_dispatch(',
+	'inline spurs_event_wait_snapshot get_spurs_event_wait_snapshot()',
+	'state.event_dispatch_at_arm.store(state.event_dispatch_total.load(std::memory_order_acquire)',
+	'state.event_dispatch_total.fetch_add(1, std::memory_order_acq_rel) + 1;',
+	'state.active.store(1, std::memory_order_release);',
     'state.active.store(0, std::memory_order_release);'
 )
 
 foreach ($fragment in $requiredProbeFragments) {
     if (-not $probe.Contains($fragment)) {
         throw "The SPURS event-wait state probe is missing: $fragment"
+    }
+}
+
+$requiredDispatchFragments = @(
+    '#include "Emu/Cell/thor_spurs_event_wait_probe.h"',
+    'static FORCE_INLINE bool get_thor_edge_event_wait_trace() noexcept',
+    '(get_thor_spu_event_census() || get_thor_edge_event_wait_trace())',
+    'thor::spurs_event_dispatch(',
+    'Thor EDGE EFWAIT EVENT #%u',
+    'dispatch_total - edge_wait.event_dispatch_at_arm'
+)
+
+foreach ($fragment in $requiredDispatchFragments) {
+    if (-not $spuThread.Contains($fragment)) {
+        throw "The EDGE event-send correlation is missing: $fragment"
     }
 }
 

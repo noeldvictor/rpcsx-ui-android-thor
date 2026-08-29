@@ -23,6 +23,7 @@
 #include "Emu/Cell/SPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/SPURecompiler.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/timers.hpp"
 
 #include "Emu/RSX/Core/RSXReservationLock.hpp"
@@ -4136,6 +4137,22 @@ static FORCE_INLINE bool get_thor_spu_event_census() noexcept
 	{
 		char value[PROP_VALUE_MAX]{};
 		return __system_property_get("debug.rpcsx.thor.spu_event_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+// Correlate the exact edgeZlib event send with the PPU wait without enabling
+// the full runtime census. This property is also the gate for the PPU trace.
+static FORCE_INLINE bool get_thor_edge_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", value) > 0 && value[0] && value[0] != '0';
 	}();
 	return s_value;
 #else
@@ -9857,12 +9874,37 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				// TODO: check passing spup value
 				const auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN;
 
-				if (get_thor_spu_event_census() && pc == 0xa514 && is_thor_edge_zlib_spu(*this))
+				if ((get_thor_spu_event_census() || get_thor_edge_event_wait_trace()) &&
+					pc == 0xa514 && is_thor_edge_zlib_spu(*this))
 				{
+					const u64 dispatch_time_us = get_system_time();
+					const u32 dispatch_total = thor::spurs_event_dispatch(spup, res + 0u,
+						queue ? queue->id : 0, dispatch_time_us);
+					const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+					const u64 active_age_us = edge_wait.active && edge_wait.arm_time_us &&
+						dispatch_time_us >= edge_wait.arm_time_us
+						? dispatch_time_us - edge_wait.arm_time_us : 0;
+					static std::atomic<u32> s_edge_wait_event_count{0};
+
+					if (get_thor_edge_event_wait_trace() && edge_wait.active && active_age_us >= 1000000 &&
+						s_edge_wait_event_count.load(std::memory_order_relaxed) < 16)
+					{
+						const u32 n = s_edge_wait_event_count.fetch_add(1, std::memory_order_relaxed);
+						if (n < 16)
+						{
+							spu_log.error("Thor EDGE EFWAIT EVENT #%u: sequence=%u active_age_us=%llu "
+								"dispatch=%u/%u delta=%u port=%u result=0x%08x queue=0x%08x",
+								n, edge_wait.sequence, static_cast<unsigned long long>(active_age_us),
+								dispatch_total, edge_wait.event_dispatch_at_arm,
+								dispatch_total - edge_wait.event_dispatch_at_arm,
+								spup, res + 0u, queue ? queue->id : 0);
+						}
+					}
+
 					static std::atomic<u32> s_edge_event_result_count{0};
 					const u32 n = s_edge_event_result_count.fetch_add(1, std::memory_order_relaxed);
 
-					if (n < 16)
+					if (get_thor_spu_event_census() && n < 16)
 					{
 						spu_log.error("Thor EDGE EVENT result #%u pc=0x%05x port=%u data0=0x%06x "
 							"data1=0x%08x result=0x%08x queue=0x%08x out=%u in=%u state=0x%08x",

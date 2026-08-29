@@ -35,6 +35,12 @@ namespace thor
 		u32 phase = 0;
 		u64 arm_time_us = 0;
 		u64 wake_time_us = 0;
+		u32 event_dispatch_total = 0;
+		u32 event_dispatch_at_arm = 0;
+		u32 event_dispatch_port = 0xffffffffu;
+		u32 event_dispatch_result = 0;
+		u32 event_dispatch_queue = 0;
+		u64 event_dispatch_time_us = 0;
 	};
 
 	struct spurs_event_wait_probe_state
@@ -50,6 +56,12 @@ namespace thor
 		std::atomic<u32> phase{static_cast<u32>(spurs_event_wait_phase::idle)};
 		std::atomic<u64> arm_time_us{0};
 		std::atomic<u64> wake_time_us{0};
+		std::atomic<u32> event_dispatch_total{0};
+		std::atomic<u32> event_dispatch_at_arm{0};
+		std::atomic<u32> event_dispatch_port{0xffffffffu};
+		std::atomic<u32> event_dispatch_result{0};
+		std::atomic<u32> event_dispatch_queue{0};
+		std::atomic<u64> event_dispatch_time_us{0};
 	};
 
 	inline spurs_event_wait_probe_state g_spurs_event_wait_probe;
@@ -67,8 +79,20 @@ namespace thor
 		state.slot.store(slot, std::memory_order_relaxed);
 		state.arm_time_us.store(arm_time_us, std::memory_order_relaxed);
 		state.wake_time_us.store(0, std::memory_order_relaxed);
+		state.event_dispatch_at_arm.store(state.event_dispatch_total.load(std::memory_order_acquire),
+			std::memory_order_relaxed);
 		state.phase.store(static_cast<u32>(spurs_event_wait_phase::armed), std::memory_order_relaxed);
 		state.active.store(1, std::memory_order_release);
+	}
+
+	inline u32 spurs_event_dispatch(u32 port, u32 result, u32 queue, u64 dispatch_time_us) noexcept
+	{
+		auto& state = g_spurs_event_wait_probe;
+		state.event_dispatch_port.store(port, std::memory_order_relaxed);
+		state.event_dispatch_result.store(result, std::memory_order_relaxed);
+		state.event_dispatch_queue.store(queue, std::memory_order_relaxed);
+		state.event_dispatch_time_us.store(dispatch_time_us, std::memory_order_release);
+		return state.event_dispatch_total.fetch_add(1, std::memory_order_acq_rel) + 1;
 	}
 
 	inline void spurs_event_wait_wake(u32 slot, u16 received, u64 wake_time_us) noexcept
@@ -106,6 +130,12 @@ namespace thor
 		result.phase = state.phase.load(std::memory_order_relaxed);
 		result.arm_time_us = state.arm_time_us.load(std::memory_order_relaxed);
 		result.wake_time_us = state.wake_time_us.load(std::memory_order_relaxed);
+		result.event_dispatch_total = state.event_dispatch_total.load(std::memory_order_acquire);
+		result.event_dispatch_at_arm = state.event_dispatch_at_arm.load(std::memory_order_relaxed);
+		result.event_dispatch_port = state.event_dispatch_port.load(std::memory_order_relaxed);
+		result.event_dispatch_result = state.event_dispatch_result.load(std::memory_order_relaxed);
+		result.event_dispatch_queue = state.event_dispatch_queue.load(std::memory_order_relaxed);
+		result.event_dispatch_time_us = state.event_dispatch_time_us.load(std::memory_order_acquire);
 		return result;
 	}
 }

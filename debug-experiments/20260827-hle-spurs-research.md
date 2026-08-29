@@ -5709,3 +5709,62 @@ rendering progress.
   `Thor EDGE EFWAIT STATE` before a semantic repair. Require correct moving 3D
   output and a comparable sustained 30 FPS measurement before a full-HLE or
   performance claim.
+
+## 119. Heat stopped the live wait probe before the late boundary
+
+- Status: failed, not-comparable
+- Scope: config-driver, static-analysis
+- Hypothesis: The live event-wait state will identify the late EDGE wait before
+  the thermal guard stops the run.
+- Changed files/settings: The run used exact APK SHA-256
+  `C3BF97865700E7B35E407321A4B01BEAEC93AC796483A8964633E0ECE6479C04`,
+  size 116,141,896 bytes. The HLE settings matched experiment 118. The event
+  wait trace and runtime census were on. The guest started paused, and the
+  controller requested one-second slices.
+- Rollback: The external thermal guard stopped RPCSX. Android ActivityManager
+  killed PID 18530 after an external `am force-stop` request. No fatal signal,
+  tombstone, access violation, or native crash appears. The process was absent
+  after the run. Do not launch the Thor again in this hardware round.
+- Thor result: The strict gate passed at 43.3 C fixed silicon. The post-gate
+  value was 44.1 C, and the no-launch install left the process absent. The
+  device guard recorded 49.8, 55.0, 53.8, 57.4, 64.2, 67.8, 69.5, 68.7, and
+  73.9 C. The last sample exceeded the 72.0 C hard limit. The run ended during
+  the tenth pause before the late-loader completion sample.
+- Event-wait evidence: The log contains only `Thor EDGE EFWAIT ARM #0`. It
+  armed guest flag `0x01e54800`, mask one, AND mode, slot zero, queue
+  `0x8d005600`, and port 17 at guest time 19.150 seconds. The guard stopped the
+  process at about guest time 22.44 seconds. The observed active interval was
+  only about 3.3 seconds. The first known-good wait in experiment 118 took
+  about 4.55 seconds. Therefore, the missing wake in this run does not identify
+  a stuck wait.
+- SPU evidence: Sampled edgeZlib PCs changed through `0x09514`, `0x03140`,
+  `0x03aa0`, `0x050e8`, `0x07168`, `0x07c00`, and `0x06050` while compiled
+  block counts increased. The SPU did not stay at one stable PC.
+- Visual correctness: Not proved. The guard stopped the process before the
+  requested screenshot.
+- FPS/frame-time: No credit. No moving gameplay measurement exists.
+- Capture paths: `20260829-140933-thor-input-strict-cool-gate`,
+  `20260829-140952-transformers-edge-wait-live-install`, and
+  `20260829-141032-thor-input-custom`.
+- Decision: Do not repair the event result or loader state from this run. The
+  stronger experiment 117 evidence still shows the PoolThread in the event
+  wait wrapper for at least 30 seconds while the loader completion value stays
+  at one. Correlate that PPU wait with the exact SPU event-send count. Do not
+  repeat the full runtime census because its observation load heats the Thor.
+- Next: Count every exact edgeZlib event send in low-overhead atomics. Snapshot
+  the count when the PPU arms its wait, and report the delta while the PPU is
+  still blocked. Let the wait-trace property enable only the low-rate PPU
+  sampler. In a later independently cool round, use one direct unpaused run and
+  the external 72 C guard. Do not enable the SPU PC or draw censuses.
+- Windows result: The SPURS event-flag wait, Transformers HLE load-wait,
+  Transformers HLE LFQueue route, ANY2ANY LFQueue firmware, and LFQueue log
+  budget contracts pass. `git diff --check` passes. The normal Android debug
+  build passes. Successor APK SHA-256
+  `37F5270E115874155DDE678410D6C3BE34A2687174B1D9E5725D0999BD550005`
+  is 116,143,256 bytes.
+- Successor: The exact edgeZlib SPU event-send path now keeps a monotonic count,
+  the last result, port, queue, and timestamp. The PPU wait snapshots the count
+  at arm time. A correlated event row appears when a send occurs after one
+  second of active wait. The low-rate PPU census reports the dispatch delta up
+  to eight times while the exact wait wrapper is active. The wait-trace property
+  enables this PPU census without the full SPU PC and draw censuses.

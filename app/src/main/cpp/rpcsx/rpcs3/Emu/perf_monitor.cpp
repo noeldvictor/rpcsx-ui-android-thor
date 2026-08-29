@@ -223,7 +223,13 @@ void perf_monitor::operator()()
 					}
 
 					std::memset(v, 0, sizeof(v));
-					return __system_property_get("debug.rpcsx.thor.ppu_call_trace", v) > 0 && v[0] && v[0] != '0';
+					if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", v) > 0 && v[0] && v[0] != '0')
+					{
+						return true;
+					}
+
+					std::memset(v, 0, sizeof(v));
+					return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
 				}();
 
 				if (s_pc_census)
@@ -539,13 +545,49 @@ void perf_monitor::operator()()
 												? now - edge_wait.arm_time_us : 0;
 											const u64 wake_latency_us = edge_wait.wake_time_us >= edge_wait.arm_time_us
 												? edge_wait.wake_time_us - edge_wait.arm_time_us : 0;
-											perf_log.error("Thor EDGE EFWAIT STATE: sample=%u total=%u active=%u sequence=%u ppu=0x%08x request=0x%04x received=0x%04x mode=%u slot=%u phase=%u active_age_us=%llu wake_latency_us=%llu",
+											const u64 dispatch_age_us = edge_wait.event_dispatch_time_us && now >= edge_wait.event_dispatch_time_us
+												? now - edge_wait.event_dispatch_time_us : 0;
+											perf_log.error("Thor EDGE EFWAIT STATE: sample=%u total=%u active=%u sequence=%u ppu=0x%08x request=0x%04x received=0x%04x mode=%u slot=%u phase=%u active_age_us=%llu wake_latency_us=%llu dispatch=%u/%u delta=%u last{port=%u result=0x%08x queue=0x%08x age_us=%llu}",
 												sample + 1, edge_wait.total, edge_wait.active, edge_wait.sequence,
 												edge_wait.ppu_id, edge_wait.requested, edge_wait.received,
 												edge_wait.mode, edge_wait.slot, edge_wait.phase,
 												static_cast<unsigned long long>(active_age_us),
-												static_cast<unsigned long long>(wake_latency_us));
+												static_cast<unsigned long long>(wake_latency_us),
+												edge_wait.event_dispatch_total, edge_wait.event_dispatch_at_arm,
+												edge_wait.event_dispatch_total - edge_wait.event_dispatch_at_arm,
+												edge_wait.event_dispatch_port, edge_wait.event_dispatch_result,
+												edge_wait.event_dispatch_queue,
+												static_cast<unsigned long long>(dispatch_age_us));
 										}
+									}
+								}
+							}
+
+							// Sample a live exact EDGE wait before the loader reaches its late
+							// completion boundary. The event-wait property enables this low-rate
+							// PPU census without the SPU PC and draw censuses.
+							static std::atomic<u32> s_edge_wait_census_dumps{0};
+							if (pc == 0x02003c54u && s_edge_wait_census_dumps.load(std::memory_order_relaxed) < 8)
+							{
+								const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+								if (edge_wait.active)
+								{
+									const u32 sample = s_edge_wait_census_dumps.fetch_add(1, std::memory_order_relaxed);
+									if (sample < 8)
+									{
+										const u64 now = get_system_time();
+										const u64 active_age_us = edge_wait.arm_time_us && now >= edge_wait.arm_time_us
+											? now - edge_wait.arm_time_us : 0;
+										const u64 dispatch_age_us = edge_wait.event_dispatch_time_us && now >= edge_wait.event_dispatch_time_us
+											? now - edge_wait.event_dispatch_time_us : 0;
+										perf_log.error("Thor EDGE EFWAIT CENSUS: sample=%u sequence=%u ppu=0x%08x active_age_us=%llu dispatch=%u/%u delta=%u last{port=%u result=0x%08x queue=0x%08x age_us=%llu}",
+											sample + 1, edge_wait.sequence, edge_wait.ppu_id,
+											static_cast<unsigned long long>(active_age_us),
+											edge_wait.event_dispatch_total, edge_wait.event_dispatch_at_arm,
+											edge_wait.event_dispatch_total - edge_wait.event_dispatch_at_arm,
+											edge_wait.event_dispatch_port, edge_wait.event_dispatch_result,
+											edge_wait.event_dispatch_queue,
+											static_cast<unsigned long long>(dispatch_age_us));
 									}
 								}
 							}

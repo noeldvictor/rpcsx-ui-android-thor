@@ -75,8 +75,11 @@ $requiredFragments = @(
     '#include "Emu/Cell/thor_spurs_event_wait_probe.h"',
     'thor::get_spurs_event_wait_snapshot()',
     '"Thor EDGE EFWAIT STATE:',
-    'active_age_us=',
-    'wake_latency_us='
+	'"Thor EDGE EFWAIT CENSUS:',
+	'active_age_us=',
+	'wake_latency_us=',
+	'event_dispatch_total - edge_wait.event_dispatch_at_arm',
+	'__system_property_get("debug.rpcsx.thor.edge_event_wait_trace"'
 )
 
 foreach ($fragment in $requiredFragments) {
