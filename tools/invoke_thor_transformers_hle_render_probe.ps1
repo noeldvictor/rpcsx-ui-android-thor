@@ -14,7 +14,9 @@ param(
     [ValidateSet("on", "off")]
     [string]$TaskAttrFix = "off",
     [ValidateSet("on", "off")]
-    [string]$SpursProbe = "off"
+    [string]$SpursProbe = "off",
+    [ValidateSet("on", "off")]
+    [string]$RuntimeCensus = "off"
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,12 +46,12 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.real_taskset_pm" = "0"
     "debug.rpcsx.thor.yield_fast_path" = "0"
     "debug.rpcsx.thor.pm_capture" = "0"
-    "debug.rpcsx.thor.draw_census" = "1"
+    "debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_atomic_census" = "0"
-    "debug.rpcsx.thor.spu_pc_census" = "1"
-    "debug.rpcsx.thor.spu_event_census" = "1"
+    "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.spu_event_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.edge_event_interp" = if ($EdgeEventInterp -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.ppu_pc_census" = "1"
+    "debug.rpcsx.thor.ppu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
