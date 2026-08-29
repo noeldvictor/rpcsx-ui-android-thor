@@ -91,6 +91,7 @@ $requiredRenderProbeFragments = @(
     '[string]$SpursProbe = "off"',
     '[string]$SpursAtomicCensus = "off"',
     '[string]$EdgeTaskCensus = "off"',
+    '[string]$EdgeEventWaitTrace = "off"',
     '[string]$RuntimeCensus = "off"',
     '[string]$InputMode = "Direct"',
     '"debug.rpcsx.thor.hle_libs" = if ($Mode -eq "HLE") { "libsre.sprx" } else { "none" }',
@@ -112,6 +113,8 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_atomic_census" -Value "0"',
     '"debug.rpcsx.thor.edge_task_census" = if ($EdgeTaskCensus -eq "on") { "1" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_task_census" -Value "0"',
+    '"debug.rpcsx.thor.edge_event_wait_trace" = if ($Mode -eq "HLE" -and $EdgeEventWaitTrace -eq "on") { "1" } else { "0" }',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_wait_trace" -Value "0"',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"',
@@ -222,6 +225,27 @@ $requiredTransformersSpuReserveFragments = @(
     'minContention == 1 && maxContention == 5',
     'maxContention = 3;'
 )
+
+$requiredEdgeEventWaitTraceFragments = @(
+    'static bool thor_transformers_edge_event_wait_trace() noexcept',
+    '"debug.rpcsx.thor.edge_event_wait_trace"',
+    's_on && Emu.GetTitleID() == "BLUS30357"',
+    'eventFlag.addr() == 0x01e54800u',
+    'thor_edge_wait_index < 64',
+    'Thor EDGE EFWAIT BUSY #%u',
+    'Thor EDGE EFWAIT ARM #%u',
+    'Thor EDGE EFWAIT WAKE #%u',
+    'Thor EDGE EFWAIT RETURN #%u',
+    'request=0x%04x',
+    'slotEvents=0x%04x',
+    'state{events=%04x wait=%04x slotmode=%02x pending=%u}'
+)
+
+foreach ($fragment in $requiredEdgeEventWaitTraceFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers EDGE event-wait trace is missing: $fragment"
+    }
+}
 
 foreach ($fragment in $requiredTransformersSpuReserveFragments) {
     if (-not $cellSpurs.Contains($fragment)) {

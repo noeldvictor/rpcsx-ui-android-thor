@@ -66,4 +66,22 @@ if (-not $cellSpurs.Contains($finalAssignment)) {
     throw "The SPURS event-flag wait does not return the selected event mask."
 }
 
+$requiredTraceFragments = @(
+    'static bool thor_transformers_edge_event_wait_trace() noexcept',
+    '"debug.rpcsx.thor.edge_event_wait_trace"',
+    'eventFlag.addr() == 0x01e54800u',
+    'const u16 requested_mask = *mask;',
+    'thor_edge_wait_index < 64',
+    'Thor EDGE EFWAIT ARM #%u',
+    'Thor EDGE EFWAIT WAKE #%u',
+    'Thor EDGE EFWAIT RETURN #%u',
+    'receivedEvents = eventFlag->pendingRecvTaskEvents[i];'
+)
+
+foreach ($fragment in $requiredTraceFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The bounded SPURS event-flag wait trace is missing: $fragment"
+    }
+}
+
 Write-Output "SPURS event-flag wait contract passed."

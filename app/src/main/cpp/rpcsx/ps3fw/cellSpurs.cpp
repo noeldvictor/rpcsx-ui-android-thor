@@ -96,6 +96,27 @@ static bool thor_transformers_spu_reserve() noexcept
 #endif
 }
 
+// Trace the exact event flag that releases Transformers EDGE zlib slots.
+//
+// The SPU helper updates the control word and pending event slot before it
+// sends the LV2 event. The PPU wait must return the same one-bit mask before
+// the title releases that slot. Keep this trace off by default and bounded.
+//
+//   debug.rpcsx.thor.edge_event_wait_trace = 1
+static bool thor_transformers_edge_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_enabled_fix() noexcept
 {
 #ifdef ANDROID
@@ -4004,14 +4025,29 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 		return CELL_SPURS_TASK_ERROR_STAT;
 	}
 
+	const u16 requested_mask = *mask;
+	static std::atomic<u32> s_edge_wait_trace_count{0};
+	const bool thor_edge_wait = thor_transformers_edge_event_wait_trace() && eventFlag.addr() == 0x01e54800u;
+	const u32 thor_edge_wait_index = thor_edge_wait ? s_edge_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
+	const bool thor_log_edge_wait = thor_edge_wait && thor_edge_wait_index < 64;
+
 	if (eventFlag->ctrl.raw().ppuWaitMask || eventFlag->ctrl.raw().ppuPendingRecv)
 	{
+		if (thor_log_edge_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor EDGE EFWAIT BUSY #%u: flag=0x%x request=0x%04x mode=%u block=%u "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
 		return CELL_SPURS_TASK_ERROR_BUSY;
 	}
 
-	bool recv;
-	s32 rc;
-	u16 receivedEvents;
+	const auto thor_ctrl_before = eventFlag->ctrl.raw();
+	bool recv = false;
+	s32 rc = CELL_OK;
+	u16 receivedEvents = 0;
 	vm::atomic_op(eventFlag->ctrl, [eventFlag, mask, mode, block, &recv, &rc, &receivedEvents](CellSpursEventFlag::ControlSyncVar& ctrl)
 		{
 			u16 relevantEvents = ctrl.events & *mask;
@@ -4107,11 +4143,25 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			rc = CELL_OK;
 		});
 
+	if (thor_log_edge_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor EDGE EFWAIT ARM #%u: flag=0x%x request=0x%04x mode=%u block=%u recv=%u rc=0x%x "
+			"pre{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"post{events=%04x wait=%04x slotmode=%02x pending=%u} queue=0x%x port=%u",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block, recv, static_cast<u32>(rc),
+			+thor_ctrl_before.events, +thor_ctrl_before.ppuWaitMask,
+			+thor_ctrl_before.ppuWaitSlotAndMode, +thor_ctrl_before.ppuPendingRecv,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv,
+			+eventFlag->eventQueueId, +eventFlag->spuPort);
+	}
+
 	if (rc != CELL_OK)
 	{
 		return rc;
 	}
 
+	u32 received_slot = 0xffffffffu;
 	if (recv)
 	{
 		// Block till something happens
@@ -4124,7 +4174,16 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			i = eventFlag->ctrl.raw().ppuWaitSlotAndMode >> 4;
 		}
 
+		received_slot = static_cast<u32>(i);
 		receivedEvents = eventFlag->pendingRecvTaskEvents[i];
+		if (thor_log_edge_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor EDGE EFWAIT WAKE #%u: flag=0x%x request=0x%04x slot=%u slotEvents=0x%04x "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, received_slot, receivedEvents,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
 		vm::atomic_op(eventFlag->ctrl, [](CellSpursEventFlag::ControlSyncVar& ctrl)
 			{
 				ctrl.ppuPendingRecv = 0;
@@ -4132,6 +4191,14 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 	}
 
 	*mask = receivedEvents;
+	if (thor_log_edge_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor EDGE EFWAIT RETURN #%u: flag=0x%x request=0x%04x received=0x%04x recv=%u slot=%u rc=0x%x "
+			"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot, 0u,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+	}
 	return CELL_OK;
 }
 

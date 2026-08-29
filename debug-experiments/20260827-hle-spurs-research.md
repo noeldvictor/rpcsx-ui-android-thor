@@ -5570,3 +5570,73 @@ rendering progress.
   `Thor EDGE LFQ COUNTER ITEM` row or the second late completion sample. If the
   late state appears without a counter-backed item, reject this EDGE queue as
   its owner and move the HLE repair to the work system that owns the state.
+
+## 117. The loader waits after event-backed EDGE jobs
+
+- Status: inconclusive
+- Scope: config-driver, static-analysis
+- Hypothesis: The late loader completion state will appear in a counter-backed
+  item on the exact edgeZlib queue.
+- Changed files/settings: The run used exact APK SHA-256
+  `E27DD6841EC555A721DA6469DD66D7EA8627217B4D80B09F383B605BA1DFFDB6`,
+  size 116,143,403 bytes. The HLE settings matched experiment 116. The guest
+  started paused. The controller used one-second slices and stopped when the
+  second late-load completion sample appeared.
+- Rollback: RPCSX was stopped after the capture. The cleanup cleared the
+  experiment properties. The final fixed-silicon value was 49.0 C. Do not
+  launch the Thor again in this hardware round.
+- Thor result: The strict cool gate passed at 42.9 C fixed silicon. The exact
+  no-launch install passed. The route completed 19 one-second slices. All
+  pause requests occurred at 1.000 to 1.016 seconds. The maximum fixed-silicon
+  value was 71.1 C. No thermal stop occurred.
+- HLE evidence: The run recorded 16 successful EDGE event operations on port
+  17 and event queue `0x8d005600`. The direct jobs use shared event flag
+  `0x01e54800`. At the second late sample, the active loader list had 14
+  completion items. Its first mapped state was `0x111e4370`, and its value
+  stayed at one. No counter-backed EDGE item appeared. No access violation,
+  verification failure, fatal error, or out-of-memory error appeared.
+- Causal correction: The decision in experiment 116 to reject this EDGE queue
+  as the owner is too strong and is superseded here. The asynchronous loader
+  counter is separate from the event-backed EDGE queue item. The observed path
+  is asynchronous IO, event-backed EDGE zlib work, the wait wrapper at
+  `0x009e35e4`, slot release, and loader finalization. A queue item does not
+  need to contain the loader counter for the EDGE wait to control that
+  finalization.
+- Ghidra result: A read-only Ghidra 12.0.4 pass used the saved legal edgeZlib
+  image and function `0x000088d8`. The SPU helper uses GETLLAR to read the full
+  128-byte event flag. It writes the control state and the selected
+  `pendingRecvTaskEvents` slot in local store. It then uses PUTLLC to write the
+  full flag and calls the LV2 event helper at `0x0000a4d8` when the wake
+  condition succeeds. This result rules out a missing SPU result-slot store.
+  The PPU wrapper requests one event bit with AND mode, so the mode is valid.
+- Diagnostic successor: The title-gated property
+  `debug.rpcsx.thor.edge_event_wait_trace=1` now records at most 64 waits on
+  exact event flag `0x01e54800`. It records the requested mask, the armed wait
+  slot, the SPU result slot, the returned mask, the receive state, and the
+  control state. It does not change guest state. The probe wrapper exposes the
+  property and clears it during cleanup.
+- Windows result: The SPURS event-flag wait, Transformers HLE LFQueue route,
+  late-load wait, ANY2ANY LFQueue firmware, and LFQueue log-budget contracts
+  pass. `git diff --check` passes. The normal Android debug build passes.
+  Successor APK SHA-256
+  `3944A8C1C7984E86206208922B837C4BA516F81911F67397C06E6DCE76E5AC01`
+  is 116,143,340 bytes.
+- Visual correctness: Not proved. The paused image shows the black loading
+  screen. It does not show gameplay.
+- FPS/frame-time: No credit. The paused overlay showed 29.62 FPS and API 8.2.
+  This is not a sustained moving gameplay measurement.
+- Capture paths: `20260829-132346-thor-input-strict-cool-gate`,
+  `20260829-132400-transformers-edge-counter-item-install`, and
+  `20260829-132429-thor-input-custom`. The focused Ghidra output is
+  `ghidra-edge-event-flag-function-20260829.txt`.
+- Decision: Keep the current semantic repair stack. Reject the counter-backed
+  item hypothesis. Do not force the loader counter or the event result. The
+  next run must correlate the requested bit, the armed slot, the SPU wake
+  result, and the returned mask before a semantic repair.
+- Next: In a later independently cool Thor round, install exact successor APK
+  `3944A8C1C7984E86206208922B837C4BA516F81911F67397C06E6DCE76E5AC01`
+  without launch. Start immediately below 70 C and stop at 72 C. Enable only
+  the bounded event-wait trace with the required HLE settings. Stop on the
+  second late completion sample. Require correct moving 3D output and a
+  comparable sustained 30 FPS measurement before a full-HLE or performance
+  claim.
