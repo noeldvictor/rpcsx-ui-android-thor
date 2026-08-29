@@ -4089,3 +4089,40 @@ This result proves the HLE scheduler boundary. It does not yet prove a visible
 Bink frame, gameplay, or sustained 30 FPS. The next route must keep the same
 startup handoff and SPU reserve, use cooled guest slices, and inspect each
 screenshot before it sends any game input.
+
+## 84. Two reserved SPUs let the Bink frame reach RSX
+
+The four-SPU route in `20260829-021023-thor-input-custom` dispatched workload
+6 on SPUs 1, 2, 3, and 5. Workload 7 then used SPU 4. The edge wake arrived,
+but the workload-0 taskset had lost its earlier SPU 2 residency. No draw
+followed. The older draw-producing route had used three SPUs for workload 6
+and had kept the workload-0 taskset resident.
+
+Commit `dfe5c4425` therefore changes the exact BLUS30357 workload-6 cap from
+four SPUs to three. This keeps capacity for the Bink taskset and its downstream
+edge taskset. The source contract and full ARM64 native build passed. Exact
+ARM64-only debug APK
+`D54274E95D65DCA2E15431F256BD01B35C6F54BE84E7FA3EF7D2B453C4CA8748`
+is 116,136,856 bytes. It passed the ARM64 APK contract. The exact no-launch
+installation is in:
+
+    20260829-022219-thor-input-strict-cool-gate
+    20260829-022234-transformers-two-spu-reserve-install
+
+The install gate read 42.9 C. The host and installed APK hashes matched, and
+RPCSX was not active after installation.
+
+Capture `20260829-022309-thor-input-custom` proves the new scheduler boundary.
+Workload 6 dispatched on exactly SPUs 1, 2, and 3. The second workload-7
+dispatch used SPU 4. Its event produced the workload-0 edge wake. RSX then
+issued two draws with mapped, nonzero 1280-by-720 Y and 640-by-360 Cr and Cb
+textures. The first luma samples were `0x10`, and both chroma samples were
+`0x80`. This is a valid black video frame, and the saved screen remained
+visually black.
+
+This is the first deterministic HLE route from workload creation through Bink
+decode and into RSX draws. It is not yet a visible-frame or FPS proof. The
+device guard stopped the route when a CPU junction reached 95.2 C. Fixed
+silicon peaked at 68.7 C. No native fault appeared. The next run must disable
+the runtime census and use shorter active slices to reach a later video frame
+without reaching the junction limit.
