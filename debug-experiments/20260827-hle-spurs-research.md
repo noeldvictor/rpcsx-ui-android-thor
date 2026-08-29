@@ -4842,3 +4842,52 @@ Android debug build passed. Candidate APK
 `E0B528064B91ABBA6AF3D863F89DCC4E425D954B1FFD78754DC397150C200F76`
 is 116,142,291 bytes. The next cooled Thor run must prove that join removes the
 old taskset workload before the address is reused.
+
+## 104. Taskset join stops stale reuse and exposes the missing notification
+
+The strict one-sample gate is capture
+`20260829-085535-thor-input-strict-cool-gate`. The fixed-silicon sample was
+42.5 C, so it passed the less-than-70 C start rule. The exact no-launch
+installation is capture
+`20260829-085554-transformers-taskset-join-install`. The expected, host, and
+installed APK hashes matched. RPCSX was not active after installation.
+
+Capture `20260829-085618-thor-input-custom` repeated the dedicated HLE route.
+The rendering thread called `cellSpursJoinTaskset` at guest time 4:26.707 and
+waited for workload 7 to shut down. The game did not create a second taskset at
+address `0x1f73f00`. The new join function therefore prevents the stale taskset
+reuse from section 103.
+
+The run produced 24 LFQueue ring records, eight edge wakes, and at least 60
+bounded workload-dispatch records. It had no access violation, verification
+failure, native crash, or fatal thread stop. The main thread continued its
+staged allocations through guest time 4:27.850. It did not produce frames after
+the later pause and resume.
+
+Visual inspection of `01-taskset-join.png` shows a black field and a pause
+notice. Its SHA-256 is
+`98AF109D6A09C9075B610A356CEC63FA5FB480536AEEAAF8291D32E023296711`.
+The reported 29.80 FPS has no speed credit. Fixed silicon reached 68.7 C,
+maximum junction reached 81.9 C, and the last fixed-silicon sample was 53.8 C.
+RPCSX stopped normally.
+
+Source inspection found the exact reason that join did not return. The SPURS
+system service changes a shutting-down workload to removable and makes a
+shutdown-notification mask. However, its SPU event send was still a TODO. The
+HLE initialization path also kept the event queue but did not create the
+`SpursHdlr1` event-helper thread. The existing helper entry receives this mask
+and posts the per-workload semaphore that releases join.
+
+Commit `4b4d5f82b` sends the shutdown mask through the real SPU event path. It
+also registers the existing event-helper entry and starts a normal joinable PPU
+thread for it. The helper now exits through the PPU thread syscall. The new
+shutdown-completion contract and 12 related SPURS contracts passed. The full
+Android debug build passed. Candidate APK
+`6D35D17466B099B668D3B9366BD46AD98153D30D30DBDA78C6255248EDF1F21D`
+is 116,140,076 bytes.
+
+This successor has host verification only. The hardware batch ended after the
+taskset-join run. The next less-than-70 C Thor run must show the event-helper
+entry, a shutdown-completion mask, join return, old-workload removal, and safe
+taskset creation at the reused address. Rendering progress after that boundary
+is the required result.
