@@ -45,7 +45,7 @@ def use_temperatures(values):
 def prepare_paused_guest():
     calls = []
     SERVER.pid = lambda: calls.append(("pid", None)) or "123"
-    SERVER.is_paused = lambda: True
+    SERVER.emulation_state = lambda: 4
     SERVER.api = lambda path, method="GET", timeout=8: calls.append((path, method)) or {"ok": True}
     SERVER.t_stop = lambda _: {"quiet": True}
     return calls
@@ -131,14 +131,36 @@ assert calls.index(("/pause", "POST")) < calls.index(("slow-temperature-returned
 
 clock.now = 0.0
 calls = prepare_paused_guest()
-paused_states = iter([True, False, True])
-SERVER.is_paused = lambda: next(paused_states)
-use_temperatures([42.0, 45.0, 46.0])
+paused_states = iter([4, 3, 3, 4])
+SERVER.emulation_state = lambda: next(paused_states)
+use_temperatures([42.0, 45.0, 46.0, 47.0])
 result = SERVER.t_slice({"seconds": 0.1, "includeState": False})
 assert result["completed"] is True, "The raced pause did not recover."
 assert calls.count(("/pause", "POST")) == 2, "The raced pause was not retried."
 assert ("/device", "GET") not in calls, "The compact slice fetched device state."
 assert ("/diag", "GET") not in calls, "The compact slice fetched diagnostics."
+
+clock.now = 0.0
+calls = prepare_paused_guest()
+startup_states = iter([6, 7, 7, 4])
+SERVER.emulation_state = lambda: next(startup_states)
+use_temperatures([42.0, 55.0, 60.0, 61.0])
+result = SERVER.t_slice({
+    "seconds": 0.1,
+    "startupPauseTimeoutS": 20.0,
+    "includeState": False,
+})
+assert result["completed"] is True, "The startup handoff did not reach its held state."
+assert result["startupHandoff"] is True, "The Ready-to-starting handoff was not recorded."
+assert result["initialState"] == 6 and result["finalState"] == 4, (
+    "The startup handoff lost its state evidence."
+)
+assert result["pauseSettledAtS"] > result["pauseRequestedAtS"], (
+    "The startup handoff did not record its delayed pause."
+)
+assert calls.count(("/pause", "POST")) == 1, (
+    "The controller retried a normal pause while startup owned the handoff."
+)
 
 clock.now = 0.0
 prepare_paused_guest()
@@ -200,6 +222,9 @@ assert all(item["pauseRequestedAtS"] == 1.0 for item in result["slices"]), (
 )
 assert result["maxFixedSiliconC"] == 69.9, "The slice loop lost its maximum temperature."
 assert all(item["includeState"] is False for item in loop_slices), "The slice loop used full slice state."
+assert all(item["startupPauseTimeoutS"] <= 120 for item in loop_slices), (
+    "The slice loop lost its bounded startup handoff."
+)
 assert all(item["targetC"] == 70 for item in loop_cool_requests), (
     "The slice loop imposed a cooldown target below the 70 C start ceiling."
 )

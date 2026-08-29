@@ -157,6 +157,8 @@ $requiredRenderProbeFragments = @(
     'maxSiliconC = 72',
     'markerEvery = 1',
     '-Name "thor_screenshot"',
+    '$pidRows = @(',
+    'Get-Content -LiteralPath $pidEvidence',
     'Write-ThorStandardSnapshot -Adb $adb -CaptureDir $captureDir -Package "net.rpcsx.easy" -Prefix "slice-loop"',
     '-Name "thor_stop"',
     'for ($stopAttempt = 1; $stopAttempt -le 5; $stopAttempt++)',
@@ -168,6 +170,10 @@ foreach ($fragment in $requiredRenderProbeFragments) {
     if (-not $renderProbe.Contains($fragment)) {
         throw "The Transformers HLE render probe is missing: $fragment"
     }
+}
+
+if ($renderProbe.Contains('Get-ThorEvidenceBody')) {
+    throw "The Transformers HLE render probe uses a private input-macro helper."
 }
 
 $requiredPcCensusFragments = @(

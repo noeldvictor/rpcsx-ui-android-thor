@@ -5957,3 +5957,67 @@ rendering progress.
   semantics. They do not support an emulator change at this boundary. See the
   [IBM Cell SDK index](https://public.dhe.ibm.com/linux/cellsdk/docs/) and the
   [representative arXiv scheduling paper](https://arxiv.org/abs/0910.2324).
+
+## 123. The first warm-cache slice exposes a startup control gap
+
+- Status: route-tooling, failed, not-comparable
+- Scope: config-driver
+- Hypothesis: One-second paused slices will keep fixed silicon below 72 C long
+  enough to observe the exact EDGE event-send result.
+- Changed files/settings: The run used the same exact installed APK as
+  experiments 121 and 122. Its SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  and its size was 116,143,682 bytes. The HLE settings matched experiment 122.
+  The guest started paused, the full runtime census was off, and the controller
+  requested one-second slices. The stop marker was
+  `Thor EDGE EFWAIT EVENT`.
+- Rollback: The slice controller force-stopped RPCSX after it could not restore
+  a held emulator state. Its stop result had no PID, zero RPCSX rows in `top`,
+  and `quiet=true`. The wrapper stop confirmed the same result. Property
+  cleanup cleared 56 values and found zero remaining
+  `debug.rpcsx.thor.*` values. The final fixed-silicon value was 47.4 C. Do not
+  launch the Thor again in this hardware round.
+- Thor result: The one-sample gate passed at 43.7 C fixed silicon. The exact APK
+  identity matched. The first slice cooled to 46.2 C before release. Resume
+  succeeded, but each normal pause call returned `ok=false,paused=false`.
+  The controller stopped after one incomplete slice. Its host duration was
+  28.719 seconds, and its maximum fixed-silicon value was 70.7 C. This value is
+  below the 72 C hard stop. The emulator junction guard engaged at 86 C; this
+  was below its separate 95 C hard limit.
+- Control-path evidence: The start-paused gate became ready at guest time 1.025
+  seconds and was released at guest time 8.626 seconds. Source inspection shows
+  that this first release changes the emulator from `ready` to `starting` and
+  already requests pause after startup. A normal `Emulator::Pause()` accepts
+  only `running`; it correctly refuses `starting`. The controller treated that
+  expected startup transition as an eight-second pause failure. This is a host
+  control-path defect, not an HLE event result.
+- HLE evidence: No `Thor EDGE EFWAIT EVENT` row appears. The run stopped during
+  early PPU and SPU startup work, before the prior event boundary. It provides
+  no evidence for an event-flag, notification, or loader change.
+- Visual correctness: Not proved. The controller stopped RPCSX before the
+  boundary screenshot.
+- FPS/frame-time: No credit. No moving gameplay sample exists.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-145616-thor-input-custom`.
+- Wrapper defect: The process was already stopped when the route wrapper called
+  `Get-ThorEvidenceBody`. That helper is private to `thor_input_macro.ps1`, so
+  the wrapper failed during post-processing. The successor reads the recorded
+  PID evidence directly and does not call the private helper.
+- Decision: Keep the exact APK and HLE semantic stack unchanged. The host
+  controller now recognizes the first `ready` to `starting` handoff. It waits
+  for the already requested startup pause for at most 120 seconds while it
+  continues to poll fixed silicon and force-stops at 72 C. Later slices keep
+  the normal eight-second pause timeout. The result now records initial state,
+  final state, pause request time, pause settle time, and the startup-handoff
+  flag.
+- Windows result: The simulated guarded-slice state machine, the fixed-silicon
+  contract, the device thermal guard, the Transformers HLE route contract,
+  Python compilation, PowerShell parsing, and `git diff --check` pass. This is
+  a host-only successor and does not need a new APK.
+- Next: In a separate independently cool hardware round, use the same exact APK
+  and the repaired host route. Start immediately below 70 C and stop at 72 C.
+  Require the first startup handoff to settle into a held state, then continue
+  one-second slices to the exact EDGE event marker. Do not change HLE semantics
+  until the event result is recorded. Require correct moving 3D output and a
+  comparable sustained 30 FPS measurement before a full-HLE or performance
+  claim.

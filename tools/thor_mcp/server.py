@@ -77,6 +77,9 @@ SERIAL = os.environ.get("THOR_SERIAL", "192.168.1.3:5555")
 PORT = int(os.environ.get("THOR_CTRL_PORT", "8099"))
 PKG = "net.rpcsx.easy"
 FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
+EMU_STATE_PAUSED = 4
+EMU_STATE_READY = 6
+EMU_STATE_STARTING = 7
 
 
 # --------------------------------------------------------------------------
@@ -324,12 +327,17 @@ def t_press(a):
             "maxFixedSiliconC": max_silicon}
 
 
-def is_paused():
+def emulation_state():
     r = api("/status")
+    state = r.get("state") if isinstance(r, dict) else None
+    return state if isinstance(state, int) else None
+
+
+def is_paused():
     # system_state: 4 Paused, 6 Ready. A start-paused debug boot is Ready and
     # has no guest threads until the first resume. Treat it as a valid held
     # state so thor_slice guards that first resume too.
-    return isinstance(r, dict) and r.get("state") in (4, 6)
+    return emulation_state() in (EMU_STATE_PAUSED, EMU_STATE_READY)
 
 
 def hold(a, default=True):
@@ -363,13 +371,20 @@ def t_slice(a):
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
-    if not is_paused():
+    initial_state = emulation_state()
+    if initial_state not in (EMU_STATE_PAUSED, EMU_STATE_READY):
         return {"refused": True,
                 "reason": "the emulator must be paused before a bounded slice"}
 
     duration = max(0.1, min(float(a.get("seconds", 1.5)), 5.0))
     start_ceiling = float(a.get("maxStartC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
+    pause_timeout = max(1.0, min(float(a.get("pauseTimeoutS", 8.0)), 30.0))
+    startup_pause_timeout = max(
+        pause_timeout,
+        min(float(a.get("startupPauseTimeoutS", 120.0)), 300.0),
+    )
+    startup_handoff = initial_state == EMU_STATE_READY
     start_silicon = fixed_silicon_c()
     if start_silicon < 0 or start_silicon >= start_ceiling:
         return {"refused": True, "fixedSiliconC": start_silicon,
@@ -426,36 +441,65 @@ def t_slice(a):
                 "elapsedS": round(elapsed, 3),
                 "maxFixedSiliconC": max_silicon, "pause": pause}
 
-    paused = is_paused()
+    final_state = emulation_state()
+    paused = final_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
     pause_started = time.monotonic()
-    while not paused and time.monotonic() - pause_started < 8.0:
+    hold_timeout = startup_pause_timeout if startup_handoff else pause_timeout
+    while not paused and time.monotonic() - pause_started < hold_timeout:
         silicon = fixed_silicon_c()
         max_silicon = max(max_silicon, silicon)
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
-            return {"thermalStop": True, "elapsedS": round(elapsed, 3),
+            active_elapsed = time.monotonic() - started
+            return {"thermalStop": True,
+                    "elapsedS": round(active_elapsed, 3),
                     "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume,
-                    "pause": pause, "stop": stop}
+                    "pause": pause, "stop": stop,
+                    "initialState": initial_state,
+                    "finalState": final_state,
+                    "startupHandoff": startup_handoff}
         time.sleep(0.25)
-        pause = api("/pause", "POST")
-        paused = is_paused()
+        final_state = emulation_state()
+        paused = final_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
+        # The first resume from Ready already requests pause-after-startup.
+        # system_state::starting cannot accept a normal pause. Wait for that
+        # one startup handoff while the fixed-silicon hard guard stays active.
+        if not paused and not (startup_handoff and final_state == EMU_STATE_STARTING):
+            pause = api("/pause", "POST")
+            final_state = emulation_state()
+            paused = final_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
 
     if not paused:
         stop = t_stop({})
+        active_elapsed = time.monotonic() - started
         return {"error": "the bounded slice could not restore a held state",
-                "elapsedS": round(elapsed, 3), "maxFixedSiliconC": max_silicon,
-                "resume": resume, "pause": pause, "stop": stop}
+                "elapsedS": round(active_elapsed, 3),
+                "pauseRequestedAtS": round(
+                    float(deadline_pause.get("requestedAtS", elapsed)), 3),
+                "startFixedSiliconC": start_silicon,
+                "endFixedSiliconC": silicon,
+                "maxFixedSiliconC": max_silicon,
+                "resume": resume, "pause": pause, "stop": stop,
+                "initialState": initial_state,
+                "finalState": final_state,
+                "startupHandoff": startup_handoff,
+                "pauseTimeoutS": hold_timeout}
 
+    active_elapsed = time.monotonic() - started
     result = {"completed": True, "requestedS": duration,
-              "elapsedS": round(elapsed, 3),
+              "elapsedS": round(active_elapsed, 3),
               "pauseRequestedAtS": round(
                   float(deadline_pause.get("requestedAtS", elapsed)), 3),
+              "pauseSettledAtS": round(active_elapsed, 3),
               "startFixedSiliconC": start_silicon,
               "endFixedSiliconC": silicon,
               "maxFixedSiliconC": max_silicon,
               "resume": resume, "pause": pause,
-              "paused": paused}
+              "paused": paused,
+              "initialState": initial_state,
+              "finalState": final_state,
+              "startupHandoff": startup_handoff}
     if a.get("includeState", True):
         result["device"] = api("/device")
         result["diag"] = api("/diag")
@@ -584,6 +628,8 @@ def t_slice_loop(a):
             "seconds": duration,
             "maxStartC": start_ceiling,
             "maxSiliconC": hard_limit,
+            "startupPauseTimeoutS": min(
+                float(cool_timeout), max(8.0, remaining_host_s - 1.0)),
             "includeState": False,
         })
         part_max = part.get("maxFixedSiliconC",
@@ -597,9 +643,13 @@ def t_slice_loop(a):
             "requestedS": part.get("requestedS", duration),
             "elapsedS": part.get("elapsedS"),
             "pauseRequestedAtS": part.get("pauseRequestedAtS"),
+            "pauseSettledAtS": part.get("pauseSettledAtS"),
             "startFixedSiliconC": part.get("startFixedSiliconC"),
             "endFixedSiliconC": part.get("endFixedSiliconC"),
             "maxFixedSiliconC": part.get("maxFixedSiliconC"),
+            "initialState": part.get("initialState"),
+            "finalState": part.get("finalState"),
+            "startupHandoff": part.get("startupHandoff"),
         }
         records.append(record)
 

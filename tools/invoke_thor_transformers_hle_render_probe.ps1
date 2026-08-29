@@ -238,7 +238,16 @@ try {
             -TimeoutSeconds $controllerTimeout
 
         $pidEvidence = Invoke-ThorAdbText $adb $captureDir "slice-loop-pid.txt" @("shell", "pidof net.rpcsx.easy") -AllowFailure
-        if (@(Get-ThorEvidenceBody $pidEvidence).Count -gt 0) {
+        $pidRows = @(
+            Get-Content -LiteralPath $pidEvidence |
+                ForEach-Object { $_.ToString().Trim() } |
+                Where-Object {
+                    $_ -and
+                    -not $_.StartsWith("#") -and
+                    $_ -notmatch '^exit='
+                }
+        )
+        if ($pidRows.Count -gt 0) {
             $screenshotArguments = @{ path = (Join-Path $captureDir "slice-loop-boundary.png") }
             $null = Invoke-ThorRenderProbeController `
                 -Name "thor_screenshot" `
