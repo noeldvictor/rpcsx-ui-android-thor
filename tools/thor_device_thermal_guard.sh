@@ -13,6 +13,7 @@ battery_hard_milli_c="${5:?battery hard limit}"
 skin_hard_c="${6:?skin hard limit}"
 ready_path="${7:-}"
 poll_interval="${8:-2}"
+early_action="${9:-stop}"
 
 silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 82 90"
 junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"
@@ -20,6 +21,7 @@ battery_zone=94
 seen_process=0
 sample=0
 last_skin=""
+early_hold_active=0
 
 stop_package() {
     am force-stop "$package" >/dev/null 2>&1
@@ -37,6 +39,18 @@ while :; do
     fi
     seen_process=1
     sample=$((sample + 1))
+
+    if [ "$early_hold_active" -eq 1 ]; then
+        process_state="$(run-as "$package" cat "/proc/$pid/status" 2>/dev/null |
+            sed -n 's/^State:[[:space:]]*\([A-Za-z]\).*/\1/p' | head -n 1)"
+        case "$process_state" in
+            T|t) ;;
+            *)
+                echo "sample=$sample status=ok code=silicon-early-hold-released pid=$pid process_state=${process_state:-unknown}"
+                early_hold_active=0
+                ;;
+        esac
+    fi
 
     silicon_max=0
     silicon_source="none"
@@ -103,9 +117,28 @@ while :; do
         exit 44
     fi
     if [ "$silicon_max" -ge "$silicon_stop_milli_c" ]; then
-        echo "sample=$sample status=failed code=silicon-early-stop value=$silicon_max limit=$silicon_stop_milli_c hard_limit=$silicon_hard_milli_c"
-        stop_package
-        exit 43
+        if [ "$early_action" = "hold" ]; then
+            if [ "$early_hold_active" -eq 0 ]; then
+                run-as "$package" kill -STOP "$pid" >/dev/null 2>&1 || true
+                process_state="$(run-as "$package" cat "/proc/$pid/status" 2>/dev/null |
+                    sed -n 's/^State:[[:space:]]*\([A-Za-z]\).*/\1/p' | head -n 1)"
+                case "$process_state" in
+                    T|t)
+                        early_hold_active=1
+                        echo "sample=$sample status=held code=silicon-early-hold value=$silicon_max limit=$silicon_stop_milli_c hard_limit=$silicon_hard_milli_c pid=$pid process_state=$process_state"
+                        ;;
+                    *)
+                        echo "sample=$sample status=failed code=silicon-early-hold-failed value=$silicon_max limit=$silicon_stop_milli_c pid=$pid process_state=${process_state:-unknown}"
+                        stop_package
+                        exit 48
+                        ;;
+                esac
+            fi
+        else
+            echo "sample=$sample status=failed code=silicon-early-stop value=$silicon_max limit=$silicon_stop_milli_c hard_limit=$silicon_hard_milli_c"
+            stop_package
+            exit 43
+        fi
     fi
     if [ "$junction_max" -ge "$junction_hard_milli_c" ]; then
         echo "sample=$sample status=failed code=junction-hard-limit value=$junction_max limit=$junction_hard_milli_c"

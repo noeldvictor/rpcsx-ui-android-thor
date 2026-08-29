@@ -175,7 +175,7 @@ function Start-ThorSliceDeviceGuard {
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
         "68000", "72000", "95000", "34000", "40",
-        $script:ThorSliceDeviceGuardReady, "0.25"
+        $script:ThorSliceDeviceGuardReady, "0.25", "hold"
     )
 
     $script:ThorSliceDeviceGuardPowerShell = [PowerShell]::Create()
@@ -313,6 +313,7 @@ try {
             "- Maximum slices: $MaxSlices",
             "- Maximum host seconds: $MaxSliceHostSeconds",
             "- Cool timeout seconds: $SliceCoolTimeoutSeconds",
+            "- Runtime slice resume target C: 60",
             "- Device watchdog early stop C: 68",
             "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch"
@@ -324,6 +325,7 @@ try {
             maxHostS = $MaxSliceHostSeconds
             coolTimeoutS = $SliceCoolTimeoutSeconds
             maxStartC = 70
+            resumeTargetC = 60
             maxSiliconC = 72
             stopMatch = $SliceStopMatch
             markerEvery = 1

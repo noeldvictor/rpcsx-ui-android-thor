@@ -14,16 +14,21 @@ $requiredGuardFragments = @(
     'battery_zone=94',
     'ready_path="${7:-}"',
     'poll_interval="${8:-2}"',
+    'early_action="${9:-stop}"',
     'code=ready-file',
     '[ "$silicon_count" -ne 15 ]',
     '[ "$junction_count" -ne 14 ]',
     'code=sensor-set',
     'code=silicon-hard-limit',
     'code=silicon-early-stop',
+    'code=silicon-early-hold',
+    'code=silicon-early-hold-released',
+    'code=silicon-early-hold-failed',
     'code=junction-hard-limit',
     'code=battery-hard-limit',
     'code=skin-hard-limit',
     'am force-stop "$package"',
+    'run-as "$package" kill -STOP "$pid"',
     'sleep "$poll_interval"'
 )
 
@@ -89,7 +94,7 @@ foreach ($fragment in @(
     'function Start-ThorSliceDeviceGuard',
     'function Stop-ThorSliceDeviceGuard',
     '"68000", "72000", "95000", "34000", "40"',
-    '$script:ThorSliceDeviceGuardReady, "0.25"',
+    '$script:ThorSliceDeviceGuardReady, "0.25", "hold"',
     'slice-device-thermal-guard-ready.txt',
     'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
     'Stop-ThorSliceDeviceGuard'

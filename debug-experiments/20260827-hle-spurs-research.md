@@ -6146,3 +6146,51 @@ rendering progress.
   result with the matching SPU dispatch delta before any HLE semantic change.
   Require correct moving 3D output and a comparable sustained 30 FPS
   measurement before a full-HLE or performance claim.
+
+## 126. Half-second process slices stay below 70 C and reach SPU startup
+
+- Status: route-tooling, not-comparable
+- Scope: config-driver, thermal-safety
+- Hypothesis: An API-free startup deadline and half-second slices will keep
+  fixed silicon below 70 C while the title advances toward the EDGE event
+  boundary.
+- Changed files/settings: The run used the same exact installed APK and HLE
+  stack as experiment 125. Its APK SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`.
+  The host included commit `65bde5138`. The slice duration was 0.5 seconds. The
+  independent watchdog polled every 0.25 seconds and had a 68 C early-stop
+  threshold and a 72 C hard limit.
+- Rollback: The device watchdog force-stopped RPCSX at its early threshold. The
+  wrapper stop result had no PID, zero RPCSX rows in `top`, and `quiet=true`.
+  Property cleanup cleared 56 values and found zero remaining
+  `debug.rpcsx.thor.*` values. The final fixed-silicon value was 50.6 C. Do not
+  launch the Thor again in this hardware round.
+- Thor result: The cold-start gate passed at 44.1 C fixed silicon. Twenty
+  process-held slices completed. Their total active time was 11.816 seconds.
+  Every deadline settled in 0.563 to 0.640 seconds. The controller maximum was
+  61.8 C. The independent device watchdog sampled 141 times and stopped at
+  69.9 C, below both 70 C and the 72 C hard limit. Its CPU-junction maximum was
+  below the separate 95 C limit.
+- Startup evidence: The title completed PPU function and block analysis, reused
+  225 warm-cache PPU objects, reused one later PPU object, and entered the ARM64
+  SPU runtime. The last row records the first SPU GETLLAR pattern at local-store
+  address `0x00d18`. This is useful forward progress and is not a repeated
+  controller state.
+- HLE evidence: No `Thor EDGE EFWAIT EVENT` row appears. The process stopped at
+  the start of SPU compilation, before the event-correlation boundary. This run
+  provides no evidence for an event-flag, notification, or loader change.
+- Visual correctness: Not proved. No boundary screenshot exists.
+- FPS/frame-time: No credit. The log reports zero frames during startup.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-152544-thor-input-custom`.
+- Decision: Keep the API-free process deadline and half-second or smaller
+  slices. Do not discard accumulated startup work at the early thermal margin.
+  The successor gives the slice route a hold action: the device watchdog sends
+  `SIGSTOP` at 68 C, the controller adopts the stopped process, and later slices
+  resume only below 60 C. A 72 C sample still force-stops the package. General
+  non-slice routes keep their existing early force-stop behavior.
+- Next: In a separate independently cool hardware round, use 0.25-second active
+  slices with the same exact APK. Preserve the process through early thermal
+  holds and continue to `Thor EDGE EFWAIT EVENT`. Correlate the exact result and
+  SPU dispatch delta before an HLE semantic repair. Do not claim gameplay or
+  sustained 30 FPS until correct moving 3D output is visible and measured.

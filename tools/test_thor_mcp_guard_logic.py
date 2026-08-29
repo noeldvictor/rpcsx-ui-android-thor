@@ -95,6 +95,15 @@ SERVER.threading.Timer = DeadlineTimer
 SERVER.api = lambda path, method="GET", timeout=8: {"state": 6}
 assert SERVER.is_paused() is True, "The start-paused Ready state is not held."
 
+SERVER._process_hold_pid = None
+SERVER.pid = lambda: "123"
+SERVER._process_state = lambda process_id: "T"
+assert SERVER.held_process_pid() == "123", (
+    "The controller did not adopt an independent device-watchdog hold."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
 calls = prepare_paused_guest()
 use_temperatures([42.0, 45.0, 50.0, 55.0, 60.0])
 result = SERVER.t_slice({"seconds": 1.0})
@@ -268,8 +277,22 @@ assert all(item["includeState"] is False for item in loop_slices), "The slice lo
 assert all(item["startupPauseTimeoutS"] <= 120 for item in loop_slices), (
     "The slice loop lost its bounded startup handoff."
 )
-assert all(item["targetC"] == 70 for item in loop_cool_requests), (
-    "The slice loop imposed a cooldown target below the 70 C start ceiling."
+assert [item["targetC"] for item in loop_cool_requests] == [70, 70], (
+    "The default slice loop changed its 70 C resume target."
+)
+
+loop_slices.clear()
+loop_cool_requests.clear()
+SERVER._matching_log_lines = lambda match, count=1: (
+    ["marker"] if "shutdown completion event mask" in match and len(loop_slices) == 3
+    else []
+)
+result = SERVER.t_slice_loop({
+    "seconds": 1.0, "maxSlices": 4, "resumeTargetC": 60,
+})
+assert result["markerReached"] is True, "The cooled slice loop missed the marker."
+assert [item["targetC"] for item in loop_cool_requests] == [70, 60, 60], (
+    "The slice loop did not keep 70 C for launch and 60 C for later resumes."
 )
 
 stops = []
