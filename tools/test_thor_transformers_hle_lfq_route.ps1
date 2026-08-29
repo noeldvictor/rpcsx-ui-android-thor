@@ -116,7 +116,7 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"',
     '[ValidateRange(1, 4096)]',
-    '[int]$SpuCachePreloadLimit = 1',
+    '[int]$SpuCachePreloadLimit = 64',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
     'Macro = $Macro',
     'ThermalRuntimeStopHeadroomC = 0',

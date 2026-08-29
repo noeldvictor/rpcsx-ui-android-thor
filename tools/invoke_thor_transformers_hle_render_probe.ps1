@@ -28,7 +28,7 @@ param(
     [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
     [ValidateRange(1, 4096)]
-    [int]$SpuCachePreloadLimit = 1,
+    [int]$SpuCachePreloadLimit = 64,
     [string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"
 )
 
