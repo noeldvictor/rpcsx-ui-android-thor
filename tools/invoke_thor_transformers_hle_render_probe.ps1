@@ -51,7 +51,7 @@ param(
     [int]$SliceResumeStableSamples = 3,
     [ValidateRange(0.25, 5.0)]
     [double]$SliceResumeSampleIntervalSeconds = 1.0,
-    [string]$SliceStopMatch = "Thor EDGE EFWAIT EVENT"
+    [string]$SliceStopMatch = "Thor LATE LOAD IO COMPLETION: sample=2"
 )
 
 $ErrorActionPreference = "Stop"

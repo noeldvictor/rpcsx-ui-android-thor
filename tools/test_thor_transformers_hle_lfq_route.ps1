@@ -139,7 +139,7 @@ $requiredRenderProbeFragments = @(
     '[int]$SliceCoolTimeoutSeconds = 120',
     '[int]$SliceResumeStableSamples = 3',
     '[double]$SliceResumeSampleIntervalSeconds = 1.0',
-    '[string]$SliceStopMatch = "Thor EDGE EFWAIT EVENT"',
+    '[string]$SliceStopMatch = "Thor LATE LOAD IO COMPLETION: sample=2"',
     'if ($SliceLoop -and $StartPaused -ne "on")',
     'Macro = if ($SliceLoop) { "" } else { $Macro }',
     'InputMode = $InputMode',
