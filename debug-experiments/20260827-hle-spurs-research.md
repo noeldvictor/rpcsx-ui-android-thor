@@ -6399,3 +6399,73 @@ rendering progress.
   host deadline. Correlate the event result and SPU dispatch delta before an
   HLE semantic change. Require correct moving 3D output and a comparable
   sustained 30 FPS measurement before a full-HLE or performance claim.
+
+## 131. The first delayed EDGE event dispatch is correct
+
+- Status: android-pass, route-tooling, not-comparable
+- Scope: config-driver, event-delivery, thermal-safety
+- Hypothesis: The preserved slice-loop profile will restore native SPU object
+  loads and let one thermally held process reach the exact correlated EDGE
+  event result.
+- Changed files/settings: The run used the same exact installed APK as
+  experiment 130. Its SHA-256 was
+  `C1A97D78A44035190004056639A066BD0F45F28BCC4515EC57FE6F3D4A190EFE`,
+  and its size was 116,143,682 bytes. The host included commit `08054ee91`.
+  The route used the experiment 130 HLE stack, 0.25-second slices, one cold
+  sample below 70 C, three later-resume samples below 60 C, a 66 C device
+  hold, and a 72 C hard stop. The EDGE wait trace was on, and the full runtime
+  census was off.
+- Route readback: `slice-loop-profile-effective.txt` proves that the delayed
+  profile was active after launcher cleanup. It includes HLE `libsre.sprx`,
+  the HLE SPURS kernel, the EDGE trace and interpreter, atomic task selection,
+  the task attribute repair, the Transformers SPU reserve, native SPU object
+  cache `on`, preload limit 64, compile budget 50 ms, and cache affinity 7.
+- Thor result: The one-sample cold-start gate passed at 44.9 C fixed silicon.
+  The controller completed 69 slices and accumulated 24.543 active seconds in
+  557.313 host seconds. Active windows were 0.328 to 0.453 seconds. Cooldown
+  waits totaled 145 seconds. The controller maximum was 64.2 C. It stopped on
+  the exact event marker with the same PID held and paused.
+- Cache evidence: Startup logged the native-object activation and the bounded
+  64-of-879 preload. The log contains 205 native SPU object loads. The title
+  cache increased from 439,777 to 440,341 KiB. This proves that the route
+  property-lifetime repair works on the device.
+- Event evidence: The PoolThread armed flag `0x01e54800`, request bit one, AND
+  mode, slot zero, queue `0x8d005600`, and port 17. The exact edgeZlib helper
+  entered at PC `0x0a4d8`, wrote interrupt mailbox value `0x51000000` at PC
+  `0x0a514`, and dispatched one event after the arm. The event returned
+  `0x00000000` on port 17 and queue `0x8d005600`. The PPU received bit
+  `0x0001`, returned success, cleared its pending receive state, and armed the
+  next wait. Dispatch delta was exactly one. This rules out a missing event,
+  wrong queue connection, or failed first wait at this boundary.
+- Loader evidence: Before the event, the main thread was in the staged loader
+  wait with an active IO entry and one pending cache range. The first
+  completion value was one. The successful event is necessary for this
+  request, but the route stopped before loader finalization. It does not yet
+  prove that the later completion state clears.
+- Visual correctness: Not proved. The boundary image is black except for the
+  performance overlay. It reports 0.06 FPS and has no visible 3D output.
+- FPS/frame-time: No credit. A prior sensor interval contained only four
+  frames in 112 seconds. This is a paused startup and loading route, not a
+  moving gameplay measurement.
+- Thermal result: The independent guard recorded 970 temperature samples. It
+  held the same PID three times. Fixed silicon peaked at 66.6 C, and CPU
+  junction peaked at 85.9 C. Neither hard limit fired. The boundary screenshot
+  was taken at 61.4 C fixed silicon.
+- Rollback: The wrapper stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup found zero remaining
+  `debug.rpcsx.thor.*` values. Final fixed-silicon values were 52.2 C after
+  stop and 53.8 C after cleanup. Do not launch the Thor again in this hardware
+  round.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-162309-thor-input-custom`.
+- Decision: Keep the event path and the current HLE repair stack. Do not add a
+  notification, queue, event-result, or first-wait repair. Keep the
+  property-lifetime and thermal-controller repairs. The next proof boundary is
+  the second late-loader completion sample, not the first EDGE event.
+- Next: In a later independently cool hardware round, use the same exact APK.
+  Use 0.5-second preserved slices and stop on
+  `Thor LATE LOAD IO COMPLETION: sample=2`. Require two stable late-loader
+  samples and correlate their completion value with the live EDGE wait state.
+  Do not force a completion value. Require correct moving 3D output and a
+  comparable sustained 30 FPS measurement before a full-HLE or performance
+  claim.
