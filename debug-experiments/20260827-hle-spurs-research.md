@@ -3670,3 +3670,73 @@ HLE task creation, event delivery, task resume, live Bink texture production,
 visible loading output, and an instantaneous 30 FPS result are proved. Correct
 3D output and sustained 30 FPS are not proved. The next work must reduce
 startup CPU heat or reach the first map with a shorter state-gated route.
+
+## 66. The thermal guard now runs on the Thor
+
+The route now installs a fixed-sensor guard on the device before title launch.
+It reads the 15 CPU-subsystem, GPU-subsystem, DDR, SoC, and crystal zones, the
+14 CPU-junction zones, the battery zone, and the hardware skin sensor every two
+seconds. The host preflight first proves that the device list matches the full
+sensor source set. Runtime checks no longer use repeated host ADB walks.
+
+The silicon early-stop value is 70 C. The silicon hard limit is 72 C, and the
+CPU-junction hard limit is 95 C. The standalone cold-start gate now takes one
+sample. A silicon value below 70 C passes, and a value at or above 70 C fails.
+The exact no-launch installer accepts the same one-sample gate. Host contracts
+cover 69.9 C as a pass and 70.0 C as a failure.
+
+The long bounded route in `20260828-211905-thor-input-custom` started at
+46.2 C silicon. Short resume and pause windows stayed below the launch limit
+until the last window. The device guard stopped RPCSX at 71.1 C, below the
+72 C hard limit. The route did not reach a correct 3D frame.
+
+## 67. Pausing now stops the HLE SPURS service loops
+
+Before the repair, a paused title left five HLE SPURS system-service callbacks
+near one full host core each. The guest was paused, but each callback remained
+inside a host C++ loop and did not return to the normal SPU state check.
+
+The two system-service loops now call `spu.check_state()` and return when the
+thread state requests a pause. Exact APK
+`DF621EAE0FCE69428288118EA220CB23F1DA9BD8F74D73672052FDFE32AD9C4A`
+proved the repair in `20260828-211745-thor-input-custom`. All 78 threads were
+sleeping after the pause. The process used 0.020 host cores, and silicon was
+46.6 C. This makes pause-and-inspect routes thermally bounded. It does not
+prove gameplay output.
+
+## 68. A zero LS pattern wastes the startup window
+
+The route in `20260828-213831-thor-input-custom` used exact diagnostic APK
+`4E9DA3495861F5BA5D12202F6B00F1B5598EED7DE9249D6FBF2DF9063DB95BB5`.
+The APK is 116,136,811 bytes. The no-launch install and on-device hash proof are
+in `20260828-213808-transformers-savectx-pattern-install`.
+
+The diagnostic identified a separate task before Bink. It had 122 allocated
+local-store save blocks but an all-zero LS pattern. Its context save failed
+because stack block 127 was not selected. The task retried the failed save more
+than 12,288 times in the bounded window. The Bink task was created later and
+kept its correct caller pattern:
+
+    00000000000001800000000000000001
+
+Thus, the Bink bit order is not the failure. The earlier zero-pattern task is a
+separate source of wasted CPU time.
+
+One successor route enabled the existing bounded attribute fallback. Capture
+`20260828-214025-thor-input-custom` synthesized the full 122-block task-area
+pattern for the earlier task:
+
+    03ffffffffffffffffffffffffffffff
+
+It still kept the exact three-block Bink caller pattern. No `SAVECTX FAIL`,
+unknown STOP, access violation, native fatal, or signal 11 occurred. The device
+guard stopped RPCSX at 71.5 C while the second screenshot was being checked;
+the missing PID was therefore a guard stop, not a native crash.
+
+The fallback-off black boundary reported 25.20 FPS and 50.7% total CPU in
+`20260828-213831-thor-input-custom`. The fallback-on black boundary reported
+27.84 FPS and 48.7% total CPU in `20260828-214025-thor-input-custom`. The cache
+progress frames differed, so these two instantaneous values are directional
+evidence, not a sustained speed comparison. Removing the repeated save failure
+is structural evidence. The Transformers HLE route now enables the fallback by
+default. Correct 3D output and sustained 30 FPS are still not proved.

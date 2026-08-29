@@ -3936,7 +3936,11 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 			if (const u32 n = s_e2++; n < 4 || (n & 0xFFF) == 0)
 			{
 				cellSpurs.error("Thor SAVECTX FAIL #%u: stack block %u not in ls_pattern "
-					"(sp=0x%05x taskId=%u)", n, i, ctxt->savedContextSp.value()._u32[3], +ctxt->taskId);
+					"(sp=0x%05x taskId=%u source=%016llx%016llx vector=%016llx%016llx bit=%u alloc=%u)",
+					n, i, ctxt->savedContextSp.value()._u32[3], +ctxt->taskId,
+					+taskInfo->ls_pattern._u64[0], +taskInfo->ls_pattern._u64[1],
+					ls_pattern._u64[1], ls_pattern._u64[0],
+					static_cast<u32>(i ^ 127), allocLsBlocks);
 			}
 
 			return CELL_SPURS_TASK_ERROR_STAT;

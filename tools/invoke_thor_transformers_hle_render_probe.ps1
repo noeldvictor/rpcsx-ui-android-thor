@@ -12,7 +12,7 @@ param(
     [ValidateSet("on", "off")]
     [string]$EdgeEventInterp = "off",
     [ValidateSet("on", "off")]
-    [string]$TaskAttrFix = "off",
+    [string]$TaskAttrFix = "on",
     [ValidateSet("on", "off")]
     [string]$SpursProbe = "off",
     [ValidateSet("on", "off")]
