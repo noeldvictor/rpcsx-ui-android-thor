@@ -3,9 +3,10 @@ $ErrorActionPreference = "Stop"
 $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSpurs.cpp"
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
 
-$setStart = $cellSpurs.IndexOf('s32 cellSpursEventFlagSet(')
+$setComment = $cellSpurs.IndexOf('/// Set a SPURS event flag')
+$setStart = $cellSpurs.IndexOf('s32 cellSpursEventFlagSet(', $setComment)
 $waitStart = $cellSpurs.IndexOf('s32 _spurs::event_flag_wait(', $setStart)
-if ($setStart -lt 0 -or $waitStart -le $setStart) {
+if ($setComment -lt 0 -or $setStart -lt 0 -or $waitStart -le $setStart) {
     throw "The SPURS event-flag Set function is not in the expected source range."
 }
 
@@ -28,6 +29,21 @@ if (-not $setBody.Contains($requiredSlotWrite)) {
 $rejectedSlotWrite = 'pendingRecvTaskEvents[j] = spuTaskRelevantEvents;'
 if ($setBody.Contains($rejectedSlotWrite)) {
     throw "The SPURS event-flag Set function saves events in the mirrored wait slot."
+}
+
+$requiredSignalDiagnostic = 'if (rc != CELL_OK)'
+if (-not $setBody.Contains($requiredSignalDiagnostic)) {
+    throw "The SPURS event-flag Set function does not handle a firmware diagnostic result."
+}
+
+$requiredFatalResults = 'rc + 0u == CELL_SPURS_TASK_ERROR_INVAL || rc + 0u == CELL_SPURS_TASK_ERROR_STAT'
+if (-not $setBody.Contains($requiredFatalResults)) {
+    throw "The SPURS event-flag Set function does not map INVAL and STAT to FATAL."
+}
+
+$rejectedSignalAssert = 'ensure(rc == CELL_OK);'
+if ($setBody.Contains($rejectedSignalAssert)) {
+    throw "The SPURS event-flag Set function stops the PPU thread for a firmware diagnostic result."
 }
 
 $requiredFragment = 'receivedEvents = eventFlag->pendingRecvTaskEvents[i];'

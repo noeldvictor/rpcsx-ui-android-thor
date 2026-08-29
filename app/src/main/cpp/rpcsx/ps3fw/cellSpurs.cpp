@@ -3906,13 +3906,24 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 					*taskset = vm::cast(eventFlag->addr);
 				}
 
-				auto rc = _cellSpursSendSignal(ppu, *taskset, eventFlag->waitingTaskId[i]);
+				const s32 rc = _cellSpursSendSignal(ppu, *taskset, eventFlag->waitingTaskId[i]);
 				if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL || rc + 0u == CELL_SPURS_TASK_ERROR_STAT)
 				{
 					return CELL_SPURS_TASK_ERROR_FATAL;
 				}
 
-				ensure(rc == CELL_OK);
+				// Sony libsre at 0x16010 sends other results to its diagnostic helper.
+				// It then returns CELL_OK. Do not stop the PPU thread for SRCH.
+				if (rc != CELL_OK)
+				{
+					static std::atomic<u32> s_signal_errors{0};
+
+					if (const u32 n = s_signal_errors++; n < 8 || (n & 0xff) == 0)
+					{
+						cellSpurs.error("Thor EFSET signal #%u: slot=%d taskset=0x%x taskId=%u rc=0x%x", n, i,
+							taskset->addr(), eventFlag->waitingTaskId[i], rc);
+					}
+				}
 			}
 		}
 	}
