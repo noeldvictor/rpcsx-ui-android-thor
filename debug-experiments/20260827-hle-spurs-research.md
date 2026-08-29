@@ -4585,3 +4585,57 @@ The next APK adds two bounded records. One record shows each selector that sees
 or selects workload 0. The other record shows the task state after each atomic
 selection for workload 0. This will show whether the second signal is lost at
 the workload gate or whether the taskset returns no selectable task.
+
+## 98. The HLE callback boundary can lose an edge task signal
+
+Capture `20260829-065235-thor-input-custom` used exact APK
+`C08B69C5F18A03A06DF23619550A3BEF787E71EF7EF41A66AFBE2D30B5DCE097`.
+It enabled the bounded edge-task census. All three direct Start actions were
+accepted. Workload 0 consumed the signal, selected task 0, and entered the edge
+event interpreter. This sequence repeated. The bounded log reached eight edge
+wakes, 32 edge task selections, 16 edge event-interpreter entries, 24 queue-ring
+records, and 16 queue notifications. The queue pop count reached at least 23.
+
+The main thread continued and created FMOD workload 9 at guest time 4:28. The
+last active slice ended when it entered `cellSpursEventFlagWait` for the new
+workload. This is progress and is not proof of an FMOD stall. Visual inspection
+of `01-edge-task-boundary.png` shows the Transformers loading emblem and a pause
+notice. The image has SHA-256
+`659D9AA08DDC5E6E263663C73062B379BD45AF798E16A8BB2D2F22024CC9F13F`.
+Its FPS value has no speed credit. Fixed silicon reached 70.3 C and stayed below
+the 72 C runtime stop limit.
+
+Capture `20260829-070300-thor-input-custom` used the same APK with the edge-task
+census off. It added five post-Start work slices. The pool thread completed only
+one queue-ring operation and one workload wake at guest time 2:29.895. The main
+thread did not progress after that point. The rendering thread stayed active,
+but it later searched for a task in a disabled Bink taskset. The final loading
+image has SHA-256
+`B1041E8B4388F0470D9A5484477BF28471F184B326206899931C73B4E69662D7`.
+It includes a pause notice, and its FPS value has no speed credit. Fixed silicon
+reached 67.8 C. There was no access violation, verification failure, native
+crash, or fatal thread stop in either capture.
+
+This A/B corrects the conclusion in section 97. The second edge wake and task
+selection can complete. The diagnostic changes scheduling enough to cross the
+failure boundary. The host runs `RunHleFunction`, returns to the SPU CPU loop,
+and checks pause state before it invokes the next registered HLE address. The
+kernel selector previously consumed the workload signal and set `pc` to the HLE
+policy entry in the first callback. A lifecycle pause can occur before the next
+callback. If resume loses that entry PC, no workload signal remains to select
+the taskset again.
+
+Commit `f2555a2a9` makes this handoff pause-safe. The selector keeps the signal
+for an HLE taskset or job-chain policy module. It still issues the atomic
+reservation notification. The dispatch path also keeps the signal. The HLE
+policy entry consumes it as its first operation. A real SPU policy module keeps
+the existing dispatch-time signal consumption. The kernel 1 and kernel 2 paths
+use the same rule. A focused source contract covers both selectors, the dispatch
+guard, and both HLE policy entries. The selector-signal, contention-claim,
+LFQueue-route, and SPURS probe-build contracts also passed.
+
+The full Android debug build passed. Candidate APK
+`F5540C9C05DF14989A8A5839805361BFEDD7CDB22FB29A9D9140B0256B5A48EC`
+is 116,139,883 bytes. The next device run must keep the edge-task census off and
+repeat the exact long post-Start route. Success requires repeated queue-ring
+work and main-thread progress after the first cooled pause.
