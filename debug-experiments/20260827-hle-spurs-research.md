@@ -7376,3 +7376,43 @@ rendering progress.
 - Next: In one later independently cool run, use the exact built APK, enable
   the mutex trace, arm on `Thor TWC LWM ARM`, and keep a bounded post-arm
   window. Use the recorded owner and unlock evidence to select the next repair.
+
+## 151. Map the Transformers lightweight-mutex wrappers
+
+- Status: instrumentation, host-pass, not-comparable
+- Scope: Ghidra, sysPrxForUser, lightweight-mutex, call-site trace
+- Hypothesis: The game-level caller will distinguish the three static lock
+  families and identify the code that blocks the main thread.
+- Static result: Ghidra shows that wrapper `0x00e28c38` calls import stub
+  `0x0160c8c4`, which maps to `sys_lwmutex_lock`. Wrapper `0x00e28bf8` calls
+  import stub `0x0160c8e4`, which maps to `sys_lwmutex_unlock`. The FMOD audio
+  receive loop locks the objects at global offsets `0x10b0` and `0x10ac`, does
+  its update work, and unlocks the same objects in reverse order. The other
+  static callers use a list lock at offset `0x10b4` and a worker-list lock.
+- Upstream source check: Current RPCS3 uses the same non-HLE lightweight-mutex
+  algorithm as this RPCSX tree. The June 2024 `SYS_SYNC_RETRY` signaled-bit
+  correction is already present in the local kernel implementation. There is
+  no missing upstream lightweight-mutex repair to copy for this boundary.
+- Changed files/settings: The existing default-off trace now reads the saved
+  link register at stack offset `0x80` only when the game is inside its known
+  lock or unlock wrapper. Each bounded trace line includes the stack pointer
+  and game-level caller. The trace still does not change mutex or scheduler
+  state.
+- Rollback: Leave `-LwmutexTrace off`, which is the default. Revert the added
+  caller fields to remove the extra diagnostic read.
+- Windows result: Not run. This is Android native code.
+- Android build result: `:app:assembleDebug --no-configuration-cache` passed in
+  1 minute 5 seconds. The modified native file compiled and linked. The APK
+  SHA-256 is
+  `CDF0F94FDA7792BD65F809FA6C40A54DCC65C30BDA943D1B05B071DA790AF908`.
+- Thor result: Not run. Experiment 149 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused route contract, PowerShell parser, native Android
+  build, and `git diff --check` passed.
+- Decision: Keep the caller field. It identifies the game code that owns or
+  waits for the target mutex without changing guest state.
+- Next: In one later independently cool run, arm on the exact main-thread lock.
+  Match its caller and owner to the lock and unlock families above. Do not
+  force the mutex open without that evidence.

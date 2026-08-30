@@ -18,6 +18,7 @@ LOG_CHANNEL(sysPrxForUser);
 namespace
 {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
+constexpr u32 thor_transformers_lwmutex_unlock_lr = 0x00e28c18;
 constexpr u32 thor_transformers_lwmutex_trace_limit = 128;
 
 std::atomic<u32> g_thor_transformers_lwmutex_addr{0};
@@ -36,6 +37,30 @@ bool thor_transformers_lwmutex_trace_enabled() noexcept
 #else
 	return false;
 #endif
+}
+
+u32 thor_transformers_lwmutex_caller_lr(const ppu_thread& ppu) noexcept
+{
+	const u32 link_register = static_cast<u32>(ppu.lr);
+	if (link_register != thor_transformers_main_lwmutex_lock_lr &&
+		link_register != thor_transformers_lwmutex_unlock_lr)
+	{
+		return 0;
+	}
+
+	const u64 stack_pointer = ppu.gpr[1];
+	if (stack_pointer > 0xffff'ff7f)
+	{
+		return 0;
+	}
+
+	const u32 saved_link_address = static_cast<u32>(stack_pointer) + 0x80;
+	if (!vm::check_addr(saved_link_address, vm::page_readable))
+	{
+		return 0;
+	}
+
+	return static_cast<u32>(vm::read64(saved_link_address));
 }
 
 bool thor_transformers_lwmutex_trace_target(const ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
@@ -65,9 +90,11 @@ bool thor_transformers_lwmutex_trace_target(const ppu_thread& ppu, vm::ptr<sys_l
 	}
 
 	sysPrxForUser.error(
-		"Thor TWC LWM ARM: ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x lwmutex=0x%x",
+		"Thor TWC LWM ARM: ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
+		"sp=0x%llx caller=0x%x lwmutex=0x%x",
 		ppu.id, static_cast<std::string>(ppu.thread_name), ppu.cia,
-		static_cast<u32>(ppu.lr), address);
+		static_cast<u32>(ppu.lr), ppu.gpr[1],
+		thor_transformers_lwmutex_caller_lr(ppu), address);
 	return true;
 }
 
@@ -90,10 +117,11 @@ void thor_transformers_lwmutex_trace(const ppu_thread& ppu,
 	const u32 waiters = lwmutex->vars.waiter.load();
 	sysPrxForUser.error(
 		"Thor TWC LWM #%u: %s ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
-		"lwmutex=0x%x owner=0x%x waiters=%u attribute=0x%x recursive=%u "
-		"sleepq=0x%x result=0x%llx",
+		"sp=0x%llx caller=0x%x lwmutex=0x%x owner=0x%x waiters=%u "
+		"attribute=0x%x recursive=%u sleepq=0x%x result=0x%llx",
 		sequence, action, ppu.id, static_cast<std::string>(ppu.thread_name),
-		ppu.cia, static_cast<u32>(ppu.lr), lwmutex.addr(), owner, waiters,
+		ppu.cia, static_cast<u32>(ppu.lr), ppu.gpr[1],
+		thor_transformers_lwmutex_caller_lr(ppu), lwmutex.addr(), owner, waiters,
 		static_cast<u32>(lwmutex->attribute),
 		static_cast<u32>(lwmutex->recursive_count),
 		static_cast<u32>(lwmutex->sleep_queue), result);

@@ -232,6 +232,7 @@ if ($renderProbe.Contains('$sliceResult.holdMode -ne "process"')) {
 
 $requiredLwmutexTraceFragments = @(
     'constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;',
+    'constexpr u32 thor_transformers_lwmutex_unlock_lr = 0x00e28c18;',
     'constexpr u32 thor_transformers_lwmutex_trace_limit = 128;',
     '"debug.rpcsx.thor.transformers_lwmutex_trace"',
     'Emu.GetTitleID() == "BLUS30357"',
@@ -240,6 +241,8 @@ $requiredLwmutexTraceFragments = @(
     'g_thor_transformers_lwmutex_addr.compare_exchange_strong(',
     '"Thor TWC LWM ARM:',
     '"Thor TWC LWM #%u:',
+    'thor_transformers_lwmutex_caller_lr(ppu)',
+    'caller=0x%x',
     '"LOCK-SLEEP"',
     '"LOCK-WAKE"',
     '"UNLOCK-ENTER"',
