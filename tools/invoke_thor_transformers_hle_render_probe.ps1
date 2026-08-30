@@ -23,6 +23,8 @@ param(
     [string]$YieldFastPath = "off",
     [ValidateSet("on", "off")]
     [string]$QueuePublishOrder = "on",
+    [ValidateSet("on", "off")]
+    [string]$QueueDiagnostics = "off",
     [ValidateSet(1, 2, 4, 8, 16, 32, 64)]
     [int]$YieldRedispatchEvery = 1,
     [ValidateSet("on", "off")]
@@ -357,6 +359,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.transformers_spu_reserve" = if ($Mode -eq "HLE" -and $SpuReserve -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.start_paused" = if ($StartPaused -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.queue_publish_order" = if ($Mode -eq "HLE" -and $QueuePublishOrder -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.queue_diagnostics" = if ($Mode -eq "HLE" -and $QueueDiagnostics -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.contention_atomic_fix" = "1"
     "debug.rpcsx.thor.contention_orphan_fix" = "1"
     "debug.rpcsx.thor.pending_contention_fix" = "1"
@@ -481,6 +484,7 @@ try {
             "- Post-arm slices: $SlicePostArmSlices",
             "- Press START after the first loop: $SlicePressStartAfterFirstLoop",
             "- START frame gate: Unreal and PhysX legal frame",
+            "- Bounded queue payload diagnostics: $QueueDiagnostics",
             "- After-START active slice seconds: $effectiveAfterStartSliceSeconds",
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
@@ -772,6 +776,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_spu_reserve" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.start_paused" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.queue_publish_order" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.queue_diagnostics" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.yield_fast_path" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_cached_rtime_fix" -Value "0"
     if ($SliceLoop -and -not [string]::IsNullOrWhiteSpace($captureDir)) {
