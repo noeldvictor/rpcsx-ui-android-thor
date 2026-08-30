@@ -7044,3 +7044,61 @@ rendering progress.
   PPU returns, continue to the next proved startup boundary. Require moving
   3D output and a comparable sustained 30 FPS measurement before a full-HLE
   or speed claim.
+
+## 143. The exact FMOD helper releases the main thread
+
+- Status: android-pass, HLE-progress, not-comparable
+- Scope: HLE-SPURS, FMOD, SPU-dispatch, event-delivery, thermal-safety
+- Hypothesis: The cold LLVM dispatch boundary at `0x14008` prevents the FMOD
+  SPU task from sending the event that releases the main thread.
+- Changed files/settings: The run used exact experiment 142 APK
+  `CB0806B23C9101D7A591A284888C5B9911655855630DAA437EED15D5974A8FAA`,
+  size 116,146,165 bytes, and host commit `66ed84fa6`. It used HLE, the FMOD
+  event-wait trace, the exact FMOD interpreter handoff, 0.5-second slices,
+  and `Thor FMOD EFWAIT RETURN #0` as its stop marker. The general SPU
+  censuses and EDGE task and event traces were off.
+- Thor result: The one-sample cold-start gate passed immediately at 44.1 C
+  fixed silicon. The controller reached its stop marker after 46 slices and
+  397.906 host seconds. It accumulated 29.065 active seconds. Active windows
+  were 0.593 to 0.781 seconds. Cooldown waits totaled 95 seconds.
+- Event proof: The main thread armed request `0x0001` on event flag
+  `0x01f20600`, taskset `0x11d89400`, queue `0x8d009000`, and port 21. At
+  emulator time 6:45.027, the handoff entered at PC `0x14008`. The real guest
+  helper sent the event at PC `0x14044`, with result zero and matching actual
+  and expected queue IDs. It left at PC `0x12150`. The PPU then woke with
+  event `0x0001` and returned success. The event occurred 90,476 microseconds
+  after the wait armed. This proves the complete SPU-to-PPU event path through
+  the PPU return.
+- Boundary comparison: Experiment 141 sampled the same task at `0x14008`
+  sixteen times through an 85.634-second wait and recorded no event attempt.
+  This run executed the helper once and returned the PPU wait about 90 ms
+  after it armed. Keep the interpreter candidate.
+- Visual correctness: The paused boundary image shows the title loading
+  screen and its loading indicator. It is no longer the black overlay-only
+  frame from experiment 139. The overlay shows 25.14 FPS, PPU 13.0 percent,
+  SPU 49.4 percent, RSX 6.2 percent, and total CPU 68.6 percent. This is a
+  static loading boundary, not moving 3D gameplay.
+- FPS/frame-time: No sustained-performance credit. The last complete log
+  interval before the marker reported 115 frames in 105.55 seconds, or 1.09
+  FPS. The paused screenshot's instantaneous 25.14 FPS is not a comparable
+  gameplay measurement.
+- Thermal result: The controller maximum was 65.4 C fixed silicon. The
+  independent guard recorded 696 temperature samples and 11 early holds.
+  Fixed silicon peaked at 70.7 C, and CPU junction peaked at 86.3 C. It
+  recorded no 72 C fixed-silicon hard stop and no 95 C junction hard stop.
+  The final live values were 58.6 C fixed silicon and 75 C junction.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Final fixed silicon was 52.2 C after stop and 53.4 C after
+  property cleanup. Cleanup cleared all 60 listed properties and found zero
+  remaining `debug.rpcsx.thor.*` values.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-195105-thor-input-custom`.
+- Decision: Keep the exact helper interpreter handoff. It repairs the proved
+  FMOD cold-dispatch boundary without injecting an event or changing the HLE
+  event-flag rules. Do not call this full HLE or 30 FPS. The title has reached
+  a real loading frame, but moving gameplay is not yet proved.
+- Next: In a separate independently cool round, continue past this return and
+  stop at the next deterministic loading or visual boundary. Record the next
+  persistent PPU or SPU wait if loading does not complete. Require moving 3D
+  output and a comparable sustained 30 FPS measurement before a full-HLE or
+  speed claim.
