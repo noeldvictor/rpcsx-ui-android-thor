@@ -9837,3 +9837,19 @@ rendering progress.
 - Decision: Do not run the Thor again in this thermal round. Verify the route
   and thermal contracts on the host. A later cool device run must prove that
   the 68 C hold occurs before the hard limit before it can test the HLE repair.
+
+## 235. Current RPCS3 has no duplicate lwmutex waiter fix
+
+- Status: upstream-check-complete, no-code-change
+- Source: The read-only RPCS3 comparison checkout fetched official
+  `origin/master` at commit
+  `d267b420f8736a8580cea6e16b9927ddc0df715d` from 2026-08-31.
+- Result: Current `lv2_lwmutex::try_own` still assigns the old queue head to
+  `cpu->next_cpu` and then makes that CPU the new head. It has no duplicate
+  membership or self-link check. No new commit in the fetched range changes
+  `sys_lwmutex.h` or `sys_lwmutex.cpp`.
+- Scope: This does not make a broad queue change safe. The local fault follows
+  a title-specific forced owner wake that official RPCS3 does not have.
+- Decision: Keep the exact Transformers self-cycle repair for the next device
+  proof. Do not add a generic duplicate-waiter rule without a reproducible
+  upstream case or a separate queue-invariant test.
