@@ -731,9 +731,22 @@ $requiredQueuePublishFragments = @(
     'published = order_fix;'
 )
 
+$requiredRenderQueueDiagnosticFragments = @(
+    'queue->taskset.addr() == 0x10364100 && depth == 256 && entry_size == 16',
+    's_render_pay.fetch_add(1, std::memory_order_relaxed)',
+    'Thor %sPAYLOAD #%u: queue=0x%x taskset=0x%x',
+    'render_queue && n < 128'
+)
+
 foreach ($fragment in $requiredQueuePublishFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers queue publish route is missing: $fragment"
+    }
+}
+
+foreach ($fragment in $requiredRenderQueueDiagnosticFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers render queue diagnostic is missing: $fragment"
     }
 }
 

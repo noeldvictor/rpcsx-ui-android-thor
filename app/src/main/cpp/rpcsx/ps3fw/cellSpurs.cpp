@@ -5494,8 +5494,14 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	if (thor_queue_diagnostics())
 	{
 		static std::atomic<u32> s_pay{0};
+		static std::atomic<u32> s_render_pay{0};
+		const bool render_queue = Emu.GetTitleID() == "BLUS30357" &&
+			queue->taskset.addr() == 0x10364100 && depth == 256 && entry_size == 16;
+		const u32 n = render_queue
+			? s_render_pay.fetch_add(1, std::memory_order_relaxed)
+			: s_pay.fetch_add(1, std::memory_order_relaxed);
 
-		if (const u32 n = s_pay++; n < 4 || (n & 0x3FF) == 0)
+		if ((render_queue && n < 128) || (!render_queue && (n < 4 || (n & 0x3FF) == 0)))
 		{
 			const u8* src = static_cast<const u8*>(buffer.get_ptr());
 			const u32 show = std::min<u32>(entry_size, 32);
@@ -5534,9 +5540,10 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 				fmt::append(item, " <unmapped 0x%08x>", wp);
 			}
 
-			cellSpurs.error("Thor PAYLOAD #%u: entry_size=%u nonzero=%u/%u slot=%u src=0x%x |%s",
-				n, entry_size, nonzero, entry_size, slot, buffer.addr(), hex);
-			cellSpurs.error("Thor WORKITEM #%u: at 0x%08x |%s", n, wp, item);
+			cellSpurs.error("Thor %sPAYLOAD #%u: queue=0x%x taskset=0x%x entry_size=%u nonzero=%u/%u slot=%u src=0x%x |%s",
+				render_queue ? "RENDER " : "", n, queue.addr(), queue->taskset.addr(), entry_size,
+				nonzero, entry_size, slot, buffer.addr(), hex);
+			cellSpurs.error("Thor %sWORKITEM #%u: at 0x%08x |%s", render_queue ? "RENDER " : "", n, wp, item);
 		}
 	}
 
