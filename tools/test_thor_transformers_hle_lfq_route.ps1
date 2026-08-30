@@ -28,6 +28,10 @@ $lv2LwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cell
 $lv2Lwmutex = Get-Content -LiteralPath $lv2LwmutexPath -Raw
 $sysEventPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_event.cpp"
 $sysEvent = Get-Content -LiteralPath $sysEventPath -Raw
+$lv2Path = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\lv2.cpp"
+$lv2 = Get-Content -LiteralPath $lv2Path -Raw
+$sysSyncPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\include\cellos\sys_sync.h"
+$sysSync = Get-Content -LiteralPath $sysSyncPath -Raw
 $cellAudioPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellAudio.cpp"
 $cellAudio = Get-Content -LiteralPath $cellAudioPath -Raw
 $androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
@@ -107,6 +111,7 @@ $requiredRenderProbeFragments = @(
     '[string]$EdgeEventWaitTrace = "off"',
     '[string]$FmodEventWaitTrace = "off"',
     '[string]$FmodEventInterp = "on"',
+    '[string]$FmodAudioWakeFix = "on"',
     '[string]$RuntimeCensus = "off"',
     '[string]$SpuPcCensus = "off"',
     '[string]$PpuPcCensus = "off"',
@@ -135,10 +140,12 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_wait_trace" -Value "0"',
     '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.transformers_audio_wake_fix" = if ($Mode -eq "HLE" -and $FmodAudioWakeFix -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
@@ -318,13 +325,36 @@ $requiredAudioQueueTraceFragments = @(
     '"SEND-FULL"',
     '"SEND-WAKE"',
     '"RECV-WAIT"',
-    '"RECV-READY"'
+    '"RECV-READY"',
+    '"debug.rpcsx.thor.transformers_audio_wake_fix"',
+    'lv2_obj::complete_deferred_wake(ppu)',
+    '"Thor TWC AUDIO WAKE FIX:'
 )
 
 foreach ($fragment in $requiredAudioQueueTraceFragments) {
     if (-not $sysEvent.Contains($fragment)) {
         throw "The bounded Transformers audio queue trace is missing: $fragment"
     }
+}
+
+$requiredDeferredWakeFragments = @(
+    'u32 lv2_obj::complete_deferred_wake(ppu_thread &thread)',
+    'if (!g_scheduler_ready || !g_pending)',
+    'for (usz slots = get_ppu_thread_count_for_scheduler(); target && slots;',
+    'cpu_flag::wait - state',
+    'state += cpu_flag::signal;',
+    'state -= cpu_flag::suspend;',
+    'thread.state.notify_one();'
+)
+
+foreach ($fragment in $requiredDeferredWakeFragments) {
+    if (-not $lv2.Contains($fragment)) {
+        throw "The deferred PPU wake repair is missing: $fragment"
+    }
+}
+
+if (-not $sysSync.Contains('static u32 complete_deferred_wake(ppu_thread &thread);')) {
+    throw "The deferred PPU wake repair declaration is missing."
 }
 
 $requiredPcCensusFragments = @(

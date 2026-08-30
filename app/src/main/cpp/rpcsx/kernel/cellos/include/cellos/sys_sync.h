@@ -241,6 +241,10 @@ public:
 
   static bool awake(cpu_thread *thread, s32 prio = enqueue_cmd);
 
+  // Complete a wake that the scheduler selected but deferred while another
+  // PPU thread acknowledges suspension. Return the active suspend barrier.
+  static u32 complete_deferred_wake(ppu_thread &thread);
+
   // Returns true on successful context switch, false otherwise
   static bool yield(cpu_thread &thread);
 

@@ -7687,3 +7687,117 @@ rendering progress.
 - Next: In the next independently cool hardware round, install this exact APK.
   Use the corrected post-arm route and collect the audio, queue, mutex owner,
   saved caller, unlock, and late-load evidence together.
+
+## 159. The audio send does not complete the selected PPU wake
+
+- Status: android-boundary, deferred-wake-identified, visual-invalid,
+  not-comparable
+- Scope: HLE, FMOD, LV2 event queue, PPU scheduler, thermal-safety
+- Hypothesis: The exact audio queue trace will show whether the FMOD receive
+  worker gets an event and returns to release the mutex that blocks the main
+  PPU thread.
+- Changed files/settings: The route installed the experiment 158 APK. Its
+  installed SHA-256 was
+  `44447813C6BF5CCB8D3CCA7DD9533DA5FDFA6B5A08070A32D47BF4A73C6DA12C`.
+  It enabled the FMOD event interpreter, the exact audio queue trace, the
+  kernel lightweight-mutex trace, and the PPU census. It armed on the kernel
+  mutex row and kept a bounded post-arm window.
+- Thor result: The one-sample cold-start gate passed at 50.0 C fixed silicon.
+  The route completed 49 slices in 407.265 host seconds. The active windows
+  totaled 35.866 seconds. Every slice ended in a verified process hold.
+- Event result: The game registered queue `0x8d009200` with IPC key
+  `0x80004d494f323221`. PPU `0x0100000c`, the FMOD libAudio event receive
+  thread, entered an empty receive and waited. Audio period 32 selected and
+  woke that PPU. Period 33 stored one event. The worker consumed it and
+  entered another receive. Period 34 again selected the worker. Periods 35
+  and 36 stored two events. Period 37 and later sends returned a full-queue
+  error through the trace quota.
+- Scheduler result: The selected worker did not return to game code. Its later
+  state was `0x224`, which is `wait + suspend + memory` and has no `signal`.
+  The main PPU thread entered the mutex wait 0.501 milliseconds after the
+  second selected send. The saved game caller was `0x00dd6264`. Ghidra maps
+  this call to the lock at global offset `0x10ac`. The FMOD worker owns that
+  lock and can release it only after the event receive returns at
+  `0x00e2b454`.
+- Cause: `lv2_obj::awake` placed the worker in a running scheduler slot, but
+  `schedule_all` did not complete the state wake while the global suspend
+  barrier was nonzero. A plain atomic notification cannot repair this state
+  because the worker has no signal and still has suspend.
+- Online source result: Current official RPCS3 source uses the same event
+  queue `awake(&ppu)` call and the same `!g_pending && g_scheduler_ready`
+  scheduler gate. It does not contain a ready title-specific repair for this
+  boundary.
+- Sources:
+  `https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/Emu/Cell/lv2/sys_event.cpp`,
+  `https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/Emu/Cell/lv2/lv2.cpp`,
+  and
+  `https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/Emu/Cell/lv2/sys_sync.h`.
+- Visual correctness: Invalid. The saved image shows the Android
+  anti-image-retention pixel refresh, not the game or a loading screen. Its
+  SHA-256 is
+  `2228D977D1D1A30A5C4D0DBFCD8CBD62752E0DC5E3CB322723316757CF3BB0DE`.
+- FPS/frame-time: No performance credit. The paused diagnostic reported 152
+  frames in 88.25 seconds, or 1.72 FPS. This is not moving gameplay.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Thermal result: The fixed-silicon maximum was 67.8 C, and the CPU-junction
+  maximum was 82.7 C. Six samples reached the 66 C early-hold range. No fixed
+  silicon sample reached 70 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared all 61 listed properties and found
+  zero remaining `debug.rpcsx.thor.*` values. The final fixed-silicon sample
+  was 51.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-221340-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-221354-transformers-audio-queue-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-221421-thor-input-custom`.
+- Decision: Repair only the proved deferred scheduler transition. Do not
+  fabricate an audio event and do not release the game mutex.
+- Next: Add a default-off property for the exact title and queue. Complete the
+  selected worker wake only when the scheduler barrier and thread state match
+  this capture.
+
+## 160. Complete the deferred Transformers audio wake
+
+- Status: HLE-repair, host-pass, unmeasured
+- Scope: LV2 event queue, PPU scheduler, BLUS30357, config-driver
+- Hypothesis: The FMOD worker will return and release its mutex if the exact
+  audio send completes the scheduler transition that already selected it.
+- Changed files/settings: The new Android property
+  `debug.rpcsx.thor.transformers_audio_wake_fix` is off by default in the
+  emulator. The HLE Transformers route enables it by default and clears it at
+  the end. The repair can run only for title `BLUS30357`, event queue key
+  `0x80004d494f323221`, a ready scheduler, a nonzero suspend barrier, and a
+  target that is already in a running scheduler slot. The target must have
+  `wait + suspend` and no `signal`.
+- Repair: The helper completes the same target-state transition as the normal
+  scheduler. It adds `signal`, removes `suspend`, removes applicable yield or
+  preempt state, resets the start time, and notifies the target. It does not
+  change the barrier count, select a different thread, fabricate an event, or
+  release a game mutex.
+- Tradeoff: The selected worker can run before another PPU thread acknowledges
+  the global suspend barrier. The exact title, queue, property, slot, barrier,
+  and state gates limit this behavior to the measured Transformers boundary.
+- Rollback: Run the HLE route with `-FmodAudioWakeFix off`, or leave the
+  property unset. Revert the helper and event-queue call to remove the repair.
+- Android build result: The final
+  `:app:assembleDebug --no-configuration-cache` build passed in 1 minute 8
+  seconds with 42 tasks. The changed native code compiled and linked.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,153,475 bytes, and its SHA-256 is
+  `D1B43D1E3AC969B5B545090A63A7BB254A879355CF91661D5BCD17E3FA24F0F3`.
+- Verification: The focused HLE route contract, the three PowerShell parser
+  checks, and `git diff --check` pass. The `Thor TWC AUDIO WAKE FIX` marker is
+  present in the unstripped, merged, and stripped Android native libraries.
+- Thor result: Not run. Experiment 159 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the narrow repair for one device decision run. It tests the
+  direct cause that experiment 159 identified and has an explicit rollback.
+- Next: In one later independently cool run, install this exact APK. Require a
+  cold-start fixed-silicon sample below 70 C. Stop after the repair marker and
+  a bounded post-marker window. Credit performance only if the result shows
+  correct moving gameplay.

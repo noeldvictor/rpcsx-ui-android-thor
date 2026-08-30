@@ -42,10 +42,28 @@ bool thor_transformers_audio_queue_trace_enabled() noexcept {
 #endif
 }
 
+bool thor_transformers_audio_wake_fix_enabled() noexcept {
+#ifdef __ANDROID__
+  static const bool s_on = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get(
+               "debug.rpcsx.thor.transformers_audio_wake_fix", value) > 0 &&
+           value[0] && value[0] != '0';
+  }();
+  return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+  return false;
+#endif
+}
+
 void thor_transformers_audio_queue_trace(const lv2_event_queue &queue,
                                          const char *action, u32 ppu_id,
                                          s32 result,
-                                         const lv2_event *event = nullptr) {
+                                         const lv2_event *event = nullptr,
+                                         u32 wake_state_before = 0,
+                                         u32 wake_state_after = 0,
+                                         bool awake_result = false,
+                                         u32 forced_pending = 0) {
   if (!thor_transformers_audio_queue_trace_enabled() ||
       queue.key != thor_transformers_audio_queue_key) {
     return;
@@ -67,10 +85,12 @@ void thor_transformers_audio_queue_trace(const lv2_event_queue &queue,
   sys_event.error(
       "Thor TWC AUDIOQ #%u: %s queue=0x%x key=0x%llx ppu=0x%x "
       "wait_ppu=0x%x pending=%u/%u source=0x%llx data1=0x%llx "
-      "data2=0x%llx data3=0x%llx result=0x%x",
+      "data2=0x%llx data3=0x%llx result=0x%x wake_state=0x%x->0x%x "
+      "awake=%u forced_pending=%u",
       sequence, action, queue.id, queue.key, ppu_id, wait_ppu,
       static_cast<u32>(queue.events.size()), queue.size, source, data1, data2,
-      data3, static_cast<u32>(result));
+      data3, static_cast<u32>(result), wake_state_before, wake_state_after,
+      awake_result ? 1u : 0u, forced_pending);
 }
 } // namespace
 
@@ -210,9 +230,26 @@ CellError lv2_event_queue::send(lv2_event event, bool *notified_thread,
 
     std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) = event;
 
-    awake(&ppu);
+    const u32 wake_state_before =
+        static_cast<u32>((+ppu.state).raw());
+    const bool awake_result = awake(&ppu);
+    const u32 forced_pending =
+        thor_transformers_audio_wake_fix_enabled() &&
+                key == thor_transformers_audio_queue_key
+            ? lv2_obj::complete_deferred_wake(ppu)
+            : 0;
+    const u32 wake_state_after = static_cast<u32>((+ppu.state).raw());
     thor_transformers_audio_queue_trace(*this, "SEND-WAKE", ppu.id, CELL_OK,
-                                        &event);
+                                        &event, wake_state_before,
+                                        wake_state_after, awake_result,
+                                        forced_pending);
+
+    if (forced_pending) {
+      sys_event.error(
+          "Thor TWC AUDIO WAKE FIX: queue=0x%x ppu=0x%x state=0x%x->0x%x "
+          "pending=%u",
+          id, ppu.id, wake_state_before, wake_state_after, forced_pending);
+    }
 
     if (port &&
         ppu.prio.load().prio <

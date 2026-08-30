@@ -1769,6 +1769,64 @@ bool lv2_obj::awake(cpu_thread *thread, s32 prio) {
   return result;
 }
 
+u32 lv2_obj::complete_deferred_wake(ppu_thread &thread) {
+  u32 pending = 0;
+  bool changed = false;
+
+  {
+    std::lock_guard lock(g_mutex);
+
+    if (!g_scheduler_ready || !g_pending) {
+      return 0;
+    }
+
+    bool selected = false;
+    auto target = +g_ppu;
+
+    for (usz slots = get_ppu_thread_count_for_scheduler(); target && slots;
+         target = target->next_ppu, slots--) {
+      if (target == &thread) {
+        selected = true;
+        break;
+      }
+    }
+
+    if (!selected) {
+      return 0;
+    }
+
+    const rx::EnumBitSet<cpu_flag> remove_yield =
+        thread.start_time == 0 ? +cpu_flag::suspend
+                               : (cpu_flag::yield + cpu_flag::preempt);
+
+    const auto result = thread.state.fetch_op(
+        [&](rx::EnumBitSet<cpu_flag> &state) -> bool {
+          if (cpu_flag::suspend - state || cpu_flag::wait - state ||
+              state & cpu_flag::signal) {
+            return false;
+          }
+
+          state += cpu_flag::signal;
+          state -= cpu_flag::suspend;
+          state -= remove_yield;
+          return true;
+        });
+
+    changed = result.second;
+
+    if (changed) {
+      thread.start_time = 0;
+      pending = g_pending;
+    }
+  }
+
+  if (changed) {
+    thread.state.notify_one();
+  }
+
+  return pending;
+}
+
 bool lv2_obj::yield(cpu_thread &thread) {
   if (auto ppu = thread.try_get<ppu_thread>()) {
     ppu->raddr = 0; // Clear reservation
