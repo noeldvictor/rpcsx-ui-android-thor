@@ -156,10 +156,46 @@ void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
       wake_ppu, result);
 }
 
+void thor_transformers_record_audio_dependency(
+    const ppu_thread &waiting_ppu, u32 lwmutex_id,
+    const lv2_lwmutex &mutex) {
+  if (!thor_transformers_audio_wake_fix_enabled() ||
+      static_cast<u32>(waiting_ppu.lr) !=
+          thor_transformers_main_lwmutex_lock_lr ||
+      static_cast<std::string>(waiting_ppu.thread_name) !=
+          "FMOD libAudio event receive thread") {
+    return;
+  }
+
+  const u32 control = mutex.control.addr();
+  const u32 owner_id =
+      control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
+  const auto owner =
+      idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
+  const u32 owner_state =
+      owner ? static_cast<u32>((+owner->state).raw()) : 0;
+
+  g_thor_transformers_audio_dependency_lwmutex_id.store(
+      lwmutex_id, std::memory_order_relaxed);
+  g_thor_transformers_audio_dependency_owner_id.store(
+      owner_id, std::memory_order_release);
+
+  const u32 sequence =
+      g_thor_transformers_audio_dependency_seq.fetch_add(
+          1, std::memory_order_relaxed);
+  if (sequence < thor_transformers_audio_dependency_log_limit) {
+    sys_lwmutex.error(
+        "Thor TWC AUDIO OWNER DEPENDENCY #%u: waiter=0x%x id=0x%x "
+        "control=0x%x owner=0x%x owner_state=0x%x phase=enter",
+        sequence, waiting_ppu.id, lwmutex_id, control, owner_id, owner_state);
+  }
+}
+
 void thor_transformers_complete_audio_owner_wake(
     const ppu_thread &waiting_ppu, u32 lwmutex_id,
     const lv2_lwmutex &mutex) {
   if (!thor_transformers_audio_wake_fix_enabled() ||
+      waiting_ppu.id != 0x0100'0000 ||
       static_cast<u32>(waiting_ppu.lr) !=
           thor_transformers_main_lwmutex_lock_lr) {
     return;
@@ -173,38 +209,6 @@ void thor_transformers_complete_audio_owner_wake(
       idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
   const u32 state_before =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
-
-  const bool fmod_event_receiver =
-      static_cast<std::string>(waiting_ppu.thread_name) ==
-      "FMOD libAudio event receive thread";
-  if (fmod_event_receiver) {
-    g_thor_transformers_audio_dependency_lwmutex_id.store(
-        lwmutex_id, std::memory_order_relaxed);
-    g_thor_transformers_audio_dependency_owner_id.store(
-        owner_id, std::memory_order_release);
-
-    const bool dependency_forced =
-        owner && owner_id != waiting_ppu.id && owner_id != 0x0100'0000
-            ? lv2_obj::force_owner_wake_after_waiter_sleep(*owner)
-            : false;
-    const u32 state_after =
-        owner ? static_cast<u32>((+owner->state).raw()) : 0;
-    const u32 sequence =
-        g_thor_transformers_audio_dependency_seq.fetch_add(
-            1, std::memory_order_relaxed);
-    if (sequence < thor_transformers_audio_dependency_log_limit) {
-      sys_lwmutex.error(
-          "Thor TWC AUDIO OWNER DEPENDENCY #%u: waiter=0x%x id=0x%x "
-          "owner=0x%x state=0x%x->0x%x forced=%u",
-          sequence, waiting_ppu.id, lwmutex_id, owner_id, state_before,
-          state_after, dependency_forced ? 1u : 0u);
-    }
-    return;
-  }
-
-  if (waiting_ppu.id != 0x0100'0000) {
-    return;
-  }
 
   const auto retry_dependency_wake = [&](const char *action) {
     const u32 dependency_lwmutex_id =
@@ -407,6 +411,7 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
 
   const auto mutex = idm::get<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
+        thor_transformers_record_audio_dependency(ppu, lwmutex_id, mutex);
         thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                             "LOCK-ENTER", timeout);
         if (s32 signal = mutex.lv2_control
