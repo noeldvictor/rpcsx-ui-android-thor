@@ -8814,3 +8814,23 @@ rendering progress.
 - Decision: Reject value 4 and keep the default value 1. Do not test larger
   intervals because this smaller reduction already delays progress. The next
   diagnostic must use the PPU profiler on the proven every-yield route.
+
+## 188. Add a bounded PPU profiler route control
+
+- Status: route-tooling, host-verified, unmeasured
+- Scope: Transformers HLE PPU wait diagnosis
+- Reason: The loading route uses only about 20 to 33 percent total CPU while
+  it presents about 21 FPS. Reducing SPURS yield redispatch work did not
+  increase frames. The existing title research identifies the PPU wait chain
+  as the remaining unprofiled participant.
+- Change: The dedicated Transformers HLE route now accepts `-PpuProfiler on`.
+  It sets `debug.rpcsx.thor.ppu_prof=1` before launch, includes the value in the
+  startup property readback, and clears it after the route. The default is off.
+- Verification: The focused Transformers HLE LFQueue route contract passes.
+  Both PowerShell files pass syntax parsing. `git diff --check` passes.
+- APK result: No APK or native code changed. The installed exact APK already
+  contains the Android PPU profiler override.
+- FPS/frame-time: Not measured.
+- Next: Keep `yield_redispatch_fix=1`. Run one independently cool, unpaused
+  loading capture with the PPU profiler on. Use the profiler report to select
+  a named wait path before another code change.

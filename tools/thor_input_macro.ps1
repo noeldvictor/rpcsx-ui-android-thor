@@ -1565,6 +1565,7 @@ if ($BootGame) {
         "debug.rpcsx.thor.pm_capture",
         "debug.rpcsx.thor.draw_census",
         "debug.rpcsx.thor.ppu_pc_census",
+        "debug.rpcsx.thor.ppu_prof",
         "debug.rpcsx.thor.ppu_call_trace",
         "debug.rpcsx.thor.es_sema_superpath",
         "debug.rpcsx.thor.es_dma_superpath",
