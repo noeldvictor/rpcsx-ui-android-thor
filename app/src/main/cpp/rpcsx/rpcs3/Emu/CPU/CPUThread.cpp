@@ -233,8 +233,9 @@ struct cpu_prof
 				fmt::append(results, "\n\t[%s", fmt::base57(be_t<u64>{name}));
 				results.resize(results.size() - 4);
 
-				// Print chunk address from lowest 16 bits
-				fmt::append(results, "...chunk-0x%05x]: %.4f%% (%u)", (name & 0xffff) * 4, _frac * 100., count);
+				// Keep the full key. The shortened base57 text is identical for
+				// low guest PPU addresses and cannot identify a hot block.
+				fmt::append(results, "...key-0x%016x,chunk-0x%05x]: %.4f%% (%u)", name, (name & 0xffff) * 4, _frac * 100., count);
 
 				if (results.size() >= (extended_print ? 10000 : 5000))
 				{
