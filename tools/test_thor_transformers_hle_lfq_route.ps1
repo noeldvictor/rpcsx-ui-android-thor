@@ -465,12 +465,27 @@ $requiredAudioOwnerWakeFragments = @(
     'dependency_owner_id != owner_id',
     'phase=queue-scan',
     'phase=queue-scan-miss',
-    '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:'
+    '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:',
+    'bool thor_transformers_audio_owner_wake_completed() noexcept',
+    'std::memory_order_acquire'
 )
 
 foreach ($fragment in $requiredAudioOwnerWakeFragments) {
     if (-not $lv2Lwmutex.Contains($fragment)) {
         throw "The deferred audio-owner wake repair is missing: $fragment"
+    }
+}
+
+$requiredDeferredPpuCensusFragments = @(
+    's_defer_pc_census_until_audio_wake',
+    '"debug.rpcsx.thor.transformers_audio_wake_fix"',
+    'thor_transformers_audio_owner_wake_completed()',
+    'if (s_pc_census && pc_census_armed)'
+)
+
+foreach ($fragment in $requiredDeferredPpuCensusFragments) {
+    if (-not $perfMonitor.Contains($fragment)) {
+        throw "The deferred Transformers PPU census is missing: $fragment"
     }
 }
 

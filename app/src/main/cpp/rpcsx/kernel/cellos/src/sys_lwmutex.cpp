@@ -305,7 +305,7 @@ void thor_transformers_complete_audio_owner_wake(
 
   if (forced_wake) {
     g_thor_transformers_audio_owner_wake_completed.store(
-        true, std::memory_order_relaxed);
+        true, std::memory_order_release);
   }
 
   sys_lwmutex.error(
@@ -316,6 +316,11 @@ void thor_transformers_complete_audio_owner_wake(
   retry_dependency_wake("initial");
 }
 } // namespace
+
+bool thor_transformers_audio_owner_wake_completed() noexcept {
+  return g_thor_transformers_audio_owner_wake_completed.load(
+      std::memory_order_acquire);
+}
 
 lv2_lwmutex::lv2_lwmutex(utils::serial &ar)
     : protocol(ar), control(ar.pop<decltype(control)>()),

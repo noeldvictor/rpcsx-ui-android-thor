@@ -25,6 +25,8 @@
 
 LOG_CHANNEL(perf_log, "PERF");
 
+bool thor_transformers_audio_owner_wake_completed() noexcept;
+
 void perf_monitor::operator()()
 {
 	constexpr u64 update_interval_us = 500000;      // Update every half second
@@ -231,8 +233,19 @@ void perf_monitor::operator()()
 					std::memset(v, 0, sizeof(v));
 					return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
 				}();
+				static const bool s_defer_pc_census_until_audio_wake = []() noexcept
+				{
+					char v[PROP_VALUE_MAX]{};
+					return __system_property_get("debug.rpcsx.thor.transformers_audio_wake_fix", v) > 0 &&
+						v[0] && v[0] != '0';
+				}();
+				const bool pc_census_armed = !s_defer_pc_census_until_audio_wake ||
+					thor_transformers_audio_owner_wake_completed();
 
-				if (s_pc_census)
+				// The Transformers cold compiler can heat one prime core faster than
+				// the 250 ms device guard can stop it. The target census is after the
+				// exact audio wake, so do not add stack and code dumps before that gate.
+				if (s_pc_census && pc_census_armed)
 				{
 					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)
 						{
