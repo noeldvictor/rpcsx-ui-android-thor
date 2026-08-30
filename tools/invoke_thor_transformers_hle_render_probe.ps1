@@ -91,7 +91,7 @@ param(
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
     [string]$SliceAfterStartHandoffMatch = "",
-    [ValidateRange(0.0, 60.0)]
+    [ValidateRange(0.0, 300.0)]
     [double]$SliceAfterHandoffSeconds = 0.0,
     [ValidateRange(1, 256)]
     [int]$SliceAfterHandoffMaxSlices = 32,

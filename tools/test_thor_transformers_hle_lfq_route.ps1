@@ -159,7 +159,7 @@ $requiredRenderProbeFragments = @(
     '$afterStartArguments.seconds = $effectiveAfterStartSliceSeconds',
     '[string]$SliceAfterStartHandoffMatch = ""',
     '[double]$SliceAfterHandoffSeconds = 0.0',
-    '[ValidateRange(0.0, 60.0)]',
+    '[ValidateRange(0.0, 300.0)]',
     '$afterStartArguments.stopMatch = $SliceAfterStartHandoffMatch',
     'slice-loop-after-start-handoff.json',
     '$afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds',

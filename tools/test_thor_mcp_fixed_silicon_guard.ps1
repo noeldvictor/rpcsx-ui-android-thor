@@ -30,7 +30,7 @@ foreach ($required in @(
     'input keyevent KEYCODE_WAKEUP',
     'am task lock {task_id}; am task lock stop',
     'return emulation_state() in (EMU_STATE_PAUSED, EMU_STATE_READY)',
-    'min(float(a.get("maxDurationS", 15.0)), 60.0)',
+    'min(float(a.get("maxDurationS", 15.0)), 300.0)',
     'min(float(a.get("seconds", 1.5)), duration_limit)',
     '"maxDurationS": duration_limit',
     'interval = min(0.25, duration - elapsed)',
