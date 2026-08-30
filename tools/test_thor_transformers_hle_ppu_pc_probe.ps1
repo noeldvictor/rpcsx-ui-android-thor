@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $probePath = Join-Path $PSScriptRoot "invoke_thor_transformers_hle_ppu_pc_probe.ps1"
 $probeSource = Get-Content -LiteralPath $probePath -Raw
+$perfPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\perf_monitor.cpp"
+$perfSource = Get-Content -LiteralPath $perfPath -Raw
 
 $requiredFragments = @(
     '"debug.rpcsx.thor.hle_libs" = "libsre.sprx"',
@@ -27,6 +29,22 @@ $requiredFragments = @(
 foreach ($fragment in $requiredFragments) {
     if (-not $probeSource.Contains($fragment)) {
         throw "The Transformers HLE PPU PC probe is missing: $fragment"
+    }
+}
+
+$requiredPerfFragments = @(
+    'static std::atomic<u64> s_last_main_stack_key{0};',
+    'static std::atomic<u32> s_main_stack_dumps{0};',
+    's_main_stack_dumps.load() < 8',
+    's_last_main_stack_key.load() != stack_key',
+    'Thor PPU STACK BEGIN: sample=%u',
+    'Thor PPU STACK: sample=%u frame=%u',
+    'Thor PPU STACK END: sample=%u'
+)
+
+foreach ($fragment in $requiredPerfFragments) {
+    if (-not $perfSource.Contains($fragment)) {
+        throw "The bounded Transformers PPU stack census is missing: $fragment"
     }
 }
 

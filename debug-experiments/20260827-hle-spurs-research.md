@@ -8508,3 +8508,68 @@ rendering progress.
   other heavy probes off. Stop after the frame counter has been flat long
   enough to capture the blocked PPU program counters. Map the dominant guest
   PC in Ghidra before changing HLE synchronization again.
+
+## 180. The first Atomic PPU census stops before the zero-frame phase
+
+- Status: diagnostic-boundary, android-clean, not-comparable
+- Scope: BLUS30357, HLE SPURS, Atomic RSX FIFO, PPU PC census
+- Cold gate: A new strict gate passed at 41.7 C across the 14 fixed-temperature
+  sensors. It recorded `socd=92` only in the non-temperature domain.
+- Route configuration: Atomic FIFO and the PPU PC census were on. Runtime
+  census, SPU PC census, FMOD event trace, and lightweight-mutex trace were
+  off. The installed APK matched SHA-256
+  `89F08AF1E455F98A3B94A711FA8413B5D83F70ED97E4042FF75B6DA93E1DD332`.
+- Route result: The controller completed 42 slices and 35.968 seconds of active
+  time across 501.094 host seconds. At emulated time 3:46 the main thread was
+  in the known loader sleep at `0x009e4ba4`, with return address `0x005a3350`.
+  At 6:08 it was executing at `0x00553b64`, with return address `0x013d80c0`.
+  The frame counter still advanced in that interval. The run therefore ended
+  before the prior control's first confirmed zero-frame interval at 7:57.
+- Ghidra result: The existing decrypted BLUS30357 EBOOT project maps
+  `0x00553b64` to a small object-table lookup. It reads an eight-bit table index
+  from object offset `0x18`, then returns a 32-bit pointer from the table at
+  `0x01e23fc4`. The return address follows a call at `0x013d80bc` inside an
+  object comparator. This is normal transient work, not a wait loop.
+- Rendering thread: At 6:08 it was in the generic sleep wrapper, returning to
+  `0x009e0524`. Ghidra maps that caller to a loop which runs
+  `0x009e02d4`, waits, and retries while the return value is nonzero. This is a
+  useful secondary address, but the route had not reached the flat-frame phase.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, or verification
+  failure occurred. The process stayed alive to the host deadline.
+- Visual correctness: Not measured. No boundary image was saved.
+- FPS/frame-time: No performance credit. This was a paused diagnostic route,
+  and it did not reach gameplay.
+- Thermal result: The slice-controller maximum was 64.2 C. The device watchdog
+  maximum was 67.4 C. It recorded no hold or stop action and completed when the
+  package stopped. No fixed-silicon sample reached 70 C.
+- Rollback: The host deadline stopped the package. The verified stop found no
+  PID, zero RPCSX rows in `top`, and `quiet=true`. Cleanup cleared 63 properties
+  and found zero remaining `debug.rpcsx.thor.*` values.
+- Evidence:
+  `debug-captures/android-speed-sprint/20260830-011619-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-011644-thor-input-custom`,
+  `debug-captures/ghidra-transformers-ppu-20260828-224900/BLUS30357-late-main-00553b64.txt`,
+  and
+  `debug-captures/ghidra-transformers-ppu-20260828-224900/BLUS30357-late-main-callsite-013d80bc.txt`.
+- Instrumentation change: The PPU census now records a bounded stack for each
+  new main-thread PC and LR pair, up to eight pairs. The old one-shot stack was
+  consumed during the initial loader sleep and could not describe a later
+  phase. The property remains default off.
+- Verification: The focused PPU PC and HLE route contracts pass. The ARM64
+  RelWithDebInfo native build passed in 1 minute 50 seconds. The final
+  `:app:assembleDebug --no-configuration-cache` build passed in 17 seconds with
+  42 tasks. The ARM64 APK contract and `git diff --check` pass.
+- Host artifact: The new, uninstalled APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,153,271 bytes, and its SHA-256 is
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  The merged core is 1,306,923,600 bytes with SHA-256
+  `F546B9399AB9CDFE431C2FB44556247A9461A7A72D6ACFFC063FD9AB8E1B904D`.
+  The stripped core is 63,237,368 bytes with SHA-256
+  `EA7EAC2949BBAC213D7312AD55564E548BB780B9840EC6CC81382318F89F9E42`.
+  This artifact has no device, stability, visual, or performance credit.
+- Next: In a later independently cool round, install this exact APK without
+  launching. Then,
+  after a separate new strict gate, keep Atomic and run through at least the
+  first confirmed zero-frame interval. Use the final PC and stack for the next
+  HLE change.

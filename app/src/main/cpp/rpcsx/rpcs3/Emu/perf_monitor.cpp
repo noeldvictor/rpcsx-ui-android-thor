@@ -598,25 +598,33 @@ void perf_monitor::operator()()
 								id, ppu.get_name(), pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
 								ppu.gpr[3], static_cast<u32>(ppu.state.load()));
 
-							// Capture one bounded main-thread stack. The census runs only when
-							// the manual Android property is on, and the performance thread
-							// samples at most once per log interval.
-							static std::atomic<bool> s_main_stack_dumped{false};
-							if (id == 0x1000000u && pc && !s_main_stack_dumped.load())
+							// Capture a bounded stack for each new main-thread PC and LR pair.
+							// One startup stack cannot identify a later zero-frame phase. The
+							// census runs only when the manual Android property is on, and the
+							// performance thread samples at most once per log interval.
+							static std::atomic<u64> s_last_main_stack_key{0};
+							static std::atomic<u32> s_main_stack_dumps{0};
+							const u64 stack_key = (static_cast<u64>(pc) << 32) | static_cast<u32>(ppu.lr);
+							if (id == 0x1000000u && pc && s_main_stack_dumps.load() < 8 &&
+								s_last_main_stack_key.load() != stack_key)
 							{
 								const auto call_stack = ppu.dump_callstack_list();
-								if (!call_stack.empty() && !s_main_stack_dumped.exchange(true))
+								if (!call_stack.empty() && s_last_main_stack_key.exchange(stack_key) != stack_key)
 								{
-									const usz count = std::min<usz>(call_stack.size(), 12);
-									perf_log.error("Thor PPU STACK BEGIN: cia=0x%08x lr=0x%08x sp=0x%08x count=%u total=%u",
-										pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
-										static_cast<u32>(count), static_cast<u32>(call_stack.size()));
-									for (usz frame = 0; frame < count; frame++)
+									const u32 sample = s_main_stack_dumps.fetch_add(1);
+									if (sample < 8)
 									{
-										perf_log.error("Thor PPU STACK: frame=%u from=0x%08x sp=0x%08x",
-											static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+										const usz count = std::min<usz>(call_stack.size(), 12);
+										perf_log.error("Thor PPU STACK BEGIN: sample=%u cia=0x%08x lr=0x%08x sp=0x%08x count=%u total=%u",
+											sample + 1, pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
+											static_cast<u32>(count), static_cast<u32>(call_stack.size()));
+										for (usz frame = 0; frame < count; frame++)
+										{
+											perf_log.error("Thor PPU STACK: sample=%u frame=%u from=0x%08x sp=0x%08x",
+												sample + 1, static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+										}
+										perf_log.error("Thor PPU STACK END: sample=%u", sample + 1);
 									}
-									perf_log.error("Thor PPU STACK END");
 								}
 							}
 
