@@ -38,7 +38,7 @@ param(
     [ValidateSet("on", "off")]
     [string]$FmodAudioWakeFix = "on",
     [ValidateSet("on", "off")]
-    [string]$RsxFifoOrdered = "on",
+    [string]$RsxFifoOrdered = "off",
     [ValidateSet("on", "off")]
     [string]$LwmutexTrace = "off",
     [ValidateSet("on", "off")]

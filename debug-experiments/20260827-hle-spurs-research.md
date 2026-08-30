@@ -8459,3 +8459,52 @@ rendering progress.
   route with `-RsxFifoOrdered off`. If Atomic survives this exact boundary,
   ordered FIFO causes the guest heap-lifetime assertion. If Atomic also fails,
   the new blocker is independent of FIFO mode.
+
+## 179. The Atomic control rejects ordered FIFO and exposes a later stall
+
+- Status: controller-proof, ordered-rejected, new-stall, not-comparable
+- Scope: BLUS30357, HLE SPURS, Atomic RSX FIFO, low-instrumentation route
+- Cold gate and install: A new strict gate passed at 43.3 C. The no-launch
+  installer proved APK SHA-256
+  `89F08AF1E455F98A3B94A711FA8413B5D83F70ED97E4042FF75B6DA93E1DD332`
+  on the host and device. No PID remained after installation.
+- Route configuration: `debug.rpcsx.thor.transformers_fifo_ordered=0`, and the
+  effective configuration reported `RSX FIFO Accuracy: Atomic`. FMOD event
+  trace, lightweight-mutex trace, SPU local-store dump, SPU PC census, runtime
+  census, and PPU PC census were off. This changed only the FIFO arm from
+  experiment 178.
+- Route result: The controller completed 70 slices and 52.764 seconds of active
+  time across 598.672 host seconds. The process remained alive through
+  emulated time 9:23 and reached the host deadline. It passed the ordered
+  arm's 3:01.515 assertion boundary. It reported no GCM heap assertion, dead
+  FIFO, fatal error, or verification failure.
+- A/B decision: Atomic passed the exact boundary where ordered FIFO aborted.
+  Ordered FIFO therefore caused the observed guest GCM heap-lifetime
+  assertion. The Transformers HLE route now defaults to Atomic again. The
+  ordered property remains as an explicit diagnostic switch.
+- New blocker: The frame counter advanced through emulated time 6:31 and then
+  stopped. It reported zero frames for the intervals ending at 7:57 and 9:23.
+  The final thread snapshot showed the PPU, SPU, and RSX threads stopped by the
+  slice controller, so it cannot identify the guest wait. The last meaningful
+  work included FMOD task creation, rendering-taskset shutdown and join, and
+  later SPU kernel resumes. A PPU PC census is required to identify the live
+  wait before another fix.
+- Visual correctness: Not measured. The audio-owner arm marker did not occur,
+  so the controller did not save a boundary image.
+- FPS/frame-time: No performance credit. Paused-slice frame counters are not a
+  continuous gameplay measurement, and the route stopped producing frames.
+- Thermal result: The slice-controller maximum was 65.8 C fixed silicon. The
+  device watchdog recorded no hold or stop action and completed when the
+  package stopped. No fixed-silicon sample reached 70 C.
+- Rollback: The host deadline stopped the package. The verified stop found no
+  PID, zero RPCSX rows in `top`, and `quiet=true`. Cleanup cleared 63 properties
+  and found zero remaining `debug.rpcsx.thor.*` values.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-010016-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-010026-transformers-atomic-clean-control-install`,
+  and
+  `debug-captures/android-speed-sprint/20260830-010043-thor-input-custom`.
+- Next: Keep Atomic. Run one bounded, independently cool PPU PC census with the
+  other heavy probes off. Stop after the frame counter has been flat long
+  enough to capture the blocked PPU program counters. Map the dominant guest
+  PC in Ghidra before changing HLE synchronization again.
