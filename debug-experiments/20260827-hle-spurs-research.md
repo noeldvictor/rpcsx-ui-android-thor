@@ -9753,3 +9753,55 @@ rendering progress.
   It does not identify the HLE queue fault.
 - Decision: Do not patch or wake this condition. Preserve the dual-marker
   route and get the first valid uninterrupted PhysX queue result.
+
+## 232. The post-audio waiter has a one-node self-cycle
+
+- Status: device-confirmed queue fault, repair host-pending
+- Identity: Strict gate
+  `20260830-183922-thor-input-strict-cool-gate` passed at 34.1 C fixed
+  silicon. Capture `20260830-183943-thor-input-custom` selected the exact
+  post-audio diagnostic marker before the PPU PhysX marker.
+- Queue result: Lwmutex `0x95008d00` contained PPU `0x0100000c` as its head.
+  The same PPU was also its own `next_cpu` link. The bounded scan reported
+  depth 1, a cycle, and repeated node 0. This is an invalid one-node queue.
+- Atomic result: The enclosing 16-byte `lv2_control.fetch_op` completed in
+  one attempt and returned no waiter. The exclusive compare-exchange loop is
+  not the observed stop in this capture.
+- Source correlation: The FMOD PPU was not present in an lwmutex queue when
+  the initial audio-owner wake scanned the queues. After the wake, it entered
+  the `0x95008b00` handoff and then waited on the post-audio mutex. The
+  one-node self-cycle appeared before the main PPU tried to release that
+  mutex. The evidence supports a duplicate insertion after the forced wake.
+- Thermal and fan result: The watchdog recorded 194 valid samples. Every
+  sample reported Smart fan mode `4`. Fixed silicon peaked at 69.9 C. Cleanup
+  stopped the package, found no RPCSX PID, and left Smart fan mode active.
+- Decision: Repair only this exact one-node self-cycle. Require title
+  `BLUS30357`, the trace property, the audio-wake property, lwmutex
+  `0x95008d00`, PPU `0x0100000c`, and the exact FMOD thread name. Convert the
+  queue to a valid empty head inside the atomic control update, then clear
+  the selected waiter's link and use the normal wake path. Do not change the
+  generic queue or atomic implementation.
+
+## 233. Repair only the exact post-audio self-cycle
+
+- Status: host-pass, device-pending
+- Change: The exact post-audio reown path now recognizes only a depth-one
+  self-cycle for PPU `0x0100000c` with the exact FMOD thread name. It also
+  requires the existing Transformers title, trace, audio-wake, main-PPU,
+  unlock-link, and lwmutex gates.
+- Atomic safety: The repair selects the known waiter and changes the copied
+  atomic queue head to null. It does not change `next_cpu` inside a callback
+  that the compare-exchange can repeat. After the atomic update succeeds, the
+  existing reown completion clears the selected link and the normal unlock
+  path wakes the waiter.
+- Scope: Other cycles and depth-limit faults still fail closed. The generic
+  lwmutex queue, scheduler, and 16-byte atomic implementation are unchanged.
+- Verification: The focused Transformers HLE route contract, both thermal
+  contracts, `git diff --check`, and the Android ARM64 RelWithDebInfo build
+  pass. The stripped dev core is 63,250,232 bytes with SHA-256
+  `25E0696D25E1D2A1E63E5C05DB373F7DAAB19FD4EB24861E0800C9D061326755`.
+  Its export and relocation surface passes.
+- Next: Commit the source and push this exact core without a launch. After a
+  new strict cool gate, run one guarded Transformers route. Require the
+  `REPAIR-SELF-CYCLE` row, a normal waiter handoff, and either a continuous
+  PhysX queue result or a later bounded stop marker.

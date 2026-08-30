@@ -81,6 +81,8 @@ void thor_transformers_post_audio_unlock_trace(
       wake_ppu ? wake_ppu->id : 0);
 }
 
+bool thor_transformers_audio_wake_fix_enabled() noexcept;
+
 ppu_thread *thor_transformers_reown_with_trace(
     lv2_lwmutex &mutex, u32 call) {
   ppu_thread *result = nullptr;
@@ -136,6 +138,22 @@ ppu_thread *thor_transformers_reown_with_trace(
                 call, attempt - 1, depth, cycle ? 1u : 0u,
                 cycle ? repeated_at : 0u, limited ? 1u : 0u,
                 scan ? scan->id : 0);
+          }
+
+          const bool repairable_self_cycle =
+              cycle && depth == 1 && repeated_at == 0 && head && next == head &&
+              head->id == 0x0100'000c &&
+              static_cast<std::string>(head->thread_name) ==
+                  "FMOD libAudio event receive thread" &&
+              thor_transformers_audio_wake_fix_enabled();
+          if (repairable_self_cycle) {
+            result = head;
+            data.sq = nullptr;
+            sys_lwmutex.error(
+                "Thor TWC POST AUDIO REOWN #%u.%u: "
+                "stage=REPAIR-SELF-CYCLE waiter=0x%x queue=0x0",
+                call, attempt - 1, head->id);
+            return true;
           }
 
           if (cycle || limited) {
