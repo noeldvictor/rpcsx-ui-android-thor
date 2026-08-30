@@ -148,12 +148,14 @@ $requiredRenderProbeFragments = @(
     '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_audio_wake_fix" = if ($Mode -eq "HLE" -and $FmodAudioWakeFix -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.transformers_physx_queue_wait" = if ($Mode -eq "HLE" -and $PhysxQueueWait -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_physx_queue_wait" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_fifo_ordered" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"',
@@ -539,6 +541,22 @@ $requiredFmodEventWaitTraceFragments = @(
 foreach ($fragment in $requiredFmodEventWaitTraceFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers FMOD event-wait trace is missing: $fragment"
+    }
+}
+
+$requiredPhysxQueueWaitFragments = @(
+    'static bool thor_transformers_physx_queue_wait() noexcept',
+    '"debug.rpcsx.thor.transformers_physx_queue_wait"',
+    'static_cast<u32>(ppu.lr) == 0x00a94678u',
+    'first_task_elf == 0x018c1000u',
+    'static constexpr u32 c_max_wait_us = 100''000;',
+    'thread_ctrl::wait_for(c_poll_us, false);',
+    'Thor Transformers PhysX queue startup wait:'
+)
+
+foreach ($fragment in $requiredPhysxQueueWaitFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers PhysX queue startup wait is missing: $fragment"
     }
 }
 

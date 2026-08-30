@@ -1429,6 +1429,7 @@ $spursProfilePropertyNames = @(
     "debug.rpcsx.thor.fmod_event_wait_trace",
     "debug.rpcsx.thor.fmod_event_interp",
     "debug.rpcsx.thor.transformers_audio_wake_fix",
+    "debug.rpcsx.thor.transformers_physx_queue_wait",
     "debug.rpcsx.thor.transformers_fifo_ordered",
     "debug.rpcsx.thor.spurs_always_notify",
     "debug.rpcsx.thor.spurs_atomic_census",

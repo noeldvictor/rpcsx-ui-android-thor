@@ -160,6 +160,32 @@ static bool thor_transformers_fmod_event_interp() noexcept
 #endif
 }
 
+// Give the first Transformers PhysX SPU-to-PPU reply time to reach its queue.
+//
+// The title starts a cold SPU task and calls the nonblocking queue pop about
+// 45 microseconds later. It treats BUSY as fatal. On Thor, the exact SPU
+// program can need about 48 milliseconds to finish its first native compile.
+// This switch adds one bounded scheduling window for that exact startup
+// handshake. It does not fabricate queue data and it does not change later
+// nonblocking pops.
+//
+//   debug.rpcsx.thor.transformers_physx_queue_wait = 1
+static bool thor_transformers_physx_queue_wait() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.transformers_physx_queue_wait", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+static std::atomic<u32> s_thor_transformers_physx_queue_waited{0};
+
 static bool thor_taskset_enabled_fix() noexcept
 {
 #ifdef ANDROID
@@ -4828,6 +4854,14 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 		queue->spurs.set(spurs.addr());
 	}
 
+	// Rearm one startup wait when the title creates its PhysX reply queue. The
+	// task ELF is not published until cellSpursCreateTask, which follows this
+	// initializer. The pop path checks that ELF before it waits.
+	if (thor_transformers_physx_queue_wait() && direction == 1 && depth == 128 && size == 16)
+	{
+		s_thor_transformers_physx_queue_waited.store(0, std::memory_order_release);
+	}
+
 	return CELL_OK;
 }
 
@@ -5675,6 +5709,14 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 
 	const u32 depth = queue->depth;
 	const u32 entry_size = queue->entry_size;
+	const bool thor_physx_start_shape = thor_transformers_physx_queue_wait() &&
+		!isBlocking && static_cast<u32>(ppu.lr) == 0x00a94678u &&
+		queue->direction == 1 && depth == 128 && entry_size == 16 && queue->taskset;
+	const auto taskset = thor_physx_start_shape
+		? vm::static_ptr_cast<CellSpursTaskset>(queue->taskset)
+		: vm::ptr<CellSpursTaskset>::make(0);
+	const u32 first_task_elf = taskset ? static_cast<u32>(taskset->task_info[0].elf.addr()) : 0u;
+	const bool thor_physx_start_candidate = thor_physx_start_shape && first_task_elf == 0x018c1000u;
 
 	if (!depth || !queue->buffer)
 	{
@@ -5688,6 +5730,42 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 
 		if (head == tail)
 		{
+			u32 expected_queue = 0;
+			if (thor_physx_start_candidate &&
+				s_thor_transformers_physx_queue_waited.compare_exchange_strong(
+					expected_queue, queue.addr(), std::memory_order_acq_rel))
+			{
+				static constexpr u32 c_poll_us = 100;
+				static constexpr u32 c_max_wait_us = 100'000;
+				const u64 started = get_system_time();
+
+				for (u32 waited_us = 0; waited_us < c_max_wait_us; waited_us += c_poll_us)
+				{
+					if (ppu.is_stopped())
+					{
+						ppu.state += cpu_flag::again;
+						return {};
+					}
+
+					thread_ctrl::wait_for(c_poll_us, false);
+
+					if (queue->head.load() != queue->tail.load())
+					{
+						cellSpurs.notice("Thor Transformers PhysX queue startup wait: queue=0x%x elf=0x%x ready after %llu us",
+							queue.addr(), first_task_elf, get_system_time() - started);
+						break;
+					}
+				}
+
+				if (queue->head.load() != queue->tail.load())
+				{
+					continue;
+				}
+
+				cellSpurs.warning("Thor Transformers PhysX queue startup wait: queue=0x%x elf=0x%x timed out after %llu us",
+					queue.addr(), first_task_elf, get_system_time() - started);
+			}
+
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
