@@ -4297,14 +4297,25 @@ s32 spursTasketSaveTaskContext(spu_thread& spu)
 	// write beyond the context allocation. For example, one selected stack block
 	// near the end of LS still has only one 0x800-byte save slot.
 	u32 savedLsBlock = 0;
-	for (auto i = 6; i < 128; i++)
+	for (u32 i = 6; i < 128;)
 	{
-		if (ls_pattern._u & (u128{1} << (i ^ 127)))
+		if (!(ls_pattern._u & (u128{1} << (i ^ 127))))
 		{
-			// TODO: Combine DMA requests for consecutive blocks into a single request
-			std::memcpy(vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)), spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), 0x800);
-			savedLsBlock++;
+			i++;
+			continue;
 		}
+
+		const u32 runStart = i;
+		do
+		{
+			i++;
+		}
+		while (i < 128 && (ls_pattern._u & (u128{1} << (i ^ 127))));
+
+		const u32 runBlocks = i - runStart;
+		std::memcpy(vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)),
+			spu._ptr<void>(CELL_SPURS_TASK_TOP + ((runStart - 6) << 11)), runBlocks << 11);
+		savedLsBlock += runBlocks;
 	}
 
 	// spursDmaWaitForCompletion(spu, 1 << ctxt->dmaTagId);
@@ -4566,6 +4577,7 @@ void spursTasksetDispatch(spu_thread& spu)
 		// restores garbage, the task hits its wait again at once, and the dispatch
 		// loop spins exactly as measured. Check the address is mapped before
 		// trusting anything else about the resume path.
+		if (thor_hle_spurs_diagnostics())
 		{
 			static std::atomic<u64> s_res{0};
 
@@ -4582,14 +4594,25 @@ void spursTasksetDispatch(spu_thread& spu)
 		}
 		std::memcpy(spu._ptr<void>(0x2C80), vm::base(contextSaveStorage), 0x380);
 		u32 savedLsBlock = 0;
-		for (auto i = 6; i < 128; i++)
+		for (u32 i = 6; i < 128;)
 		{
-			if (ls_pattern._u & (u128{1} << (i ^ 127)))
+			if (!(ls_pattern._u & (u128{1} << (i ^ 127))))
 			{
-				// TODO: Combine DMA requests for consecutive blocks into a single request
-				std::memcpy(spu._ptr<void>(CELL_SPURS_TASK_TOP + ((i - 6) << 11)), vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)), 0x800);
-				savedLsBlock++;
+				i++;
+				continue;
 			}
+
+			const u32 runStart = i;
+			do
+			{
+				i++;
+			}
+			while (i < 128 && (ls_pattern._u & (u128{1} << (i ^ 127))));
+
+			const u32 runBlocks = i - runStart;
+			std::memcpy(spu._ptr<void>(CELL_SPURS_TASK_TOP + ((runStart - 6) << 11)),
+				vm::base(contextSaveStorage + 0x400 + (savedLsBlock << 11)), runBlocks << 11);
+			savedLsBlock += runBlocks;
 		}
 
 		// spursDmaWaitForCompletion(spu, 1 << ctxt->dmaTagId);

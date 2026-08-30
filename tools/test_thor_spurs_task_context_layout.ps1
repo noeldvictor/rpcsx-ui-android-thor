@@ -10,10 +10,20 @@ if ($packedOffsetCount -ne 2) {
     throw "The SPURS save and restore paths must both use the packed context offset."
 }
 
-$advance = 'savedLsBlock++;'
+$advance = 'savedLsBlock += runBlocks;'
 $advanceCount = ([regex]::Matches($source, [regex]::Escape($advance))).Count
 if ($advanceCount -ne 2) {
-    throw "The SPURS save and restore paths must both advance the packed context slot."
+    throw "The SPURS save and restore paths must both advance by the selected run size."
+}
+
+$runCopySize = 'runBlocks << 11'
+$runCopySizeCount = ([regex]::Matches($source, [regex]::Escape($runCopySize))).Count
+if ($runCopySizeCount -ne 2) {
+    throw "The SPURS save and restore paths must copy each consecutive LS run once."
+}
+
+if ($source.Contains('savedLsBlock++;')) {
+    throw "The SPURS context path still copies one LS block at a time."
 }
 
 $sparseOffset = 'contextSaveStorage + 0x400 + ((i - 6) << 11)'

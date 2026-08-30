@@ -51,8 +51,8 @@ if ($hleSpursSource -notmatch '#if defined\(ANDROID\) && !defined\(RPCSX_THOR_SP
 }
 
 $hleDiagnosticGateCount = [regex]::Matches($hleSpursSource, 'thor_hle_spurs_diagnostics\(\)').Count - 2
-if ($hleDiagnosticGateCount -ne 10) {
-    throw "Expected 10 HLE SPURS hot-loop diagnostic gates, found $hleDiagnosticGateCount."
+if ($hleDiagnosticGateCount -ne 11) {
+    throw "Expected 11 HLE SPURS hot-loop diagnostic gates, found $hleDiagnosticGateCount."
 }
 
 $ppuSources = @($eventSource, $semaphoreSource, $timerSource)
