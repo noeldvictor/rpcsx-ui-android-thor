@@ -5580,6 +5580,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		// carry taskId=1. If task 1 is not enabled in the taskset,
 		// _cellSpursSendSignal returns SRCH (0x80410905) and sets no signalled
 		// bit, so the consumer is never made ready and never scheduled.
+		if (thor_queue_diagnostics())
 		{
 			static std::atomic<u32> s_sig{0};
 

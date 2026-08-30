@@ -2292,6 +2292,7 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	// Before the snapshot fixes every SPU dispatched 0x100 once and stopped. Logs
 	// the FIRST TWO dispatches per SPU only - per-dispatch logging on this path
 	// boot-looped the branch (36cb52ca1), the one-shot breadcrumb pattern did not.
+	if (thor_hle_spurs_diagnostics())
 	{
 		static std::array<std::atomic<u32>, 8> s_seen{};
 
@@ -2308,6 +2309,7 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 	// carried the queue's taskset 0x10364100, so either the kernel only ever
 	// selects that workload, or the argument handed to the taskset PM is wrong.
 	// wklInfo->arg is what becomes ctxt->taskset in spursTasksetEntry.
+	if (thor_hle_spurs_diagnostics())
 	{
 		static std::atomic<u32> s_dw{0};
 
@@ -2372,6 +2374,7 @@ void spursKernelDispatchWorkload(spu_thread& spu, u64 widAndPollStatus)
 		// That capture had wklCurrentAddr = 0x100 (the SYS_SRV sentinel), so it
 		// only proves that SPU was on another workload at the time - not that the
 		// job chain copy fails. Log the load itself and stop inferring.
+		if (thor_hle_spurs_diagnostics())
 		{
 			static std::atomic<u32> s_ld{0};
 			const u32 n = s_ld++;
@@ -3829,14 +3832,17 @@ s32 spursTasksetProcessRequest(spu_thread& spu, s32 request, u32* taskId, u32* i
 
 		if (request == SPURS_TASKSET_REQUEST_SELECT_TASK)
 		{
-			static std::atomic<u32> s_atomic_selects{0};
-			if (const u32 n = s_atomic_selects++; n < 32)
+			if (thor_hle_spurs_diagnostics())
 			{
-				cellSpurs.error("Thor TASKSET SELECT ATOMIC #%u: taskset=0x%x taskId=%u isWaiting=%u "
-					"before{run=%08x wait=%08x sig=%08x} after{run=%08x wait=%08x sig=%08x} spu=%u",
-					n, ctxt->taskset.addr(), *taskId, *isWaiting,
-					beforeRunning, beforeWaiting, beforeSignalled,
-					+committed.running[0], +committed.waiting[0], +committed.signalled[0], +ctxt->spuNum);
+				static std::atomic<u32> s_atomic_selects{0};
+				if (const u32 n = s_atomic_selects++; n < 32)
+				{
+					cellSpurs.error("Thor TASKSET SELECT ATOMIC #%u: taskset=0x%x taskId=%u isWaiting=%u "
+						"before{run=%08x wait=%08x sig=%08x} after{run=%08x wait=%08x sig=%08x} spu=%u",
+						n, ctxt->taskset.addr(), *taskId, *isWaiting,
+						beforeRunning, beforeWaiting, beforeSignalled,
+						+committed.running[0], +committed.waiting[0], +committed.signalled[0], +ctxt->spuNum);
+				}
 			}
 
 			// Keep this quota independent of the general startup census. Workload

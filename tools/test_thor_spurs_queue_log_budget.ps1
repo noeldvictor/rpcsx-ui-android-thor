@@ -42,4 +42,11 @@ if ([regex]::Matches($functionSource, 'if \(thor_queue_diagnostics\(\)\)').Count
     throw "The SPURS queue diagnostics must gate the ring, payload, and success records."
 }
 
+$signalIndex = $functionSource.IndexOf('Thor SIGNAL')
+$signalGateIndex = $functionSource.LastIndexOf('if (thor_queue_diagnostics())', $signalIndex)
+
+if ($signalIndex -lt 0 -or $signalGateIndex -lt 0 -or ($signalIndex - $signalGateIndex) -gt 1200) {
+    throw "The SPURS queue diagnostics must gate the signal state record."
+}
+
 Write-Output "Thor SPURS queue log budget test passed."
