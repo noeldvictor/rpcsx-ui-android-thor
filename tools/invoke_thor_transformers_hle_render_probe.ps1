@@ -51,6 +51,8 @@ param(
     [string]$PpuPcCensus = "off",
     [ValidateSet("on", "off")]
     [string]$PpuProfiler = "off",
+    [ValidateSet(10, 25, 50, 100, 200, 400)]
+    [int]$RenderPollUs = 400,
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$InputMode = "Direct",
     [ValidateRange(1, 4096)]
@@ -287,6 +289,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_pc_census" = if ($RuntimeCensus -eq "on" -or $PpuPcCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_prof" = if ($PpuProfiler -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.tf_render_poll_us" = "$RenderPollUs"
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
@@ -535,6 +538,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_event_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.ppu_prof" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.tf_render_poll_us" -Value "400"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.task_attr_fix" -Value "0"

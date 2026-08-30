@@ -41,6 +41,57 @@ get_sleep_timers_accuracy_for_wait() noexcept {
 constexpr u64 thor_es_frame_poll_wait_max_us = 1000;
 constexpr u64 thor_es_frame_poll_handler_grace_us_default = 500;
 constexpr u64 thor_es_frame_poll_log_probe_mask = 1023;
+constexpr u32 thor_transformers_render_poll_cia = 0x0152efc0;
+constexpr u64 thor_transformers_render_poll_requested_us = 400;
+constexpr u64 thor_transformers_render_poll_default_us = 400;
+
+u64 get_thor_transformers_render_poll_us() noexcept {
+#ifdef __ANDROID__
+  static const u64 s_poll_us = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    if (__system_property_get("debug.rpcsx.thor.tf_render_poll_us", value) <=
+        0) {
+      return thor_transformers_render_poll_default_us;
+    }
+
+    char *end = nullptr;
+    const u64 parsed = std::strtoull(value, &end, 10);
+    if (end == value || *end != '\0' || parsed < 10 || parsed > 400) {
+      return thor_transformers_render_poll_default_us;
+    }
+
+    return parsed;
+  }();
+  return s_poll_us;
+#else
+  return thor_transformers_render_poll_default_us;
+#endif
+}
+
+void apply_thor_transformers_render_poll(ppu_thread &ppu,
+                                         u64 &sleep_time) noexcept {
+#ifdef __ANDROID__
+  if (sleep_time != thor_transformers_render_poll_requested_us ||
+      ppu.cia != thor_transformers_render_poll_cia ||
+      Emu.GetTitleID() != "BLUS30357") {
+    return;
+  }
+
+  const u64 effective_us = get_thor_transformers_render_poll_us();
+  static std::atomic<u64> s_hits{0};
+  const u64 hit = s_hits.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (hit == 1 || (hit & 0x3fffu) == 0) {
+    sys_timer.notice(
+        "Thor Transformers render poll: hit=%llu ppu=0x%x requested_us=%llu "
+        "effective_us=%llu cia=0x%08x",
+        hit, ppu.id, sleep_time, effective_us, +ppu.cia);
+  }
+  sleep_time = effective_us;
+#else
+  (void)ppu;
+  (void)sleep_time;
+#endif
+}
 
 struct thor_es_frame_poll_wait_state {
   u32 ppu_id = 0;
@@ -966,6 +1017,11 @@ error_code sys_timer_usleep(ppu_thread &ppu, u64 sleep_time) {
             std::max<u64>(1, rx::sub_saturate<u64>(sleep_time, -add_time));
       }
     }
+
+    // Transformers uses this exact title thread as a polling consumer for a
+    // guest render-command ring. A shorter opt-in poll can reduce producer
+    // barrier latency without removing the guest's ordering barrier.
+    apply_thor_transformers_render_poll(ppu, sleep_time);
 
     const auto frame_poll_result =
         try_thor_es_frame_poll_wait(ppu, sleep_time);
