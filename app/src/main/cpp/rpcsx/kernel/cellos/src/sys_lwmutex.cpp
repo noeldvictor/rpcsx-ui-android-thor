@@ -21,7 +21,6 @@ LOG_CHANNEL(sys_lwmutex);
 namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
-constexpr u32 thor_transformers_post_audio_lwmutex_caller = 0x00dd5f6c;
 constexpr u32 thor_transformers_post_audio_lwmutex_id = 0x95008d00;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
@@ -302,7 +301,6 @@ void thor_transformers_complete_audio_owner_wake(
     }
 
     const bool is_deferred_dependency_candidate =
-        caller == thor_transformers_post_audio_lwmutex_caller &&
         lwmutex_id == thor_transformers_post_audio_lwmutex_id &&
         owner_id == 0x0100'000c && owner &&
         static_cast<std::string>(owner->thread_name) ==

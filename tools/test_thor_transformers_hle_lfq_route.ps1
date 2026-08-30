@@ -447,7 +447,6 @@ if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(ppu_
 $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
-    'thor_transformers_post_audio_lwmutex_caller = 0x00dd5f6c',
     'thor_transformers_post_audio_lwmutex_id = 0x95008d00',
     'lv2_obj::force_owner_wake_after_waiter_sleep(*owner)',
     '"Thor TWC AUDIO OWNER WAKE:',
