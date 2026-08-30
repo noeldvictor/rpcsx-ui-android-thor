@@ -112,6 +112,7 @@ $requiredRenderProbeFragments = @(
     '[string]$FmodEventWaitTrace = "off"',
     '[string]$FmodEventInterp = "on"',
     '[string]$FmodAudioWakeFix = "on"',
+    '[string]$RsxFifoOrdered = "on"',
     '[string]$RuntimeCensus = "off"',
     '[string]$SpuPcCensus = "off"',
     '[string]$PpuPcCensus = "off"',
@@ -141,11 +142,13 @@ $requiredRenderProbeFragments = @(
     '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_audio_wake_fix" = if ($Mode -eq "HLE" -and $FmodAudioWakeFix -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_fifo_ordered" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
@@ -234,6 +237,19 @@ $requiredRenderProbeFragments = @(
 foreach ($fragment in $requiredRenderProbeFragments) {
     if (-not $renderProbe.Contains($fragment)) {
         throw "The Transformers HLE render probe is missing: $fragment"
+    }
+}
+
+$requiredTransformersFifoFragments = @(
+    'm_title_id == "BLUS30357"',
+    '"debug.rpcsx.thor.transformers_fifo_ordered"',
+    'g_cfg.core.rsx_fifo_accuracy.from_string("Ordered & Atomic")',
+    '"Thor: Transformers RSX FIFO accuracy forced to %s"'
+)
+
+foreach ($fragment in $requiredTransformersFifoFragments) {
+    if (-not $system.Contains($fragment)) {
+        throw "The Transformers ordered FIFO route is missing: $fragment"
     }
 }
 

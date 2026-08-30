@@ -8219,3 +8219,75 @@ rendering progress.
   below every runtime stop and above the measured idle sensor floor.
 - Next: In a new independently cool round, reuse the exact experiment 167 APK
   and stop on the first owner-candidate row plus eight later slices.
+
+## 172. The repaired HLE route reaches an RSX dead FIFO
+
+- Status: blocker-found, android-pass-to-new-fatal, not-comparable
+- Scope: BLUS30357, HLE SPURS, audio-owner repair, RSX FIFO
+- Cold gate and install: A new one-sample gate passed below 70 C. The
+  no-launch installer proved the experiment 167 APK SHA-256 on the host and
+  device. No PID remained after installation.
+- Route result: The controller completed 70 slices, 52.827 seconds of active
+  time, and 601.312 seconds of host time. The first audio-owner wake completed
+  the main-thread and FMOD mutex handoff. The game then created its PPU PhysX
+  thread and reached more title work. No later generic FMOD mutex candidate
+  occurred, so that candidate is not the next blocker.
+- New blocker: At emulated time 7:56.455, the RSX thread stopped with `Dead
+  FIFO commands queue state has been detected`. The active settings were `RSX
+  FIFO Accuracy: Atomic`, `Driver Wake-Up Delay: 0`, and `Stub PPU Traps: 0`.
+  This is not a result after an SPU trap. The fatal message recommends `Ordered
+  & Atomic` or a larger driver wake-up delay.
+- Source and upstream check: The local RPCSX recovery code matches the current
+  RPCS3 recovery logic. A current RPCS3 report also finds `Ordered & Atomic`
+  more stable for a dead FIFO, but it does not prove a general fix:
+  <https://github.com/RPCS3/rpcs3/issues/19003>.
+- Visual correctness: Not measured. The route had no armed boundary image,
+  and the RSX thread stopped. No correct moving gameplay is proved.
+- FPS/frame-time: No performance credit.
+- Thermal result: The route controller maximum was 66.2 C fixed silicon. The
+  device guard recorded 1,044 normal samples and 27 early holds. Its
+  fixed-silicon maximum was 69.5 C and its CPU-junction maximum was 86.3 C.
+  No fixed-silicon sample reached 70 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup found zero remaining `debug.rpcsx.thor.*` values. The
+  final fixed-silicon sample was 65.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-000459-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-000507-transformers-next-owner-candidate-65c-install`,
+  and
+  `debug-captures/android-speed-sprint/20260830-000522-thor-input-custom`.
+- Decision: Keep the proved audio-owner repair. Replace the obsolete next-owner
+  experiment with a title-scoped `Ordered & Atomic` FIFO decision run. Do not
+  suppress the fatal error.
+
+## 173. Use ordered FIFO for the Transformers HLE route
+
+- Status: host-pass, device-pending
+- Scope: BLUS30357, Android property route, RSX FIFO configuration
+- Hypothesis: `Ordered & Atomic` can keep the RSX consumer ordered after the
+  repaired HLE path reaches PhysX and submits more work.
+- Change: The HLE render route now sets
+  `debug.rpcsx.thor.transformers_fifo_ordered=1` by default. The core accepts
+  it only for BLUS30357 and selects the canonical `Ordered & Atomic` setting
+  before RSX starts. LLE sets zero. `-RsxFifoOrdered off`, an unset property,
+  or another title keeps its configured FIFO mode. Cleanup clears the property.
+- Verification: The focused HLE route, PPU PC, load-wait, strict cold-gate,
+  and multi-sensor thermal contracts pass. `git diff --check` passes. The
+  Android build completed in 1 minute 36 seconds with 42 tasks. The property
+  and result marker are present in the unstripped, merged, and stripped native
+  libraries.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,152,126 bytes, and its SHA-256 is
+  `89F08AF1E455F98A3B94A711FA8413B5D83F70ED97E4042FF75B6DA93E1DD332`.
+- Native identity: The unstripped and merged core size is 1,306,922,096 bytes,
+  and its SHA-256 is
+  `19958430C9B9949D38EE3C1E24A5CF08734EA9A31ED103A1225B7DE1A04B1C13`.
+  The stripped core size is 63,237,304 bytes, and its SHA-256 is
+  `53D0CB4145DB597AC469800B0AA81622BF2C4A03AC04855D0113E116A6AE72A0`.
+- Thor result: Not run yet.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Next: Commit the exact host result. In a new cool hardware round, prove the
+  property readback, the effective FIFO mode, survival past emulated time
+  7:56, and a boundary image after the audio-owner repair.

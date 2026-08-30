@@ -1796,6 +1796,28 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 					g_cfg.core.libraries_control.set_set(std::move(set));
 				}
 			}
+
+			// Use the stronger RSX FIFO order only for the measured Transformers HLE route.
+			// Unset or zero keeps the configured mode.
+			{
+				char fifo_value[PROP_VALUE_MAX]{};
+
+				if (m_title_id == "BLUS30357" &&
+					__system_property_get("debug.rpcsx.thor.transformers_fifo_ordered", fifo_value) > 0 &&
+					fifo_value[0] && fifo_value[0] != '0')
+				{
+					if (g_cfg.core.rsx_fifo_accuracy.from_string("Ordered & Atomic"))
+					{
+						sys_log.error("Thor: Transformers RSX FIFO accuracy forced to %s",
+							g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set Transformers RSX FIFO accuracy, still %s",
+							g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+				}
+			}
 #endif
 
 			// Force audio provider

@@ -38,6 +38,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$FmodAudioWakeFix = "on",
     [ValidateSet("on", "off")]
+    [string]$RsxFifoOrdered = "on",
+    [ValidateSet("on", "off")]
     [string]$LwmutexTrace = "off",
     [ValidateSet("on", "off")]
     [string]$RuntimeCensus = "off",
@@ -273,6 +275,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_audio_wake_fix" = if ($Mode -eq "HLE" -and $FmodAudioWakeFix -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }
     "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }
@@ -520,6 +523,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_fifo_ordered" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_pc_census" -Value "0"
