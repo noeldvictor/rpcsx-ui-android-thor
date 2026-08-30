@@ -91,6 +91,9 @@ $pressMatch = [regex]::Match(
 )
 if (-not $pressMatch.Success -or
     -not $pressMatch.Value.Contains('start_ceiling = float(a.get("maxStartC", 70))') -or
+    -not $pressMatch.Value.Contains('process_held = bool(p) and held_process_pid() == p') -or
+    -not $pressMatch.Value.Contains('continue_process_for_slice(p)') -or
+    -not $pressMatch.Value.Contains('stop_process_for_slice(p)') -or
     -not $pressMatch.Value.Contains('silicon >= hard_limit') -or
     -not $pressMatch.Value.Contains('stop = t_stop({})')) {
     throw "thor_press does not guard its resumed input window."

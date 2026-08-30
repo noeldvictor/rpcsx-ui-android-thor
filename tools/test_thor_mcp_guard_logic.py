@@ -690,6 +690,39 @@ assert result["rePaused"] is True, "The guarded press did not restore the paused
 assert ("/pad/press?buttons=START&ms=150", "POST") in calls, "The guarded press did not send the input."
 
 clock.now = 0.0
+held_press_calls = []
+held_press_state = {"value": "T"}
+SERVER._process_hold_pid = "123"
+SERVER.pid = lambda: "123"
+SERVER._process_state = lambda process_id: held_press_state["value"]
+SERVER.emulation_state = lambda: SERVER.EMU_STATE_PAUSED
+SERVER.api = lambda path, method="GET", timeout=8: (
+    held_press_calls.append((path, method, timeout)) or
+    ({"paused": True} if path == "/pause" else {"ok": True})
+)
+SERVER.t_stop = lambda _: {"quiet": True}
+
+
+def continue_held_press(process_id):
+    held_press_state["value"] = "R"
+    SERVER._process_hold_pid = None
+    return {"ok": True, "pid": process_id, "processState": "R"}
+
+
+SERVER.continue_process_for_slice = continue_held_press
+use_temperatures([42.0, 45.0, 50.0])
+result = SERVER.t_press({"buttons": "START", "settleS": 0.5})
+assert result["rePaused"] is True and result["holdMode"] == "emulator", (
+    "The process-held guarded press did not restore a controlled pause."
+)
+assert ("/resume", "POST", 1.0) in held_press_calls, (
+    "The process-held guarded press did not release the emulator state."
+)
+assert ("/pad/press?buttons=START&ms=150", "POST", 1.0) in held_press_calls, (
+    "The process-held guarded press did not send the input."
+)
+
+clock.now = 0.0
 prepare_paused_guest()
 use_temperatures([73.0])
 result = SERVER.t_press({"buttons": "START"})

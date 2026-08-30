@@ -472,9 +472,8 @@ try {
         if ($SlicePressStartAfterFirstLoop) {
             if ($sliceResult.error -or $sliceResult.refused -or
                     $sliceResult.thermalStop -or $sliceResult.fatal -or
-                    -not $sliceResult.paused -or
-                    $sliceResult.holdMode -ne "emulator") {
-                throw "The first slice loop did not end at an emulator-controlled pause."
+                    -not $sliceResult.paused) {
+                throw "The first slice loop did not end at a controlled pause."
             }
 
             $preStartScreenshotArguments = @{
@@ -486,6 +485,25 @@ try {
                 -CaptureDir $captureDir `
                 -OutputName "slice-loop-before-start-screenshot.json" `
                 -TimeoutSeconds 60
+
+            $startCoolOutput = Invoke-ThorRenderProbeController `
+                -Name "thor_wait_cool_paused" `
+                -Arguments @{
+                    targetC = 65
+                    maxSiliconC = 72
+                    timeoutS = $SliceCoolTimeoutSeconds
+                    stableSamples = 2
+                    sampleIntervalS = 0.5
+                } `
+                -CaptureDir $captureDir `
+                -OutputName "slice-loop-before-start-cool.json" `
+                -TimeoutSeconds ($SliceCoolTimeoutSeconds + 60)
+            $startCoolResult = ($startCoolOutput -join [Environment]::NewLine) | ConvertFrom-Json
+            if ($startCoolResult.error -or $startCoolResult.refused -or
+                    $startCoolResult.thermalStop -or
+                    -not $startCoolResult.cooled -or -not $startCoolResult.paused) {
+                throw "The START handoff did not cool to its controlled pause boundary."
+            }
 
             $pressOutput = Invoke-ThorRenderProbeController `
                 -Name "thor_press" `

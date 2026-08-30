@@ -292,7 +292,9 @@ def t_press(a):
     A PAUSED guest cannot see a button, so this resumes first, presses, and then
     puts the emulator back the way it found it. That keeps the pause-look-decide
     -press loop working without the caller tracking the state by hand."""
-    was_paused = is_paused()
+    p = pid()
+    process_held = bool(p) and held_process_pid() == p
+    was_paused = process_held or is_paused()
     start_ceiling = float(a.get("maxStartC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
     start_silicon = fixed_silicon_c()
@@ -304,11 +306,29 @@ def t_press(a):
         return {"refused": True, "fixedSiliconC": start_silicon,
                 "reason": f"fixed silicon is not below {start_ceiling} C"}
 
+    resume = None
+    if process_held:
+        resume = continue_process_for_slice(p)
+        if not resume.get("ok"):
+            stop = t_stop({})
+            return {"error": "the guarded press could not resume its process hold",
+                    "wasPaused": was_paused, "resume": resume, "stop": stop}
+        resume["emulatorResume"] = api("/resume", "POST", timeout=1.0)
+    elif was_paused:
+        resume = api("/resume", "POST", timeout=1.0)
+
     if was_paused:
-        api("/resume", "POST")
         time.sleep(0.3)
 
-    r = api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}", "POST")
+    r = api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}",
+            "POST", timeout=1.0)
+    if isinstance(r, dict) and r.get("error"):
+        process_hold = stop_process_for_slice(p) if p else None
+        return {"error": "the guarded pad press was not acknowledged",
+                "press": r, "wasPaused": was_paused, "resume": resume,
+                "processHold": process_hold,
+                "rePaused": bool(process_hold and process_hold.get("ok")),
+                "holdMode": "process" if process_hold and process_hold.get("ok") else None}
 
     settle = float(a.get("settleS", 1.0))
     started = time.monotonic()
@@ -326,11 +346,32 @@ def t_press(a):
             return {"press": r, "wasPaused": was_paused,
                     "thermalStop": True, "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "stop": stop}
+    pause = None
+    process_hold = None
+    re_paused = False
+    hold_mode = None
     if was_paused and a.get("rePause", True):
-        api("/pause", "POST")
+        current = pid()
+        if current == p and held_process_pid() == p:
+            re_paused = True
+            hold_mode = "process"
+        else:
+            pause = api("/pause", "POST", timeout=1.0)
+            pause_acknowledged = (
+                isinstance(pause, dict) and not pause.get("error") and
+                (pause.get("paused") or is_paused())
+            )
+            if pause_acknowledged:
+                re_paused = True
+                hold_mode = "emulator"
+            elif current == p:
+                process_hold = stop_process_for_slice(p)
+                re_paused = bool(process_hold.get("ok"))
+                hold_mode = "process" if re_paused else None
 
     return {"press": r, "wasPaused": was_paused,
-            "rePaused": was_paused and a.get("rePause", True),
+            "resume": resume, "pause": pause, "processHold": process_hold,
+            "rePaused": re_paused, "holdMode": hold_mode,
             "maxFixedSiliconC": max_silicon}
 
 
