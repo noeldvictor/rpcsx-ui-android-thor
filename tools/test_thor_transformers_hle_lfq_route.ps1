@@ -26,6 +26,8 @@ $lwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\sys_lwmu
 $lwmutex = Get-Content -LiteralPath $lwmutexPath -Raw
 $lv2LwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_lwmutex.cpp"
 $lv2Lwmutex = Get-Content -LiteralPath $lv2LwmutexPath -Raw
+$sysEventPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_event.cpp"
+$sysEvent = Get-Content -LiteralPath $sysEventPath -Raw
 $cellAudioPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellAudio.cpp"
 $cellAudio = Get-Content -LiteralPath $cellAudioPath -Raw
 $androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
@@ -303,6 +305,25 @@ $requiredCellAudioTraceFragments = @(
 foreach ($fragment in $requiredCellAudioTraceFragments) {
     if (-not $cellAudio.Contains($fragment)) {
         throw "The bounded Transformers cellAudio trace is missing: $fragment"
+    }
+}
+
+$requiredAudioQueueTraceFragments = @(
+    'constexpr u64 thor_transformers_audio_queue_key = 0x80004d494f323221;',
+    'constexpr u32 thor_transformers_audio_queue_trace_limit = 64;',
+    '"debug.rpcsx.thor.transformers_lwmutex_trace"',
+    'Emu.GetTitleID() == "BLUS30357"',
+    '"Thor TWC AUDIOQ #%u:',
+    '"SEND-STORED"',
+    '"SEND-FULL"',
+    '"SEND-WAKE"',
+    '"RECV-WAIT"',
+    '"RECV-READY"'
+)
+
+foreach ($fragment in $requiredAudioQueueTraceFragments) {
+    if (-not $sysEvent.Contains($fragment)) {
+        throw "The bounded Transformers audio queue trace is missing: $fragment"
     }
 }
 

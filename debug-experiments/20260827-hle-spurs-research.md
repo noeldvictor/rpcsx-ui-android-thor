@@ -7647,3 +7647,43 @@ rendering progress.
 - Next: After a new strict cold-start gate below 70 C, install this exact APK.
   Arm on `Thor TWC LV2 ARM`, keep the late-load stop, and collect eight later
   half-second slices.
+
+## 158. Trace the exact Transformers audio queue
+
+- Status: instrumentation, host-pass, not-comparable
+- Scope: LV2 event queue, cellAudio, FMOD, config-driver
+- Hypothesis: A trace of IPC key `0x80004d494f323221` will distinguish a
+  missing audio heartbeat from a rejected, stored, or delivered notification.
+- Prior dynamic evidence: Experiment 149 created the audio queue and FMOD
+  receive worker at emulator time 6 minutes 18.505 seconds. At 6 minutes
+  27.243 seconds, PPU `0x0100000c` was still in the HLE receive call with game
+  return address `0x00e2b454`. The main PPU thread was still in the proved
+  lightweight-mutex wait. This 8.7-second state is much longer than the
+  expected audio heartbeat, but the old capture did not record an event send.
+- Changed files/settings: The existing default-off, BLUS30357-only property
+  now traces only the exact audio IPC queue. Its 64-line quota records receive
+  entry, receive wait, ready events, stored sends, full-queue errors, and the
+  PPU that a send wakes. Each row includes queue depth, event fields, and the
+  result. It does not change queue contents, wake order, or scheduler state.
+- Rollback: Leave `-LwmutexTrace off`, which is the default. Revert the queue
+  trace to remove this diagnostic code.
+- Windows result: Not run. This is Android native code.
+- Android build result: `:app:assembleDebug --no-configuration-cache` passed
+  in 59 seconds with 42 tasks. The modified `sys_event.cpp` compiled and
+  linked.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,152,755 bytes, and its SHA-256 is
+  `44447813C6BF5CCB8D3CCA7DD9533DA5FDFA6B5A08070A32D47BF4A73C6DA12C`.
+- Verification: The focused route contract and `git diff --check` pass. The
+  audio queue marker is present in the unstripped, merged, and stripped
+  Android native libraries.
+- Thor result: Not run. Experiment 154 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the exact queue trace. The next bounded run now has enough
+  evidence to select either an audio-heartbeat repair or an event wake repair.
+- Next: In the next independently cool hardware round, install this exact APK.
+  Use the corrected post-arm route and collect the audio, queue, mutex owner,
+  saved caller, unlock, and late-load evidence together.
