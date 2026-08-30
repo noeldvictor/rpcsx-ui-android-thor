@@ -8976,3 +8976,28 @@ rendering progress.
 - Next: Wait for the device to cool below 70 C. Then repeat the exact legal,
   START, and loading macro with the warm cache. Reject this change as a speed
   lever if matching frame windows do not improve.
+
+## 197. Inactive diagnostic removal is a speed-null cleanup
+
+- Status: android-clean, startup-only, speed-null
+- Scope: BLUS30357, HLE SPURS, normal Android diagnostics
+- Identity: Exact APK
+  `7E73F2D06D13A8CD6BA4F1654647CDCE7E1D234C69B45873A43886558BF7961C`
+  ran in `20260830-041510-thor-input-custom` after a strict start gate below
+  70 C.
+- Route: The exact legal, START, and loading macro matched capture
+  `20260830-035730-thor-input-custom`. The new run reached the legal frame and
+  the animated Transformers loading sequence. Direct START and CROSS input
+  continued to work.
+- Diagnostic result: The LFQueue ring, LFQueue notify, event-set, and render
+  poll rows were absent. The route had no access violation, dead FIFO, GCM
+  assertion, verification failure, fatal error, `SIGSEGV`, or `SIGBUS`.
+- Frame result: The last matching complete ten-second sample was 18.9 FPS.
+  The old exact route reported 21.1 FPS. Intermediate samples were mixed as
+  the loading symbols and phases changed. This result does not show a speed
+  gain.
+- Thermal result: Fixed silicon peaked at 42.9 C. Junction temperature peaked
+  at 44.9 C. The macro stopped RPCSX and the final PID was absent.
+- Decision: Keep the cleanup because normal builds do not need inactive hot
+  diagnostics and explicit probe builds retain them. Give it no speed credit.
+  Trace the loading dependency before the next device experiment.
