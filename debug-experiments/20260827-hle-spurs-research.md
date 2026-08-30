@@ -9905,3 +9905,19 @@ rendering progress.
   gone and the device is cool, push this exact core without a launch. Then run
   one guarded route. Require the owner-signal row, no self-cycle, a normal
   post-audio handoff, and later HLE progress before any speed credit.
+
+## 238. The Thor is still occupied near the launch limit
+
+- Status: device-unavailable, read-only-check
+- Observation: A single read-only check found no RPCSX PID. It found
+  `com.reblue` PID `31983` and reported `com.reblue/.ReblueActivity` as the top
+  resumed activity and focused app.
+- Thermal result: The four CPU-subsystem sensors reported 69.9, 67.4, 67.8,
+  and 67.8 C. The maximum is below 70 C, but it is above the 68 C active-slice
+  ceiling and has no safe load margin while another workload is active.
+- Fan result: The read-only setting values were `fan_mode=4` and
+  `fan_speed=100`. Smart mode `4` is active. The second value remains the saved
+  inactive Custom slider. No setting was changed.
+- Decision: Do not push or launch RPCSX. Do not stop the unrelated foreground
+  app. Wait until that app is absent and fixed silicon is below the guarded
+  start point. Then use the exact core from experiment 237.
