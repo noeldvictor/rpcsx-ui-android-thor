@@ -7499,3 +7499,112 @@ rendering progress.
 - Next: In one later independently cool run, install the exact APK, arm on
   `Thor TWC LV2 ARM`, and stop after the bounded post-arm window. Use the
   recorded owner and unlock handoff to make the narrow HLE repair.
+
+## 154. The kernel trace identifies the FMOD mutex owner
+
+- Status: android-boundary, owner-identified, not-comparable
+- Scope: HLE, FMOD, LV2 lightweight-mutex, thermal-safety
+- Hypothesis: The kernel trace will identify the thread that owns the mutex
+  that blocks the main PPU thread after the repaired FMOD event wait.
+- Changed files/settings: The route installed the experiment 153 APK. Its
+  installed SHA-256 was
+  `874D1C25CBC29AB559B1898168735E7B336B6B4D4700D8760B75E153706B1041`.
+  It enabled the FMOD event interpreter and trace, the kernel lightweight-mutex
+  trace, and the PPU-only census. It requested half-second slices, armed on
+  `Thor TWC LV2 ARM`, and requested eight later slices.
+- Thor result: The one-sample cold-start gate passed at 48.0 C fixed silicon.
+  The route completed 36 slices in 291.313 host seconds. The active windows
+  totaled 25.218 seconds. Every slice ended in a verified process hold.
+- Route limitation: The wrapper replaced the default late-load stop with
+  `Thor FMOD EFWAIT RETURN #0` because FMOD tracing was on. The same slice
+  contained the later kernel-arm marker, but the controller stopped before it
+  completed the requested post-arm window. This run identifies the owner. It
+  does not show the matching unlock or prove a persistent deadlock.
+- FMOD evidence: SPU 3 received the expected event at PC `0x14044` from queue
+  `0x8d008f00`, woke the main PPU thread, and returned with success. The game
+  then created audio notification queue key `0x80004d494f323221` and created
+  the `FMOD libAudio event receive thread` as PPU `0x0100000c`.
+- Mutex evidence: At emulator time 4 minutes 58.015 seconds, the main PPU
+  thread entered kernel mutex ID `0x95008b00`. Its guest control address was
+  `0x1132f640`, its owner was PPU `0x0100000c`, and its waiter count was one.
+  The kernel then queued the main thread. The owner is the FMOD audio event
+  receive thread. The queue is not an unknown SPURS or renderer lock.
+- Visual correctness: The boundary image is black except for the RPCSX
+  performance overlay. Its SHA-256 is
+  `AC2E0D496E74D7C6202D1AA54696A03F15746409F44C230FA44FFF01DC16DD7D`.
+  It is not moving gameplay.
+- FPS/frame-time: No performance credit. The paused diagnostic showed 0.63
+  FPS. This is a loading and trace sample, not a gameplay measurement.
+- Thermal result: The independent guard recorded 527 samples. Fixed silicon
+  peaked at 68.7 C, and CPU junction peaked at 79.5 C. Eight samples reached
+  the 66 C early-hold range. No fixed-silicon sample reached 70 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared all 61 listed properties and found
+  zero remaining `debug.rpcsx.thor.*` values. The cleanup fixed-silicon sample
+  was 50.6 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-214300-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-214329-transformers-kernel-lwmutex-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-214356-thor-input-custom`.
+- Decision: Keep the kernel trace. Do not force the mutex open. Record the
+  audio event send and the owner-thread unlock in the next hardware round.
+- Next: Prevent the FMOD default stop from replacing an armed late-load route.
+  Add bounded audio notification and saved-caller fields before that run.
+
+## 155. Map the FMOD audio event owner
+
+- Status: static-analysis, host-pass, not-comparable
+- Scope: Ghidra, FMOD, cellAudio, event queue, lightweight-mutex
+- Hypothesis: The owner-thread callback and current audio notification source
+  will show what must happen before the owner releases the mutex.
+- Static result: Ghidra maps PPU `0x0100000c` to the shared worker trampoline
+  at `0x00e31738`. The create helper at `0x00e314ec` waits for the child start
+  flag before it returns. The FMOD audio callback at `0x00e2b3e0` locks two
+  FMOD mutexes, receives an audio event, and unlocks the mutexes in reverse
+  order at `0x00e2b460` and `0x00e2b470`. The receive is therefore inside the
+  protected region.
+- Local source result: `cell_audio_thread::advance` collects registered audio
+  queues under the audio mutex, releases that mutex, and sends
+  `CELL_AUDIO_EVENT_MIX` to each selected LV2 queue. The local comparison
+  checkout at commit `8ffd7be082515009ba73b3cf3c85d1c9a0a0323c` uses the same
+  registration and send path. Its other audio changes do not repair this
+  event handoff.
+- Online source result: Current official RPCS3 source uses the same
+  `CELL_AUDIO_EVENT_MIX` send after `cell_audio_thread::advance` releases the
+  audio mutex. RPCS3 issue 2860 also records an FMOD libAudio event receive
+  thread directly after the audio notification queue setup. This confirms
+  that the thread type and setup order are normal. It does not prove that the
+  Transformers event was sent or received in this run.
+- Sources:
+  `https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Cell/Modules/cellAudio.cpp`
+  and `https://github.com/RPCS3/rpcs3/issues/2860`.
+- Ghidra reports:
+  `debug-captures/ghidra-transformers-ppu-20260828-224900/focused-project/BLUS30357-fmod-owner-thread.txt`,
+  `BLUS30357-fmod-thread-create.txt`,
+  `BLUS30357-fmod-thread-create-case3.txt`, and
+  `BLUS30357-fmod-receive-branches.txt`.
+- Decision: Do not add a speculative mutex release. First trace the registered
+  queue, audio send result, saved main-thread caller, and normal owner unlock.
+- Next: Add default-off, BLUS30357-only fields for that one boundary. Then use
+  one bounded post-arm Thor run after a new cold-start gate.
+
+## 156. Preserve an explicit post-arm stop
+
+- Status: route-tooling, host-pass, not-comparable
+- Scope: controller, FMOD trace, post-arm capture
+- Hypothesis: An armed route must keep its late-load stop so that it can record
+  the mutex owner after the FMOD return marker.
+- Changed files/settings: The Transformers wrapper now selects the FMOD return
+  as its implicit stop only when `SliceArmMatch` is empty. An explicit arm
+  keeps the requested stop and post-arm slice contract.
+- Rollback: Revert the added arm check.
+- Windows result: The focused route contract and PowerShell parser pass.
+- Thor result: Not run. Experiment 154 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the route correction. It prevents the early stop that limited
+  experiment 154.
+- Next: Add the bounded audio and caller trace, build it, and use it in the
+  next independently cool hardware round.

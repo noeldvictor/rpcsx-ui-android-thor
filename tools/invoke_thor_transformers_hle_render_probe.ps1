@@ -82,7 +82,9 @@ if ($SliceLoop -and $StartPaused -ne "on") {
     throw "The Transformers slice loop requires -StartPaused on."
 }
 
-if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on" -and -not $PSBoundParameters.ContainsKey("SliceStopMatch")) {
+if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on" -and
+        [string]::IsNullOrWhiteSpace($SliceArmMatch) -and
+        -not $PSBoundParameters.ContainsKey("SliceStopMatch")) {
     $SliceStopMatch = "Thor FMOD EFWAIT RETURN #0"
 }
 
