@@ -9,7 +9,96 @@
 
 #include "rx/asm.hpp"
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
+
 LOG_CHANNEL(sysPrxForUser);
+
+namespace
+{
+constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
+constexpr u32 thor_transformers_lwmutex_trace_limit = 128;
+
+std::atomic<u32> g_thor_transformers_lwmutex_addr{0};
+std::atomic<u32> g_thor_transformers_lwmutex_trace_seq{0};
+
+bool thor_transformers_lwmutex_trace_enabled() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.transformers_lwmutex_trace", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+bool thor_transformers_lwmutex_trace_target(const ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
+{
+	if (!thor_transformers_lwmutex_trace_enabled())
+	{
+		return false;
+	}
+
+	const u32 address = lwmutex.addr();
+	u32 target = g_thor_transformers_lwmutex_addr.load(std::memory_order_relaxed);
+	if (target == address)
+	{
+		return true;
+	}
+
+	if (target || static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr ||
+		static_cast<std::string>(ppu.thread_name).find("main_thread") == std::string::npos)
+	{
+		return false;
+	}
+
+	if (!g_thor_transformers_lwmutex_addr.compare_exchange_strong(
+			target, address, std::memory_order_relaxed))
+	{
+		return target == address;
+	}
+
+	sysPrxForUser.error(
+		"Thor TWC LWM ARM: ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x lwmutex=0x%x",
+		ppu.id, static_cast<std::string>(ppu.thread_name), ppu.cia,
+		static_cast<u32>(ppu.lr), address);
+	return true;
+}
+
+void thor_transformers_lwmutex_trace(const ppu_thread& ppu,
+	vm::ptr<sys_lwmutex_t> lwmutex, const char* action, u64 result = 0)
+{
+	if (!thor_transformers_lwmutex_trace_target(ppu, lwmutex))
+	{
+		return;
+	}
+
+	const u32 sequence =
+		g_thor_transformers_lwmutex_trace_seq.fetch_add(1, std::memory_order_relaxed);
+	if (sequence >= thor_transformers_lwmutex_trace_limit)
+	{
+		return;
+	}
+
+	const u32 owner = lwmutex->vars.owner.load();
+	const u32 waiters = lwmutex->vars.waiter.load();
+	sysPrxForUser.error(
+		"Thor TWC LWM #%u: %s ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
+		"lwmutex=0x%x owner=0x%x waiters=%u attribute=0x%x recursive=%u "
+		"sleepq=0x%x result=0x%llx",
+		sequence, action, ppu.id, static_cast<std::string>(ppu.thread_name),
+		ppu.cia, static_cast<u32>(ppu.lr), lwmutex.addr(), owner, waiters,
+		static_cast<u32>(lwmutex->attribute),
+		static_cast<u32>(lwmutex->recursive_count),
+		static_cast<u32>(lwmutex->sleep_queue), result);
+}
+}
 
 error_code sys_lwmutex_create(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex, vm::ptr<sys_lwmutex_attribute_t> attr)
 {
@@ -94,6 +183,7 @@ error_code sys_lwmutex_destroy(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
 error_code sys_lwmutex_lock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex, u64 timeout)
 {
 	sysPrxForUser.trace("sys_lwmutex_lock(lwmutex=*0x%x, timeout=0x%llx)", lwmutex, timeout);
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "LOCK-ENTER", timeout);
 
 	if (g_cfg.core.hle_lwmutex)
 	{
@@ -117,6 +207,7 @@ error_code sys_lwmutex_lock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex, u64
 	if (old_owner == lwmutex_free)
 	{
 		// locking succeeded
+		thor_transformers_lwmutex_trace(ppu, lwmutex, "LOCK-FAST");
 		return CELL_OK;
 	}
 
@@ -173,12 +264,15 @@ error_code sys_lwmutex_lock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex, u64
 	{
 		// locking succeeded
 		--lwmutex->all_info;
+		thor_transformers_lwmutex_trace(ppu, lwmutex, "LOCK-RACE-WON");
 
 		return CELL_OK;
 	}
 
 	// lock using the syscall
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "LOCK-SLEEP");
 	const error_code res = _sys_lwmutex_lock(ppu, lwmutex->sleep_queue, timeout);
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "LOCK-WAKE", res);
 
 	static_cast<void>(ppu.test_stopped());
 
@@ -346,6 +440,7 @@ error_code sys_lwmutex_trylock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
 error_code sys_lwmutex_unlock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
 {
 	sysPrxForUser.trace("sys_lwmutex_unlock(lwmutex=*0x%x)", lwmutex);
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "UNLOCK-ENTER");
 
 	if (g_cfg.core.hle_lwmutex)
 	{
@@ -372,6 +467,7 @@ error_code sys_lwmutex_unlock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
 	if (lwmutex->lock_var.compare_and_swap_test({tid, 0}, {lwmutex_free, 0}))
 	{
 		// unlocking succeeded
+		thor_transformers_lwmutex_trace(ppu, lwmutex, "UNLOCK-FAST");
 		return CELL_OK;
 	}
 
@@ -390,9 +486,12 @@ error_code sys_lwmutex_unlock(ppu_thread& ppu, vm::ptr<sys_lwmutex_t> lwmutex)
 
 	// set special value
 	lwmutex->vars.owner.release(lwmutex_reserved);
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "UNLOCK-HANDOFF");
 
 	// call the syscall
-	if (_sys_lwmutex_unlock(ppu, lwmutex->sleep_queue) + 0u == CELL_ESRCH)
+	const error_code res = _sys_lwmutex_unlock(ppu, lwmutex->sleep_queue);
+	thor_transformers_lwmutex_trace(ppu, lwmutex, "UNLOCK-RETURN", res);
+	if (res + 0u == CELL_ESRCH)
 	{
 		return CELL_ESRCH;
 	}

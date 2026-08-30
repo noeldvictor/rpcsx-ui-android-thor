@@ -7284,3 +7284,95 @@ rendering progress.
   late-load completion sample 2, or arm on the proved FMOD return and stop
   after eight more slices. Use the final PPU state and image to select the next
   HLE repair.
+
+## 149. The bounded route reaches the post-FMOD loading UI
+
+- Status: android-pass, boundary-capture, not-comparable
+- Scope: HLE, FMOD, loading, PPU-census, thermal-safety
+- Hypothesis: The process-hold fallback will let the route reach the repaired
+  FMOD return and capture the next persistent PPU state.
+- Changed files/settings: The route used the exact experiment 143 APK. Its
+  installed SHA-256 was
+  `CB0806B23C9101D7A591A284888C5B9911655855630DAA437EED15D5974A8FAA`.
+  It enabled the FMOD event interpreter and trace, enabled the PPU-only census,
+  armed on `Thor FMOD EFWAIT RETURN #0`, and requested eight later half-second
+  slices. The full runtime census remained off.
+- Thor result: The one-sample cold-start gate passed at 45.3 C fixed silicon.
+  The route completed 50 slices and armed on slice 42. It then completed all
+  eight requested post-arm slices and stopped with `markerKind=post-arm`.
+  Total host time was 454.516 seconds. The 50 active windows totaled 37.558
+  seconds and ranged from 0.672 to 0.906 seconds. Every slice ended in a
+  verified process hold. The pause failure from experiment 147 did not recur.
+- FMOD evidence: SPU 2 entered at PC `0x14008`, received the expected event at
+  PC `0x14044` from queue `0x8d009000`, left at PC `0x12150`, and woke the PPU
+  with request bit `0x1`. The route then created the audio notification queue
+  and the FMOD audio-receive and stream threads. This repeats the repaired FMOD
+  return with real queue delivery.
+- New PPU boundary: `main_thread` was in HLE code at `0x022254ec` with link
+  register `0x00e28c5c`. `RenderingThread` was at `0x009e4ba4`. The pool and
+  asynchronous I/O threads were at `0x00a02218`. Later SPU dispatches continued,
+  so this is not a global process stop.
+- Static analysis: Ghidra shows that the wrapper at `0x00e28c40` calls import
+  stub `0x0160c8c4` with a zero timeout and returns at `0x00e28c5c`. The PS3
+  import table maps function-table entry `0x0193b8e8` to `sysPrxForUser` NID
+  `0x1573dc3f`, which is `sys_lwmutex_lock`. The main PPU thread is therefore
+  waiting for a lightweight mutex. It is not waiting for a semaphore.
+- Visual correctness: The boundary image shows the real Transformers loading
+  emblem in the lower-right corner. Its SHA-256 is
+  `345E21D3794F50ED277479ECEE5799998ACC9B845A2AA10CA292F731045A61EC`.
+  The image gate classifies it as black because 98.0 percent of pixels are near
+  black. This is valid loading UI, not moving 3D output.
+- FPS/frame-time: No performance credit. The paused diagnostic reported 128
+  frames in 81.45 seconds, or 1.57 FPS. It is not a gameplay measurement.
+- Thermal result: The controller maximum was 67.0 C fixed silicon. The
+  independent guard recorded 781 samples and 19 early process holds. Fixed
+  silicon peaked at 71.5 C, and CPU junction peaked at 88.7 C. Neither hard
+  limit was reached.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared all listed properties and found zero
+  remaining `debug.rpcsx.thor.*` values. The final independent fixed-silicon
+  sample was 57.8 C. A later direct check measured 52.2 C.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-203553-thor-input-custom`.
+- Decision: Keep the FMOD repair, PPU-only census, bounded post-arm route, and
+  process-hold fallback. Do not force the lightweight mutex open. First record
+  its owner and matching unlock path.
+- Next: Add a default-off, title-gated trace for this one mutex call site. In a
+  later independently cool run, record the dynamic mutex address, owner,
+  waiter count, sleep queue, and matching unlock thread.
+
+## 150. Trace the exact lightweight-mutex boundary
+
+- Status: instrumentation, host-pass, not-comparable
+- Scope: Ghidra, sysPrxForUser, lightweight-mutex, config-driver
+- Hypothesis: A bounded trace of the exact main-thread mutex will show whether
+  its owner fails to unlock, unlocks a different object, or only needs more
+  startup work.
+- Changed files/settings: `sys_lwmutex_.cpp` now has the default-off property
+  `debug.rpcsx.thor.transformers_lwmutex_trace`. It can arm only for BLUS30357,
+  `main_thread`, and link register `0x00e28c5c`. After it records the dynamic
+  mutex address, it logs only that object's lock, kernel sleep, wake, and unlock
+  states. Each line includes the PPU ID and name, owner, waiter count,
+  attributes, recursive count, sleep queue, and result. The quota is 128 lines.
+  The trace does not change mutex memory or scheduler state. The Transformers
+  wrapper exposes `-LwmutexTrace on` and clears the property after the run.
+- Online source check: The current Ps3GhidraScripts import parser confirms the
+  0x2c-byte PPU import descriptor layout and the parallel NID and function
+  address tables. The current local RPCSX NID map independently names
+  `0x1573dc3f` as `sys_lwmutex_lock`.
+- Rollback: Leave `-LwmutexTrace off`, which is the default. Revert the trace
+  and wrapper changes to remove the diagnostic code.
+- Windows result: Not run. This is Android native code.
+- Android build result: `:app:assembleDebug --no-configuration-cache` passed in
+  1 minute 43 seconds. The modified `sys_lwmutex_.cpp` compiled and linked.
+- Thor result: Not run. Experiment 149 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused Transformers route contract, PowerShell parser,
+  and `git diff --check` passed. The native Android debug build passed.
+- Decision: Keep the bounded mutex trace. It observes the proved boundary and
+  does not invent a mutex release.
+- Next: In one later independently cool run, use the exact built APK, enable
+  the mutex trace, arm on `Thor TWC LWM ARM`, and keep a bounded post-arm
+  window. Use the recorded owner and unlock evidence to select the next repair.

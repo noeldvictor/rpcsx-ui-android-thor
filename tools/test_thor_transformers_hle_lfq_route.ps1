@@ -22,6 +22,8 @@ $ppuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Ce
 $ppuThread = Get-Content -LiteralPath $ppuThreadPath -Raw
 $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSpurs.cpp"
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
+$lwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\sys_lwmutex_.cpp"
+$lwmutex = Get-Content -LiteralPath $lwmutexPath -Raw
 $androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
 $android = Get-Content -LiteralPath $androidPath -Raw
 $systemHeaderPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\System.h"
@@ -102,6 +104,7 @@ $requiredRenderProbeFragments = @(
     '[string]$RuntimeCensus = "off"',
     '[string]$SpuPcCensus = "off"',
     '[string]$PpuPcCensus = "off"',
+    '[string]$LwmutexTrace = "off"',
     '[string]$InputMode = "Direct"',
     '"debug.rpcsx.thor.hle_libs" = if ($Mode -eq "HLE") { "libsre.sprx" } else { "none" }',
     '"debug.rpcsx.thor.hle_spurs_kernel" = if ($Mode -eq "HLE") { "1" } else { "0" }',
@@ -126,9 +129,11 @@ $requiredRenderProbeFragments = @(
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.edge_event_wait_trace" -Value "0"',
     '"debug.rpcsx.thor.fmod_event_wait_trace" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }',
+    '"debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
+    'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"',
     '"debug.rpcsx.thor.draw_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }',
@@ -223,6 +228,28 @@ if ($renderProbe.Contains('Get-ThorEvidenceBody')) {
 
 if ($renderProbe.Contains('$sliceResult.holdMode -ne "process"')) {
     throw "The Transformers HLE route skips a stable process-held screenshot."
+}
+
+$requiredLwmutexTraceFragments = @(
+    'constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;',
+    'constexpr u32 thor_transformers_lwmutex_trace_limit = 128;',
+    '"debug.rpcsx.thor.transformers_lwmutex_trace"',
+    'Emu.GetTitleID() == "BLUS30357"',
+    'static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr',
+    'static_cast<std::string>(ppu.thread_name).find("main_thread")',
+    'g_thor_transformers_lwmutex_addr.compare_exchange_strong(',
+    '"Thor TWC LWM ARM:',
+    '"Thor TWC LWM #%u:',
+    '"LOCK-SLEEP"',
+    '"LOCK-WAKE"',
+    '"UNLOCK-ENTER"',
+    '"UNLOCK-RETURN"'
+)
+
+foreach ($fragment in $requiredLwmutexTraceFragments) {
+    if (-not $lwmutex.Contains($fragment)) {
+        throw "The bounded Transformers lightweight-mutex trace is missing: $fragment"
+    }
 }
 
 $requiredPcCensusFragments = @(
