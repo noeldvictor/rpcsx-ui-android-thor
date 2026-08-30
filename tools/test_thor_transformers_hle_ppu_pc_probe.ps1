@@ -33,6 +33,15 @@ foreach ($fragment in $requiredFragments) {
 }
 
 $requiredPerfFragments = @(
+    'static std::atomic<u32> s_main_fence_dumps{0};',
+    'pc == 0x00102b98u',
+    'const u32 counter_addr = static_cast<u32>(ppu.gpr[28]);',
+    'const u32 target = static_cast<u32>(ppu.gpr[29]);',
+    'const u32 wait_arg = static_cast<u32>(ppu.gpr[30]);',
+    'constexpr u32 task_ring = 0x01d2ffb0u;',
+    'Thor MAIN FENCE: sample=%u',
+    'Thor PPU TASK RING 00: sample=%u',
+    'Thor PPU TASK RING 20: sample=%u',
     'static std::atomic<u64> s_last_main_stack_key{0};',
     'static std::atomic<u32> s_main_stack_dumps{0};',
     's_main_stack_dumps.load() < 8',

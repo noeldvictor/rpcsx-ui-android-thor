@@ -238,6 +238,47 @@ void perf_monitor::operator()()
 						{
 							const u32 pc = +ppu.cia;
 
+							// Ghidra identifies 0x00102b98 as the instruction after the
+							// helper call in a title task-fence wait. Register 28 points
+							// to the live completion value, and register 29 is its target.
+							// Record the related task-ring words to identify whether the
+							// producer does not publish work or the worker does not consume it.
+							static std::atomic<u32> s_main_fence_dumps{0};
+							if (id == 0x1000000u && pc == 0x00102b98u &&
+								s_main_fence_dumps.load(std::memory_order_relaxed) < 16)
+							{
+								const u32 counter_addr = static_cast<u32>(ppu.gpr[28]);
+								const u32 target = static_cast<u32>(ppu.gpr[29]);
+								const u32 wait_arg = static_cast<u32>(ppu.gpr[30]);
+								constexpr u32 task_ring = 0x01d2ffb0u;
+								const bool counter_ok = vm::check_addr(counter_addr, 0, 4);
+								const bool ring_ok = vm::check_addr(task_ring, 0, 0x38);
+								const u32 counter = counter_ok ? +vm::_ref<be_t<u32>>(counter_addr) : 0;
+								const u32 sample = s_main_fence_dumps.fetch_add(1, std::memory_order_relaxed);
+
+								if (sample < 16)
+								{
+									perf_log.error("Thor MAIN FENCE: sample=%u counter_addr=%s:0x%08x counter=%u target=%u delta=%d wait_arg=0x%08x",
+										sample + 1, counter_ok ? "mapped" : "unmapped", counter_addr,
+										counter, target, static_cast<s32>(counter - target), wait_arg);
+
+									if (ring_ok)
+									{
+										perf_log.error("Thor PPU TASK RING 00: sample=%u base=0x%08x %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1, task_ring,
+											+vm::_ref<be_t<u32>>(task_ring + 0x00), +vm::_ref<be_t<u32>>(task_ring + 0x04),
+											+vm::_ref<be_t<u32>>(task_ring + 0x08), +vm::_ref<be_t<u32>>(task_ring + 0x0c),
+											+vm::_ref<be_t<u32>>(task_ring + 0x10), +vm::_ref<be_t<u32>>(task_ring + 0x14),
+											+vm::_ref<be_t<u32>>(task_ring + 0x18), +vm::_ref<be_t<u32>>(task_ring + 0x1c));
+										perf_log.error("Thor PPU TASK RING 20: sample=%u %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(task_ring + 0x20), +vm::_ref<be_t<u32>>(task_ring + 0x24),
+											+vm::_ref<be_t<u32>>(task_ring + 0x28), +vm::_ref<be_t<u32>>(task_ring + 0x2c),
+											+vm::_ref<be_t<u32>>(task_ring + 0x30), +vm::_ref<be_t<u32>>(task_ring + 0x34));
+									}
+								}
+							}
+
 							// THE FENCE main_thread WAITS ON.
 							//
 							// 0x00fdcf60 disassembles to a two-counter spin:

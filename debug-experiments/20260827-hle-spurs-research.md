@@ -9067,3 +9067,24 @@ rendering progress.
   nine minutes. Profile and repair the producer for the known main-thread
   render barrier. Do not give loading-screen FPS or intermittent recovery any
   gameplay credit.
+
+## 200. A bounded probe exposes the main task-fence state
+
+- Status: host-verified, diagnostic-only, device-pending
+- Scope: BLUS30357, main PPU task fence at guest address `0x00102b98`
+- Ghidra basis: The wait at `0x00102b00` loops while the value at the address
+  in register 28 is greater than the target in register 29. Address
+  `0x00102b98` is immediately after the helper call in this loop. Its caller
+  publishes one item to the title task ring and then waits for completion.
+- Change: The existing PPU PC census now records the live counter address and
+  value, the target, the wait argument, and the raw words in the task ring at
+  `0x01d2ffb0`. It records at most 16 samples, only for the main PPU thread at
+  the exact wait address, and only when the manual census property is on.
+  Normal runs do not enter this path.
+- Verification: The focused PPU probe contract and `git diff --check` pass.
+  The optimized ARM64 Debug build completed in 2 minutes 3 seconds. The exact
+  APK is `E6C8DB6A1FE95162C08EEC2281022EB9435D7B9348555916796D1C8622C28FFE`,
+  is 116,154,664 bytes, and passes the ARM64-only APK contract.
+- Next: Install this exact APK without a launch. If fixed silicon is below
+  70 C, run one short property-gated capture. Use the counter and ring state
+  to select the producer or consumer for the next repair.
