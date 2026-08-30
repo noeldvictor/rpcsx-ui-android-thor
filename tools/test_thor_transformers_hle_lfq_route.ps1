@@ -447,6 +447,8 @@ if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(ppu_
 $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
+    'thor_transformers_post_audio_lwmutex_caller = 0x00dd5f6c',
+    'thor_transformers_post_audio_lwmutex_id = 0x95008d00',
     'lv2_obj::force_owner_wake_after_waiter_sleep(*owner)',
     '"Thor TWC AUDIO OWNER WAKE:',
     'g_thor_transformers_audio_owner_wake_completed.store(',
@@ -465,6 +467,12 @@ $requiredAudioOwnerWakeFragments = @(
     'dependency_owner_id != owner_id',
     'phase=queue-scan',
     'phase=queue-scan-miss',
+    'thor_transformers_audio_dependency_yield_limit = 4096',
+    'cpu_flag::suspend - owner->state',
+    'std::this_thread::yield();',
+    'thor_transformers_discover_audio_dependency(lwmutex_id, false)',
+    '"Thor TWC AUDIO OWNER DEFERRED SCAN:',
+    'found ? "candidate-deferred"',
     '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:',
     'bool thor_transformers_audio_owner_wake_completed() noexcept',
     'std::memory_order_acquire'

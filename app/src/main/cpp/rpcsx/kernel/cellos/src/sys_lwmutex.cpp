@@ -21,9 +21,12 @@ LOG_CHANNEL(sys_lwmutex);
 namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
+constexpr u32 thor_transformers_post_audio_lwmutex_caller = 0x00dd5f6c;
+constexpr u32 thor_transformers_post_audio_lwmutex_id = 0x95008d00;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
 constexpr u32 thor_transformers_audio_dependency_log_limit = 16;
+constexpr u32 thor_transformers_audio_dependency_yield_limit = 4096;
 
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_trace_seq{0};
@@ -156,7 +159,8 @@ void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
       wake_ppu, result);
 }
 
-void thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id) {
+bool thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id,
+                                                  bool log_miss = true) {
   const auto found = idm::select<lv2_obj, lv2_lwmutex>(
       [&](u32 candidate_lwmutex_id, lv2_lwmutex &candidate) -> bool {
         bool contains_fmod_receiver = false;
@@ -203,7 +207,7 @@ void thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id) {
       },
       idm::unlocked);
 
-  if (!found) {
+  if (!found && log_miss) {
     const u32 sequence =
         g_thor_transformers_audio_dependency_seq.fetch_add(
             1, std::memory_order_relaxed);
@@ -214,6 +218,8 @@ void thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id) {
           sequence, primary_lwmutex_id);
     }
   }
+
+  return static_cast<bool>(found);
 }
 
 void thor_transformers_complete_audio_owner_wake(
@@ -294,6 +300,35 @@ void thor_transformers_complete_audio_owner_wake(
           sequence, waiting_ppu.id, caller, lwmutex_id, owner_id, state_before,
           control);
     }
+
+    const bool is_deferred_dependency_candidate =
+        caller == thor_transformers_post_audio_lwmutex_caller &&
+        lwmutex_id == thor_transformers_post_audio_lwmutex_id &&
+        owner_id == 0x0100'000c && owner &&
+        static_cast<std::string>(owner->thread_name) ==
+            "FMOD libAudio event receive thread";
+    if (is_deferred_dependency_candidate) {
+      u32 yields = 0;
+      while (yields < thor_transformers_audio_dependency_yield_limit &&
+             cpu_flag::suspend - owner->state) {
+        yields++;
+        std::this_thread::yield();
+      }
+
+      const bool found =
+          thor_transformers_discover_audio_dependency(lwmutex_id, false);
+      const u32 owner_state_after_yield =
+          static_cast<u32>((+owner->state).raw());
+      sys_lwmutex.error(
+          "Thor TWC AUDIO OWNER DEFERRED SCAN: waiter=0x%x caller=0x%x "
+          "id=0x%x owner=0x%x state=0x%x->0x%x yields=%u found=%u",
+          waiting_ppu.id, caller, lwmutex_id, owner_id, state_before,
+          owner_state_after_yield, yields, found ? 1u : 0u);
+      retry_dependency_wake(found ? "candidate-deferred"
+                                  : "candidate-deferred-miss");
+      return;
+    }
+
     retry_dependency_wake("candidate");
     return;
   }
