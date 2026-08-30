@@ -19,6 +19,7 @@
 #include "Emu/Memory/vm_reservation.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spu_pc_census.h"
 #include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/timers.hpp"
 #include "cellos/sys_lwmutex.h"
@@ -6470,6 +6471,11 @@ s32 cellSpursCreateTask(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::
 	if (rc != CELL_OK)
 	{
 		return rc;
+	}
+
+	if (Emu.GetTitleID() == "BLUS30357" && elf.addr() == 0x018c1000u)
+	{
+		thor::arm_transformers_physx_spu_census(taskset.addr(), *taskId, elf.addr());
 	}
 
 	rc = _spurs::task_start(ppu, taskset, *taskId);

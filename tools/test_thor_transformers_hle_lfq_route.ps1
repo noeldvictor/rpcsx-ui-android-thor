@@ -463,7 +463,11 @@ $requiredPcCensusFragments = @(
 	'hash=0x%016llx interp=%u',
 	'spu.state.load().toUnderlying()',
 	'spu.group->run_state.load()',
-    'thor::spu_pc_census_tick();'
+	'thor::spu_pc_census_tick();',
+	'arm_transformers_physx_spu_census',
+	'Thor PHYSX PC sample=%u',
+	'Thor PHYSX PC WAIT sample=%u',
+	'spu_transformers_physx_pc_census_tick();'
 )
 
 foreach ($fragment in $requiredPcCensusFragments) {
@@ -473,8 +477,20 @@ foreach ($fragment in $requiredPcCensusFragments) {
 }
 
 $spuMapReadyGuard = 'g_fxo->try_get<id_manager::id_map<named_thread<spu_thread>>>()'
-if ([regex]::Matches($pcCensus, [regex]::Escape($spuMapReadyGuard)).Count -lt 2) {
+if ([regex]::Matches($pcCensus, [regex]::Escape($spuMapReadyGuard)).Count -lt 3) {
     throw "Each SPU PC census path must wait for the SPU ID map."
+}
+
+$requiredPhysxCensusArmFragments = @(
+	'#include "Emu/Cell/thor_spu_pc_census.h"',
+	'Emu.GetTitleID() == "BLUS30357" && elf.addr() == 0x018c1000u',
+	'thor::arm_transformers_physx_spu_census(taskset.addr(), *taskId, elf.addr());'
+)
+
+foreach ($fragment in $requiredPhysxCensusArmFragments) {
+	if (-not $cellSpurs.Contains($fragment)) {
+		throw "The Transformers PhysX SPU census arm is missing: $fragment"
+	}
 }
 
 if ($pcCensus.IndexOf('s_sample++') -lt $pcCensus.IndexOf('matched = true;')) {
