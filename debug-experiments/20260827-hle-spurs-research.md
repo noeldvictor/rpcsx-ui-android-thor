@@ -9853,3 +9853,20 @@ rendering progress.
 - Decision: Keep the exact Transformers self-cycle repair for the next device
   proof. Do not add a generic duplicate-waiter rule without a reproducible
   upstream case or a separate queue-invariant test.
+
+## 236. Another foreground app owns the hot Thor
+
+- Status: device unavailable for a valid emulator run
+- Observation: RPCSX remained absent, and Smart fan mode `4` remained active.
+  Fixed silicon then stayed near 85 to 86 C instead of cooling.
+- Attribution: Two consecutive thread-level process samples identified
+  `com.reblue` at about three CPU cores. Android reported
+  `com.reblue/.ReblueActivity` as the top resumed activity. The package was
+  updated at 19:04:55, after the RPCSX watchdog stop.
+- Scope: This heat is not an RPCSX orphan. A new emulator run would overlap an
+  unrelated foreground workload and would be thermally invalid. Force-stopping
+  that app is outside this experiment's authority.
+- Decision: Do not contact or launch RPCSX again while `com.reblue` is active.
+  Wait for the user to release the shared Thor and for fixed silicon to fall
+  below the strict launch gate. Then use one new guarded run with the 68 C
+  slice ceiling and early hold.
