@@ -8382,3 +8382,39 @@ rendering progress.
   from the next decision run. The audio-owner repair still emits its exact
   marker without those probes. This reduces work and gives ordered FIFO a
   cleaner speed and thermal test.
+
+## 177. Remove battery state of charge from the thermal gate
+
+- Status: controller-fix, host-pass, device-evidence
+- Scope: strict cold gate, paused-slice controller, device watchdog, sensor
+  classification
+- Problem: `thermal_zone82` has type `socd` and reports a bare state value.
+  The generic classifier matched `soc` in its name and treated this state as
+  Celsius. It therefore held or stopped the emulator when the state reached
+  70 or 72, even though the real CPU, GPU, DDR, and XO temperature sensors were
+  near 35-36 C.
+- Device evidence: After experiment 176 stopped, `socd` stayed at the bare
+  value 72 while `cpuss-*`, `gpuss-*`, DDR, and XO reported 34.6-36.5 C in
+  millidegrees. No emulator PID was present.
+- Source evidence: Qualcomm's kernel documentation defines
+  `qcom,msm-bcl-soc` as a battery state-of-charge driver. Its driver registers
+  the value as a thermal-framework sensor and reads a battery capacity value.
+  It is not a SoC die temperature:
+  <https://android.googlesource.com/kernel/msm/+/85a10b57b5c50f68a9592cbc9ba9d115a78b0342%5E2..85a10b57b5c50f68a9592cbc9ba9d115a78b0342/>.
+- Change: The PowerShell classifier now assigns `socd` to the non-guarded
+  `other` domain. The local slice controller and on-device watchdog omit it
+  from the fixed-silicon set. The watchdog now requires the 14 real fixed
+  temperature zones instead of 15 entries.
+- Safety: The change does not remove a temperature guard. CPU subsystem, GPU
+  subsystem, DDR, XO, battery temperature, skin temperature, and all 14 CPU
+  junction sensors remain guarded. The exclusive 70 C launch rule and 72 C
+  hard fixed-silicon limit do not change.
+- Verification: The multi-sensor thermal, on-device watchdog, local controller,
+  guarded-slice logic, strict cold-gate, and focused Transformers HLE contracts
+  pass. `git diff --check` passes.
+- Rollback: Restore `socd` to the fixed-silicon lists and remove its explicit
+  non-temperature classification.
+- Thor result: Not run yet.
+- FPS/frame-time: No performance credit.
+- Next: Run all focused thermal contracts. Then take a new strict sample and
+  run the exact experiment 173 APK with the diagnostic probes disabled.

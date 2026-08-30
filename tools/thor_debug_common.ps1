@@ -81,6 +81,12 @@ function Get-ThorFastThermalZoneShellCommand {
 function Get-ThorTemperatureDomain {
     param([string]$Name)
 
+    # Qualcomm registers battery state of charge as the `socd` thermal zone.
+    # Its value is a state, not a temperature. Do not classify it as SoC
+    # silicon because its name contains `soc`.
+    if ($Name -match '(?i)^socd$') {
+        return "other"
+    }
     if ($Name -match '(?i)(battery|batt)') {
         return "battery"
     }

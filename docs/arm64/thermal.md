@@ -17,6 +17,13 @@ set.
 The runtime guard is separate. It stops early at 70 C and keeps a 72 C hard
 silicon limit. The CPU-junction hard limit remains 95 C.
 
+Do not use the `socd` thermal zone as a temperature. Qualcomm registers this
+zone through `qcom,msm-bcl-soc`, which is a battery state-of-charge sensor.
+The Thor reports it as a bare state value while its real CPU, GPU, DDR, and XO
+temperature zones report millidegrees Celsius. The guard excludes `socd` from
+the fixed-silicon set. Qualcomm's kernel binding and driver describe the
+sensor: <https://android.googlesource.com/kernel/msm/+/85a10b57b5c50f68a9592cbc9ba9d115a78b0342%5E2..85a10b57b5c50f68a9592cbc9ba9d115a78b0342/>.
+
 The paused startup-slice route has a smaller safety margin. Its independent
 device watchdog polls every 0.25 seconds and holds the app process at 66 C. The
 controller adopts that process hold. Before a later slice, it requires three
@@ -74,7 +81,7 @@ while no longer calling ordinary load an emergency.
 Verified on the device at moderate load, and the numbers make the old failure
 plain:
 
-    silicon  : 64.6 C  from cpuss-2   (15 sensors, limit 72)  no violation
+    silicon  : 64.6 C  from cpuss-2   (14 sensors, limit 72)  no violation
     junction : 71.9 C  from cpu-1-8   (14 sensors, limit 95)  no violation
 
 Under the old classifier `silicon` was the maximum of both sets, so it would have

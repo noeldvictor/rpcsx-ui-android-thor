@@ -59,6 +59,7 @@ $snapshot = Get-ThorThermalGuardSnapshot `
     -ThermalZoneLines $thermalZoneLines `
     -HardwareLines $hardwareLines
 
+Assert-ThorEqual "socd is not temperature" (Get-ThorTemperatureDomain -Name "socd") "other"
 Assert-ThorEqual "battery maximum" $snapshot.battery_temperature_c 31.0
 Assert-ThorEqual "skin maximum" $snapshot.skin_temperature_c 41.8
 Assert-ThorEqual "silicon maximum" $snapshot.silicon_temperature_c 73.5

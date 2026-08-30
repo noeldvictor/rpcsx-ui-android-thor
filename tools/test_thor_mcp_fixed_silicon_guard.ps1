@@ -8,7 +8,8 @@ $caller = Get-Content -LiteralPath $callerPath -Raw
 
 foreach ($required in @(
     'def fixed_silicon_c():',
-    'cpuss-*|gpuss-*|ddr|socd|xo-therm',
+    'cpuss-*|gpuss-*|ddr|xo-therm',
+    'The socd zone is battery state of charge, not SoC temperature.',
     't = fixed_silicon_c()',
     'if t >= ceiling:',
     'hard_limit = float(a.get("maxSiliconC", 72))',
@@ -60,6 +61,10 @@ foreach ($required in @(
     if (-not $server.Contains($required)) {
         throw "The Thor MCP fixed-silicon guard is missing '$required'."
     }
+}
+
+if ($server.Contains('cpuss-*|gpuss-*|ddr|socd|xo-therm')) {
+    throw "The Thor MCP fixed-silicon guard still treats battery state of charge as temperature."
 }
 
 $waitMatch = [regex]::Match(

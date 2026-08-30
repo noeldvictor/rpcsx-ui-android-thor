@@ -9,14 +9,14 @@ $macro = Get-Content -LiteralPath $macroPath -Raw
 $route = Get-Content -LiteralPath $routePath -Raw
 
 $requiredGuardFragments = @(
-    'silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 82 90"',
+    'silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 90"',
     'junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"',
     'battery_zone=94',
     'ready_path="${7:-}"',
     'poll_interval="${8:-2}"',
     'early_action="${9:-stop}"',
     'code=ready-file',
-    '[ "$silicon_count" -ne 15 ]',
+    '[ "$silicon_count" -ne 14 ]',
     '[ "$junction_count" -ne 14 ]',
     'code=sensor-set',
     'code=silicon-hard-limit',

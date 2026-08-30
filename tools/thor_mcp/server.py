@@ -130,9 +130,10 @@ def fixed_silicon_c():
 
     Per-core cpu-* sensors are junction readings. They can exceed 70 C during
     normal work and must not decide the cold-start gate. The cpuss, gpuss, DDR,
-    SoC and XO sensors are the fixed domain used by the repository guard.
+    SoC and XO temperature sensors are the fixed domain used by the repository
+    guard. The socd zone is battery state of charge, not SoC temperature.
     """
-    raw = sh(r"""for z in /sys/class/thermal/thermal_zone*; do t=$(cat $z/temp 2>/dev/null); n=$(cat $z/type 2>/dev/null); case $n in cpuss-*|gpuss-*|ddr|socd|xo-therm) [ -n "$t" ] && echo "$t";; esac; done""")
+    raw = sh(r"""for z in /sys/class/thermal/thermal_zone*; do t=$(cat $z/temp 2>/dev/null); n=$(cat $z/type 2>/dev/null); case $n in cpuss-*|gpuss-*|ddr|xo-therm) [ -n "$t" ] && echo "$t";; esac; done""")
     vals = []
     for token in raw.split():
         if not token.strip().isdigit():

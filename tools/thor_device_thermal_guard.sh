@@ -15,7 +15,7 @@ ready_path="${7:-}"
 poll_interval="${8:-2}"
 early_action="${9:-stop}"
 
-silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 82 90"
+silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 90"
 junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"
 battery_zone=94
 seen_process=0
@@ -94,7 +94,7 @@ while :; do
         last_skin="$(dumpsys hardware_properties 2>/dev/null | sed -n 's/^Skin temperatures: \[\([0-9][0-9.]*\)\].*/\1/p' | head -n 1)"
     fi
 
-    if [ "$silicon_count" -ne 15 ] || [ "$junction_count" -ne 14 ] ||
+    if [ "$silicon_count" -ne 14 ] || [ "$junction_count" -ne 14 ] ||
        [ "$battery_value" -lt 0 ] || [ -z "$last_skin" ]; then
         echo "sample=$sample status=failed code=sensor-set silicon_count=$silicon_count junction_count=$junction_count battery_milli_c=$battery_value skin_c=${last_skin:-unknown}"
         stop_package
