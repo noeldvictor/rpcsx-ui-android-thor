@@ -7416,3 +7416,86 @@ rendering progress.
 - Next: In one later independently cool run, arm on the exact main-thread lock.
   Match its caller and owner to the lock and unlock families above. Do not
   force the mutex open without that evidence.
+
+## 152. The wrapper trace does not observe the kernel wait
+
+- Status: instrumentation-failed, android-boundary, not-comparable
+- Scope: HLE, FMOD, lightweight-mutex, thermal-safety
+- Hypothesis: The wrapper trace will arm at the proved main-thread lock and
+  identify the thread that owns or releases the mutex.
+- Changed files/settings: The route installed the experiment 151 APK. Its
+  installed SHA-256 was
+  `CDF0F94FDA7792BD65F809FA6C40A54DCC65C30BDA943D1B05B071DA790AF908`.
+  It enabled the FMOD repair and trace, the wrapper mutex trace, and the
+  PPU-only census. It requested half-second slices with a bounded post-arm
+  window.
+- Thor result: The one-sample cold-start gate passed at 46.0 C fixed silicon.
+  The route completed 72 slices in 604.172 host seconds. The active windows
+  totaled 52.610 seconds and ranged from 0.640 to 0.906 seconds. Every slice
+  ended in a verified process hold. The host deadline stopped the route.
+- Guest evidence: SPU 2 received the expected FMOD event at PC `0x14044` from
+  queue `0x8d009000`, woke the PPU, and returned with success. The main PPU
+  thread was again in HLE code at `0x022254ec` with link register
+  `0x00e28c5c`. This state occurred at approximately 6 minutes 25 seconds,
+  7 minutes 58 seconds, and 9 minutes 19 seconds. Later SPU dispatches also
+  continued.
+- Instrumentation result: The property readback was exactly `1`, and the APK
+  contained the `Thor TWC LWM ARM` string. The log contained no wrapper mutex
+  rows. This is an observation-point failure. It does not prove that the game
+  did not call or wait on the mutex.
+- Visual correctness: Not measured. The route did not reach the marker, so it
+  did not save an image.
+- FPS/frame-time: No performance credit. The diagnostic interval reported 47
+  frames in 93.30 seconds, or 0.50 FPS. This was paused loading, not gameplay.
+- Thermal result: The controller maximum was 65.8 C fixed silicon. The
+  independent guard recorded 1,048 samples and 21 early holds. Fixed silicon
+  peaked at 71.1 C, and CPU junction peaked at 85.1 C. It recorded no hard
+  stop.
+- Rollback: The final stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared all 61 listed properties and found
+  zero remaining `debug.rpcsx.thor.*` values. The final independent
+  fixed-silicon sample was 51.0 C, and the cleanup sample was 51.8 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-211329-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-211345-transformers-lwmutex-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-211426-thor-input-custom`.
+- Decision: Do not repeat the wrapper trace and do not force the mutex open.
+  Move the trace into `_sys_lwmutex_lock`, where the PPU census proves that the
+  thread sleeps.
+- Next: Record the kernel mutex ID, guest control state, queue head, and the
+  exact unlock handoff in a later independently cool run.
+
+## 153. Trace the Transformers kernel mutex queue
+
+- Status: instrumentation, host-pass, not-comparable
+- Scope: LV2, lightweight-mutex, PPU scheduler, config-driver
+- Hypothesis: A bounded trace inside the kernel mutex implementation will
+  record the sleep and matching handoff that the wrapper trace missed.
+- Changed files/settings: `kernel/cellos/src/sys_lwmutex.cpp` now uses the same
+  default-off Android property as the wrapper trace. It can arm only for
+  BLUS30357, main PPU ID `0x01000000`, link register `0x00e28c5c`, and the
+  first matching kernel mutex ID. It records the guest control address, owner,
+  waiter count, attribute, sleep queue, kernel signal state, queue-head PPU,
+  wake target, and result. The 128-line quota covers lock sleep, wake, return,
+  normal unlock, and unlock2. The trace does not change guest memory, queue
+  order, wake policy, or scheduler state.
+- Rollback: Leave `-LwmutexTrace off`, which is the default. Revert the kernel
+  trace to remove the diagnostic code.
+- Windows result: Not run. This is Android native code.
+- Android build result: `:app:assembleDebug --no-configuration-cache` passed
+  in 1 minute 18 seconds after explicit conversions for two guest-endian log
+  fields. The modified kernel file compiled and linked. The APK SHA-256 is
+  `874D1C25CBC29AB559B1898168735E7B336B6B4D4700D8760B75E153706B1041`.
+- Thor result: Not run. Experiment 152 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused route contract, PowerShell parser, native Android
+  build, and `git diff --check` passed. The trace marker is present in the
+  unstripped, merged, and stripped Android native libraries.
+- Decision: Keep the kernel trace. It observes the queue that contains the
+  proved main-thread wait and does not invent a signal or handoff.
+- Next: In one later independently cool run, install the exact APK, arm on
+  `Thor TWC LV2 ARM`, and stop after the bounded post-arm window. Use the
+  recorded owner and unlock handoff to make the narrow HLE repair.

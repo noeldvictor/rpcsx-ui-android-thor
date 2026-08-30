@@ -24,6 +24,8 @@ $cellSpursPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellSp
 $cellSpurs = Get-Content -LiteralPath $cellSpursPath -Raw
 $lwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\sys_lwmutex_.cpp"
 $lwmutex = Get-Content -LiteralPath $lwmutexPath -Raw
+$lv2LwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_lwmutex.cpp"
+$lv2Lwmutex = Get-Content -LiteralPath $lv2LwmutexPath -Raw
 $androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
 $android = Get-Content -LiteralPath $androidPath -Raw
 $systemHeaderPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\System.h"
@@ -252,6 +254,31 @@ $requiredLwmutexTraceFragments = @(
 foreach ($fragment in $requiredLwmutexTraceFragments) {
     if (-not $lwmutex.Contains($fragment)) {
         throw "The bounded Transformers lightweight-mutex trace is missing: $fragment"
+    }
+}
+
+$requiredLv2LwmutexTraceFragments = @(
+    'constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;',
+    'constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;',
+    '"debug.rpcsx.thor.transformers_lwmutex_trace"',
+    'Emu.GetTitleID() == "BLUS30357"',
+    "ppu.id != 0x0100'0000",
+    'static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr',
+    'g_thor_transformers_lv2_lwmutex_id.compare_exchange_strong(',
+    '"Thor TWC LV2 ARM:',
+    '"Thor TWC LV2 #%u:',
+    'atomic_storage<s32>::load(mutex.lv2_control.raw().signaled)',
+    'const u32 queue_ppu = queue ? queue->id : 0;',
+    '"LOCK-SLEEP"',
+    '"LOCK-WAKE"',
+    '"UNLOCK-ENTER"',
+    '"UNLOCK-HANDOFF"',
+    '"UNLOCK-RETURN"'
+)
+
+foreach ($fragment in $requiredLv2LwmutexTraceFragments) {
+    if (-not $lv2Lwmutex.Contains($fragment)) {
+        throw "The bounded Transformers kernel mutex trace is missing: $fragment"
     }
 }
 

@@ -3,6 +3,7 @@
 #include "sys_lwmutex.h"
 
 #include "Emu/IdManager.h"
+#include "Emu/System.h"
 
 #include "Emu/Cell/ErrorCodes.h"
 #include "Emu/Cell/PPUThread.h"
@@ -11,7 +12,108 @@
 
 #include "cellos/thor_ppu_wait.h"
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
+
 LOG_CHANNEL(sys_lwmutex);
+
+namespace {
+constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
+constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
+
+std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
+std::atomic<u32> g_thor_transformers_lv2_lwmutex_trace_seq{0};
+
+bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
+#ifdef __ANDROID__
+  static const bool s_on = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get(
+               "debug.rpcsx.thor.transformers_lwmutex_trace", value) > 0 &&
+           value[0] && value[0] != '0';
+  }();
+  return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+  return false;
+#endif
+}
+
+bool thor_transformers_lv2_lwmutex_trace_target(u32 lwmutex_id) noexcept {
+  return thor_transformers_lv2_lwmutex_trace_enabled() &&
+         g_thor_transformers_lv2_lwmutex_id.load(std::memory_order_relaxed) ==
+             lwmutex_id;
+}
+
+bool thor_transformers_lv2_lwmutex_trace_arm(const ppu_thread &ppu,
+                                             u32 lwmutex_id) {
+  if (!thor_transformers_lv2_lwmutex_trace_enabled()) {
+    return false;
+  }
+
+  u32 target =
+      g_thor_transformers_lv2_lwmutex_id.load(std::memory_order_relaxed);
+  if (target == lwmutex_id) {
+    return true;
+  }
+
+  if (target || ppu.id != 0x0100'0000 ||
+      static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr) {
+    return false;
+  }
+
+  if (!g_thor_transformers_lv2_lwmutex_id.compare_exchange_strong(
+          target, lwmutex_id, std::memory_order_relaxed)) {
+    return target == lwmutex_id;
+  }
+
+  sys_lwmutex.error(
+      "Thor TWC LV2 ARM: ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
+      "sp=0x%llx id=0x%x",
+      ppu.id, static_cast<std::string>(ppu.thread_name), ppu.cia,
+      static_cast<u32>(ppu.lr), ppu.gpr[1], lwmutex_id);
+  return true;
+}
+
+void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
+                                         u32 lwmutex_id,
+                                         const lv2_lwmutex &mutex,
+                                         const char *action, u64 result = 0,
+                                         u32 wake_ppu = 0) {
+  if (!thor_transformers_lv2_lwmutex_trace_target(lwmutex_id)) {
+    return;
+  }
+
+  const u32 sequence = g_thor_transformers_lv2_lwmutex_trace_seq.fetch_add(
+      1, std::memory_order_relaxed);
+  if (sequence >= thor_transformers_lv2_lwmutex_trace_limit) {
+    return;
+  }
+
+  const auto queue = mutex.load_sq();
+  const u32 queue_ppu = queue ? queue->id : 0;
+  const s32 signaled =
+      atomic_storage<s32>::load(mutex.lv2_control.raw().signaled);
+  const u32 control = mutex.control.addr();
+  const u32 owner =
+      control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
+  const u32 waiter =
+      control ? static_cast<u32>(mutex.control->vars.waiter.load()) : 0;
+  const u32 attribute = control ? static_cast<u32>(mutex.control->attribute) : 0;
+  const u32 sleep_queue =
+      control ? static_cast<u32>(mutex.control->sleep_queue) : 0;
+
+  sys_lwmutex.error(
+      "Thor TWC LV2 #%u: %s ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
+      "sp=0x%llx id=0x%x control=0x%x owner=0x%x waiter=%u "
+      "attribute=0x%x sleepq=0x%x signaled=0x%x queue_ppu=0x%x "
+      "wake_ppu=0x%x result=0x%llx",
+      sequence, action, ppu.id, static_cast<std::string>(ppu.thread_name),
+      ppu.cia, static_cast<u32>(ppu.lr), ppu.gpr[1], lwmutex_id, control,
+      owner, waiter, attribute, sleep_queue, static_cast<u32>(signaled),
+      queue_ppu, wake_ppu, result);
+}
+} // namespace
 
 lv2_lwmutex::lv2_lwmutex(utils::serial &ar)
     : protocol(ar), control(ar.pop<decltype(control)>()),
@@ -130,9 +232,12 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
                     lwmutex_id, timeout);
 
   ppu.gpr[3] = CELL_OK;
+  thor_transformers_lv2_lwmutex_trace_arm(ppu, lwmutex_id);
 
   const auto mutex = idm::get<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
+        thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                            "LOCK-ENTER", timeout);
         if (s32 signal = mutex.lv2_control
                              .fetch_op([](lv2_lwmutex::control_data_t &data) {
                                if (data.signaled) {
@@ -147,6 +252,8 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
             ppu.gpr[3] = CELL_EBUSY;
           }
 
+          thor_transformers_lv2_lwmutex_trace(
+              ppu, lwmutex_id, mutex, "LOCK-SIGNAL", ppu.gpr[3]);
           return true;
         }
 
@@ -160,11 +267,18 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
           }
 
           ppu.cancel_sleep = 0;
+          thor_transformers_lv2_lwmutex_trace(
+              ppu, lwmutex_id, mutex, "LOCK-OWN", ppu.gpr[3]);
           return true;
         }
 
+        thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                            "LOCK-SLEEP", timeout);
         const bool finished = !mutex.sleep(ppu, timeout);
         notify.cleanup();
+        thor_transformers_lv2_lwmutex_trace(
+            ppu, lwmutex_id, mutex,
+            finished ? "LOCK-FINISHED" : "LOCK-QUEUED", ppu.gpr[3]);
         return finished;
       });
 
@@ -173,6 +287,8 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
   }
 
   if (mutex.ret) {
+    thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, *mutex,
+                                        "LOCK-RETURN", ppu.gpr[3]);
     return not_an_error(ppu.gpr[3]);
   }
 
@@ -256,6 +372,10 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
     }
   }
 
+  thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, *mutex, "LOCK-WAKE",
+                                      ppu.gpr[3]);
+  thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, *mutex, "LOCK-RETURN",
+                                      ppu.gpr[3]);
   return not_an_error(ppu.gpr[3]);
 }
 
@@ -297,7 +417,11 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
 
   const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
+        thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                            "UNLOCK-ENTER");
         if (mutex.try_unlock(false)) {
+          thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                              "UNLOCK-SIGNAL");
           return;
         }
 
@@ -306,9 +430,13 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
         if (const auto cpu = mutex.reown<ppu_thread>()) {
           if (static_cast<ppu_thread *>(cpu)->state & cpu_flag::again) {
             ppu.state += cpu_flag::again;
+            thor_transformers_lv2_lwmutex_trace(
+                ppu, lwmutex_id, mutex, "UNLOCK-AGAIN", 0, cpu->id);
             return;
           }
 
+          thor_transformers_lv2_lwmutex_trace(
+              ppu, lwmutex_id, mutex, "UNLOCK-HANDOFF", 0, cpu->id);
           mutex.awake(cpu);
           notify.cleanup(); // lv2_lwmutex::mutex is not really active 99% of
                             // the time, can be ignored
@@ -319,6 +447,8 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
     return CELL_ESRCH;
   }
 
+  thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, *mutex,
+                                      "UNLOCK-RETURN");
   return CELL_OK;
 }
 
@@ -329,7 +459,11 @@ error_code _sys_lwmutex_unlock2(ppu_thread &ppu, u32 lwmutex_id) {
 
   const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
+        thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                            "UNLOCK2-ENTER");
         if (mutex.try_unlock(true)) {
+          thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
+                                              "UNLOCK2-SIGNAL");
           return;
         }
 
@@ -338,10 +472,16 @@ error_code _sys_lwmutex_unlock2(ppu_thread &ppu, u32 lwmutex_id) {
         if (const auto cpu = mutex.reown<ppu_thread>(true)) {
           if (static_cast<ppu_thread *>(cpu)->state & cpu_flag::again) {
             ppu.state += cpu_flag::again;
+            thor_transformers_lv2_lwmutex_trace(
+                ppu, lwmutex_id, mutex, "UNLOCK2-AGAIN", CELL_EBUSY,
+                cpu->id);
             return;
           }
 
           static_cast<ppu_thread *>(cpu)->gpr[3] = CELL_EBUSY;
+          thor_transformers_lv2_lwmutex_trace(
+              ppu, lwmutex_id, mutex, "UNLOCK2-HANDOFF", CELL_EBUSY,
+              cpu->id);
           mutex.awake(cpu);
           notify.cleanup(); // lv2_lwmutex::mutex is not really active 99% of
                             // the time, can be ignored
@@ -352,5 +492,7 @@ error_code _sys_lwmutex_unlock2(ppu_thread &ppu, u32 lwmutex_id) {
     return CELL_ESRCH;
   }
 
+  thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, *mutex,
+                                      "UNLOCK2-RETURN");
   return CELL_OK;
 }
