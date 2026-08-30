@@ -84,7 +84,9 @@ param(
     [int]$SliceAfterStartMaxSlices = 32,
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
-    [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:"
+    [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:",
+    [ValidateRange(0, 64)]
+    [int]$SliceAfterStartPostMarkerSlices = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -457,7 +459,8 @@ try {
             "- START frame gate: Unreal and PhysX legal frame",
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
-            "- After-START stop match: $SliceAfterStartStopMatch"
+            "- After-START marker: $SliceAfterStartStopMatch",
+            "- After-START post-marker slices: $SliceAfterStartPostMarkerSlices"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
         $sliceArguments = @{
@@ -580,9 +583,15 @@ try {
             }
             $afterStartArguments.maxSlices = $SliceAfterStartMaxSlices
             $afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds
-            $afterStartArguments.stopMatch = $SliceAfterStartStopMatch
             $afterStartArguments.Remove("armMatch")
             $afterStartArguments.Remove("postArmSlices")
+            if ($SliceAfterStartPostMarkerSlices -gt 0) {
+                $afterStartArguments.stopMatch = "__THOR_TRANSFORMERS_AFTER_START_UNREACHED__"
+                $afterStartArguments.armMatch = $SliceAfterStartStopMatch
+                $afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices
+            } else {
+                $afterStartArguments.stopMatch = $SliceAfterStartStopMatch
+            }
 
             $afterStartControllerTimeout = [int][Math]::Ceiling($SliceAfterStartMaxHostSeconds + 150)
             $afterStartOutput = Invoke-ThorRenderProbeController `
