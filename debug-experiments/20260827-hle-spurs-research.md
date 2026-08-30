@@ -9729,3 +9729,27 @@ rendering progress.
 - Next: In a new cool round, run this route with the lwmutex trace and PPU
   census enabled. Require either an exact `POST-FETCH` diagnostic result or a
   queue result from the uninterrupted PhysX window.
+
+## 231. The late main-thread PC is a downstream condition wait
+
+- Status: Ghidra-confirmed guest path, no-code-change
+- Runtime source: Capture `20260830-181757-thor-input-custom` kept the main
+  thread at CIA `0x00b56de0` with LR `0x00ae0da8` after the invalid PhysX
+  queue timeout. The complete thread context identifies `sys_cond_wait`,
+  condition ID `0x8600bb00`, timeout value `-1`, and object address
+  `0x10f9864c`.
+- Ghidra source: The retained BLUS30357 EBOOT project maps LR call site
+  `0x00ae0da4` to function `0x00b56d44`. The function locks the mutex ID at
+  object offset 8 with syscall `0x66`. It checks the byte at offset 0. When
+  that byte is zero and the timeout is `-1`, it waits without a timeout on
+  the condition ID at offset 4 with syscall `0x6b`. It then unlocks the mutex
+  with syscall `0x68`.
+- Timing: The thread-context dump reports that this condition wait began about
+  0.059 seconds before the dump. It occurs after the PhysX queue reported its
+  timeout and after the title printed the failed queue-pop result.
+- Scope: The same wait wrapper also appears on the PPU PhysX thread before the
+  interpreter starts. The wrapper is a normal title synchronization helper.
+  The late main-thread instance is downstream of the invalid sliced timeout.
+  It does not identify the HLE queue fault.
+- Decision: Do not patch or wake this condition. Preserve the dual-marker
+  route and get the first valid uninterrupted PhysX queue result.
