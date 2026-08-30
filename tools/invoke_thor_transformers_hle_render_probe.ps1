@@ -44,6 +44,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$PhysxQueueWait = "on",
     [ValidateSet("on", "off")]
+    [string]$PhysxLsDump = "off",
+    [ValidateSet("on", "off")]
     [string]$RsxFifoOrdered = "off",
     [ValidateSet("on", "off")]
     [string]$LwmutexTrace = "off",
@@ -317,7 +319,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.transformers_physx_queue_wait" = if ($Mode -eq "HLE" -and $PhysxQueueWait -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }
+    "debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $PhysxLsDump -eq "on") { "@physx" } elseif ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }
     "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_event_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }

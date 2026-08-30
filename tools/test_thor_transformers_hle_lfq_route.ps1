@@ -151,7 +151,7 @@ $requiredRenderProbeFragments = @(
     '"debug.rpcsx.thor.transformers_physx_queue_wait" = if ($Mode -eq "HLE" -and $PhysxQueueWait -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }',
     '"debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }',
-    '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
+    '"debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $PhysxLsDump -eq "on") { "@physx" } elseif ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_wait_trace" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"',
     'Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"',
@@ -619,6 +619,20 @@ $requiredPhysxQueueWaitFragments = @(
 foreach ($fragment in $requiredPhysxQueueWaitFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers PhysX queue startup wait is missing: $fragment"
+    }
+}
+
+$requiredPhysxDumpFragments = @(
+    'const bool physx_task_dump = want == "@physx";',
+    'const auto physx_task = get_transformers_physx_task_snapshot();',
+    'physx_task.elf != 0x018c1000u',
+    'static_cast<u32>(+spu._ref<u64>(0x27b8)) != physx_task.taskset',
+    'physx_task_dump ? "Transformers_PhysX"'
+)
+
+foreach ($fragment in $requiredPhysxDumpFragments) {
+    if (-not $lsDump.Contains($fragment)) {
+        throw "The Transformers PhysX local-store dump is missing: $fragment"
     }
 }
 

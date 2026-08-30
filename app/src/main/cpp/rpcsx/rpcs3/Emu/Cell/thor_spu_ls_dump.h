@@ -46,6 +46,7 @@
 // is what a halt map needs. Do not use this dump to reason about SPU data.
 
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spu_pc_census.h"
 #include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/IdManager.h"
 #include "util/File.h"
@@ -114,9 +115,16 @@ namespace thor
 		}
 
 		const bool fmod_wait_dump = want == "@fmod";
+		const bool physx_task_dump = want == "@physx";
 		const auto fmod_wait = get_fmod_event_wait_snapshot();
+		const auto physx_task = get_transformers_physx_task_snapshot();
 
 		if (fmod_wait_dump && (!fmod_wait.active || !fmod_wait.taskset))
+		{
+			return;
+		}
+
+		if (physx_task_dump && (!physx_task.taskset || physx_task.elf != 0x018c1000u))
 		{
 			return;
 		}
@@ -137,12 +145,20 @@ namespace thor
 						return;
 					}
 				}
+				else if (physx_task_dump)
+				{
+					if (static_cast<u32>(+spu._ref<u64>(0x27b8)) != physx_task.taskset)
+					{
+						return;
+					}
+				}
 				else if (!tname || tname->find(want) == std::string::npos)
 				{
 					return;
 				}
 
-				const std::string dump_name = fmod_wait_dump ? "FMOD" : spu_ls_dump_sanitize(*tname);
+				const std::string dump_name = fmod_wait_dump ? "FMOD"
+					: physx_task_dump ? "Transformers_PhysX" : spu_ls_dump_sanitize(*tname);
 				const std::string path = fs::get_cache_dir() + "spu_ls_" + dump_name + ".bin";
 
 				fs::file out(path, fs::rewrite);
