@@ -216,6 +216,12 @@ void perf_monitor::operator()()
 			//   debug.rpcsx.thor.ppu_pc_census = 1
 #ifdef __ANDROID__
 			{
+				static const bool s_explicit_pc_census = []() noexcept
+					{
+						char v[PROP_VALUE_MAX]{};
+						return __system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 &&
+							v[0] && v[0] != '0';
+					}();
 				static const bool s_pc_census = []() noexcept
 				{
 					char v[PROP_VALUE_MAX]{};
@@ -239,12 +245,13 @@ void perf_monitor::operator()()
 					return __system_property_get("debug.rpcsx.thor.transformers_audio_wake_fix", v) > 0 &&
 						v[0] && v[0] != '0';
 				}();
-				const bool pc_census_armed = !s_defer_pc_census_until_audio_wake ||
+				const bool pc_census_armed = s_explicit_pc_census ||
+					!s_defer_pc_census_until_audio_wake ||
 					thor_transformers_audio_owner_wake_completed();
 
-				// The Transformers cold compiler can heat one prime core faster than
-				// the 250 ms device guard can stop it. The target census is after the
-				// exact audio wake, so do not add stack and code dumps before that gate.
+				// Implicit call and event tracing stays behind the audio wake. An
+				// explicit PC census must sample an earlier title loop when requested.
+				// The device guard remains active for both routes.
 				if (s_pc_census && pc_census_armed)
 				{
 					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)

@@ -485,7 +485,9 @@ foreach ($fragment in $requiredAudioOwnerWakeFragments) {
 
 $requiredDeferredPpuCensusFragments = @(
     's_defer_pc_census_until_audio_wake',
+    's_explicit_pc_census',
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
+    'const bool pc_census_armed = s_explicit_pc_census ||',
     'thor_transformers_audio_owner_wake_completed()',
     'if (s_pc_census && pc_census_armed)'
 )
