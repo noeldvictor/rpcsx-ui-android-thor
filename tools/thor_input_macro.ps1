@@ -1561,6 +1561,7 @@ if ($BootGame) {
         "debug.rpcsx.thor.real_spu_kernel",
         "debug.rpcsx.thor.real_taskset_pm",
         "debug.rpcsx.thor.yield_fast_path",
+        "debug.rpcsx.thor.yield_redispatch_fix",
         "debug.rpcsx.thor.pm_capture",
         "debug.rpcsx.thor.draw_census",
         "debug.rpcsx.thor.ppu_pc_census",

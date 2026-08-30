@@ -8744,3 +8744,37 @@ rendering progress.
 - Next: Use the same unpaused startup macro for control value 1 and candidate
   value 4. Require the legal and loading images, normal queue draining, and no
   SPU access violation before comparing continuous frame samples.
+
+## 186. The every-yield control holds about 21 FPS on the loading screen
+
+- Status: control, visual-progress, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS, `yield_redispatch_fix=1`, continuous unpaused
+  startup
+- Cold gate and identity: A separate strict gate passed at 36.1 C. The route
+  proved the installed APK SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  The macro used fixed images at 120 and 140 seconds.
+- Visual result: Both images showed the animated Transformers loading screen.
+  The first image showed a Decepticon symbol, and the second showed an Autobot
+  symbol. The screen therefore changed and the loading animation was active.
+- Frame result: The complete ten-second samples ending at 2:03, 2:13, and
+  2:23 reported 21.0, 21.1, and 20.7 FPS. Their mean is 20.93 FPS. The image
+  overlays reported 22.23 and 24.21 FPS. These are startup loading values, not
+  gameplay values.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, verification
+  failure, access violation, or process restart occurred.
+- Thermal result: The device watchdog recorded 42 normal samples. Fixed
+  silicon reached 43.3 C, and CPU junction reached 45.7 C. It recorded no hold
+  or thermal stop action.
+- Rollback: The macro stopped the package. The verified post-run state had no
+  PID.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-021203-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-021225-thor-input-custom`.
+- Tooling: The input macro now includes
+  `debug.rpcsx.thor.yield_redispatch_fix` in the startup property readback. The
+  candidate capture will therefore prove the exact value directly.
+- Next: After a new strict gate, run the identical macro with
+  `-YieldRedispatchEvery 4`. Reject it on any wrong visual, SPU access
+  violation, stopped queue, or lower matching-window frame rate.
