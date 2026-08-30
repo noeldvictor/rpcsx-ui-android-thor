@@ -26,6 +26,8 @@ $lwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\sys_lwmu
 $lwmutex = Get-Content -LiteralPath $lwmutexPath -Raw
 $lv2LwmutexPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\kernel\cellos\src\sys_lwmutex.cpp"
 $lv2Lwmutex = Get-Content -LiteralPath $lv2LwmutexPath -Raw
+$cellAudioPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\ps3fw\cellAudio.cpp"
+$cellAudio = Get-Content -LiteralPath $cellAudioPath -Raw
 $androidPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\android\src\rpcsx-android.cpp"
 $android = Get-Content -LiteralPath $androidPath -Raw
 $systemHeaderPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\System.h"
@@ -269,6 +271,8 @@ $requiredLv2LwmutexTraceFragments = @(
     'g_thor_transformers_lv2_lwmutex_id.compare_exchange_strong(',
     '"Thor TWC LV2 ARM:',
     '"Thor TWC LV2 #%u:',
+    'thor_transformers_lv2_lwmutex_caller_lr(ppu)',
+    'caller=0x%x',
     'atomic_storage<s32>::load(mutex.lv2_control.raw().signaled)',
     'const u32 queue_ppu = queue ? queue->id : 0;',
     '"LOCK-SLEEP"',
@@ -281,6 +285,24 @@ $requiredLv2LwmutexTraceFragments = @(
 foreach ($fragment in $requiredLv2LwmutexTraceFragments) {
     if (-not $lv2Lwmutex.Contains($fragment)) {
         throw "The bounded Transformers kernel mutex trace is missing: $fragment"
+    }
+}
+
+$requiredCellAudioTraceFragments = @(
+    'constexpr u32 thor_transformers_audio_trace_limit = 64;',
+    '"debug.rpcsx.thor.transformers_lwmutex_trace"',
+    'Emu.GetTitleID() == "BLUS30357"',
+    'g_thor_transformers_audio_trace_seq.fetch_add(1, std::memory_order_relaxed)',
+    '"Thor TWC AUDIO #%u: SET',
+    '"Thor TWC AUDIO #%u: SEND',
+    'const CellError result = queues[i]->send(',
+    'thor_transformers_audio_trace_send(event_period, *queues[i],',
+    'thor_transformers_audio_trace_set('
+)
+
+foreach ($fragment in $requiredCellAudioTraceFragments) {
+    if (-not $cellAudio.Contains($fragment)) {
+        throw "The bounded Transformers cellAudio trace is missing: $fragment"
     }
 }
 

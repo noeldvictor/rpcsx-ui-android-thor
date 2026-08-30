@@ -39,6 +39,24 @@ bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #endif
 }
 
+u32 thor_transformers_lv2_lwmutex_caller_lr(const ppu_thread &ppu) noexcept {
+  if (static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr) {
+    return 0;
+  }
+
+  const u64 stack_pointer = ppu.gpr[1];
+  if (stack_pointer > 0xffff'ff7f) {
+    return 0;
+  }
+
+  const u32 saved_link_address = static_cast<u32>(stack_pointer) + 0x80;
+  if (!vm::check_addr(saved_link_address, vm::page_readable)) {
+    return 0;
+  }
+
+  return static_cast<u32>(vm::read64(saved_link_address));
+}
+
 bool thor_transformers_lv2_lwmutex_trace_target(u32 lwmutex_id) noexcept {
   return thor_transformers_lv2_lwmutex_trace_enabled() &&
          g_thor_transformers_lv2_lwmutex_id.load(std::memory_order_relaxed) ==
@@ -69,9 +87,10 @@ bool thor_transformers_lv2_lwmutex_trace_arm(const ppu_thread &ppu,
 
   sys_lwmutex.error(
       "Thor TWC LV2 ARM: ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
-      "sp=0x%llx id=0x%x",
+      "sp=0x%llx caller=0x%x id=0x%x",
       ppu.id, static_cast<std::string>(ppu.thread_name), ppu.cia,
-      static_cast<u32>(ppu.lr), ppu.gpr[1], lwmutex_id);
+      static_cast<u32>(ppu.lr), ppu.gpr[1],
+      thor_transformers_lv2_lwmutex_caller_lr(ppu), lwmutex_id);
   return true;
 }
 
@@ -105,13 +124,14 @@ void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
 
   sys_lwmutex.error(
       "Thor TWC LV2 #%u: %s ppu=0x%x name=\"%s\" cia=0x%x lr=0x%x "
-      "sp=0x%llx id=0x%x control=0x%x owner=0x%x waiter=%u "
+      "sp=0x%llx caller=0x%x id=0x%x control=0x%x owner=0x%x waiter=%u "
       "attribute=0x%x sleepq=0x%x signaled=0x%x queue_ppu=0x%x "
       "wake_ppu=0x%x result=0x%llx",
       sequence, action, ppu.id, static_cast<std::string>(ppu.thread_name),
-      ppu.cia, static_cast<u32>(ppu.lr), ppu.gpr[1], lwmutex_id, control,
-      owner, waiter, attribute, sleep_queue, static_cast<u32>(signaled),
-      queue_ppu, wake_ppu, result);
+      ppu.cia, static_cast<u32>(ppu.lr), ppu.gpr[1],
+      thor_transformers_lv2_lwmutex_caller_lr(ppu), lwmutex_id, control, owner,
+      waiter, attribute, sleep_queue, static_cast<u32>(signaled), queue_ppu,
+      wake_ppu, result);
 }
 } // namespace
 

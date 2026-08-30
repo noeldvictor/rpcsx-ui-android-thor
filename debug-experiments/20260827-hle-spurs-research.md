@@ -7608,3 +7608,42 @@ rendering progress.
   experiment 154.
 - Next: Add the bounded audio and caller trace, build it, and use it in the
   next independently cool hardware round.
+
+## 157. Trace the Transformers audio event handoff
+
+- Status: instrumentation, host-pass, not-comparable
+- Scope: cellAudio, LV2 lightweight-mutex, call-site trace, config-driver
+- Hypothesis: The next bounded run must show whether `cellAudio` sends the
+  notification that lets the FMOD owner release the main-thread mutex.
+- Changed files/settings: The existing default-off property now enables a
+  BLUS30357-only audio trace. It records the queue ID, IPC key, source, flags,
+  and start period when the game registers its audio notification queue. It
+  then records the first 63 send periods and `CellError` results. The kernel
+  mutex trace also reads the saved game link register at stack offset `0x80`
+  for the proved main-thread wrapper. It adds this caller to the arm and queue
+  rows. The trace does not change event data, queue order, mutex state, or
+  scheduler state.
+- Rollback: Leave `-LwmutexTrace off`, which is the default. Revert the audio
+  and saved-caller trace to remove the diagnostic code.
+- Windows result: Not run. This is Android native code.
+- Android build result: The first build compiled both changed native files but
+  did not link because the log passed the anonymous `CELL_AUDIO_EVENT_MIX`
+  enum to the formatter. An explicit `u32` log conversion corrected it. The
+  final `:app:assembleDebug --no-configuration-cache` build passed in 1 minute
+  17 seconds with 42 tasks.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,149,758 bytes, and its SHA-256 is
+  `5A30FB172BF2CB89A290F68420248E71E8B8440B3E88E659F6B804CA883F8EF7`.
+- Verification: The focused route contract, PowerShell parser, and
+  `git diff --check` pass. Both audio markers and the caller field are present
+  in the unstripped, merged, and stripped Android native libraries.
+- Thor result: Not run. Experiment 154 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the bounded trace. It distinguishes a missing audio send,
+  queue backpressure, and a normal mutex handoff without inventing a release.
+- Next: After a new strict cold-start gate below 70 C, install this exact APK.
+  Arm on `Thor TWC LV2 ARM`, keep the late-load stop, and collect eight later
+  half-second slices.
