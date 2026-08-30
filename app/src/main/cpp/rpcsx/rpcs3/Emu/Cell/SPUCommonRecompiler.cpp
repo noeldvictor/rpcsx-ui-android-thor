@@ -345,8 +345,9 @@ static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
 // seconds and missed the fixed five-second startup handshake.
 //
 // Match the armed BLUS30357 task, its live taskset, its task ID, its startup
-// age, and captured code bytes. The interpreter stops at 0x06930. Normal PhysX
-// work then returns to LLVM.
+// age, and captured code bytes. The last initializer tail-calls 0x030a8. That
+// helper returns to the already-compiled caller at 0x068c0, where normal
+// PhysX work returns to LLVM.
 //
 //   debug.rpcsx.thor.transformers_physx_start_interp = 1
 static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept
@@ -395,8 +396,8 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
 	const u64 started = get_system_time();
 
-	spu.interp_fallback_begin = 0x03128;
-	spu.interp_fallback_end = 0x06930;
+	spu.interp_fallback_begin = 0x030a8;
+	spu.interp_fallback_end = 0x068c0;
 	spu.interp_fallback = true;
 	spu.allow_interrupts_in_cpu_work = true;
 
