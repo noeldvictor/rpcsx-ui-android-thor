@@ -9156,3 +9156,77 @@ rendering progress.
 - Next: Install this exact APK without a launch. After a separate strict gate,
   run through a continuous late-loading window. Use the staged-loader state,
   not the healthy render wait, to select the next repair.
+
+## 203. The first PhysX task does not send its startup reply
+
+- Status: device-confirmed, HLE blocker, not-gameplay
+- Scope: BLUS30357, first PhysX SPU task and its PPU startup queue
+- Identity: Exact APK
+  `2DCD8C0E4FF10CE5835138A21E6BC71D57DCD2A91999F559DE1011B0D4674A38`
+  ran in `20260830-090117-thor-input-custom` after a separate strict gate.
+- Result: The PPU PhysX thread created task 0 in taskset `0x01ec4700` from
+  ELF `0x018c1000`. The SPU received queue `0x01eccb80` in its task argument.
+  The nonblocking PPU pop did not receive the startup reply after 5,000,120
+  microseconds. It returned `8041090A`. Teardown then caused a dead FIFO.
+- Thermal result: The route reached the exact marker after 454.968 host
+  seconds. Fixed silicon peaked at 48.2 C. The final process was absent.
+- Decision: A longer queue timeout is not a repair. The first PhysX task must
+  run and publish the reply before the queue pop can succeed.
+
+## 204. A warm restart can stop before PhysX
+
+- Status: control-result, earlier-blocker, not-gameplay
+- Scope: BLUS30357, warm cache control with the same exact APK as experiment
+  203
+- Identity: Capture `20260830-091611-thor-input-custom` used APK
+  `2DCD8C0E4FF10CE5835138A21E6BC71D57DCD2A91999F559DE1011B0D4674A38`.
+- Result: The route ran for 613.109 host seconds and completed 22 guest
+  slices. It did not reach the PhysX startup marker. Frame production stayed
+  at zero for many guest minutes while the main PPU thread remained active.
+- Thermal result: Fixed silicon peaked at 47.0 C. The final process was
+  absent.
+- Decision: A device run must identify the earlier PPU wait before it can use
+  the PhysX SPU census. Do not interpret a missing PhysX row as an SPU result.
+
+## 205. The earlier blocker is an FMOD lwmutex chain
+
+- Status: device-confirmed, HLE blocker, not-gameplay
+- Scope: BLUS30357, bounded PPU census and exact PhysX SPU census
+- Identity: Exact APK
+  `B6F670C147C4078C176853E94D175C3CE634C858FCADCD80A8575EF5EDBB6E28`
+  ran in `20260830-094232-thor-input-custom` after a separate strict gate.
+- Visual result: The strict legal-screen test passed. START was accepted in
+  the same process. Early samples reached 9.1 and 7.1 FPS. This is startup
+  evidence and not gameplay speed credit.
+- Lock result: At emulator time 6:26, the existing title fix woke owner
+  `0x0100000c` for lwmutex `0x95008c00`. The main thread advanced in 45
+  milliseconds to lwmutex `0x95008e00`, which had the same owner. The main
+  thread and the FMOD libAudio event receive thread then remained at HLE PC
+  `0x022254ec` with link register `0x00e28c5c`.
+- Route result: The run completed 24 slices in 601.156 host seconds. It did
+  not create the first PhysX task and did not reach the PhysX marker. Fixed
+  silicon peaked at 46.2 C. The final process was absent.
+- Decision: Repair the FMOD scheduler dependency before more PhysX work. This
+  boundary maps directly to `_sys_lwmutex_lock`; Ghidra is not required for
+  this HLE PC.
+
+## 206. Add a bounded FMOD dependency wake
+
+- Status: host-verified, device-pending, title-specific
+- Scope: BLUS30357, exact main-thread lock site and exact FMOD event receiver
+- Change: The HLE lock route now records the lwmutex owner that blocks the
+  FMOD event receiver. It requests one scheduler wake for that owner. The
+  main-thread route retries this saved dependency after the initial wake and
+  after a later lock candidate. It refuses a wake when the saved owner is the
+  main thread, the FMOD waiter, or the current primary owner.
+- Safety: The route requires the existing Transformers audio fix, the exact
+  title, the exact link register, and the exact FMOD thread name. It changes
+  no guest lock control word. Logs stop after 16 dependency rows.
+- Verification: The focused HLE LFQueue route contract, `git diff --check`,
+  and the optimized ARM64 native build pass. Commit `b26c8f35c` contains the
+  change. The exact ARM64 APK is
+  `51F7935D3AA332255813BBB483DB058C5F59FEE031103DAB69EAFDC0EC258B0D`,
+  is 116,152,443 bytes, and passes the ARM64-only APK contract.
+- Next: Install this exact APK without a launch. Use a new strict gate. Prove
+  whether the saved owner wakes and whether the route reaches the first PhysX
+  task. Give no speed credit until a correct moving gameplay frame is visible.
