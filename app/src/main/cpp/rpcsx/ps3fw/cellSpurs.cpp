@@ -4879,6 +4879,22 @@ static bool thor_queue_publish_order() noexcept
 #endif
 }
 
+// Keep queue tracing out of the producer hot path unless a measurement needs
+// it. A fast consumer can process thousands of entries per second.
+static bool thor_queue_diagnostics() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.queue_diagnostics", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 static bool thor_queue_monotonic_fix() noexcept
 {
 #ifdef __ANDROID__
@@ -5161,6 +5177,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	// API and this queue's consumer is an SPU task reading the ring directly. The
 	// ring's own counters can: if head (0x00) advances, something IS consuming.
 	// Sampled sparsely so a half-million-call path stays cheap.
+	if (thor_queue_diagnostics())
 	{
 		static std::atomic<u32> s_calls{0};
 
@@ -5427,6 +5444,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	// mechanism between the two has been cleared, so check the payload itself: an
 	// entry of zeros would mean the task is correctly doing nothing and the fault
 	// is upstream on the PPU, not in SPURS at all.
+	if (thor_queue_diagnostics())
 	{
 		static std::atomic<u32> s_pay{0};
 
@@ -5475,6 +5493,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		}
 	}
 
+	if (thor_queue_diagnostics())
 	{
 		static std::atomic<u32> s_ok{0};
 

@@ -23,4 +23,23 @@ if ($functionSource.Contains("cellSpurs.warning(`"$callRecord`"")) {
     throw "The SPURS queue push call record must not use warning level."
 }
 
+$requiredFragments = @(
+    'static bool thor_queue_diagnostics() noexcept',
+    '"debug.rpcsx.thor.queue_diagnostics"',
+    'if (thor_queue_diagnostics())',
+    'Thor QUEUE RING',
+    'Thor PAYLOAD',
+    'Thor QUEUE PUSH OK'
+)
+
+foreach ($fragment in $requiredFragments) {
+    if (-not $source.Contains($fragment)) {
+        throw "The SPURS queue log budget is missing: $fragment"
+    }
+}
+
+if ([regex]::Matches($functionSource, 'if \(thor_queue_diagnostics\(\)\)').Count -lt 3) {
+    throw "The SPURS queue diagnostics must gate the ring, payload, and success records."
+}
+
 Write-Output "Thor SPURS queue log budget test passed."
