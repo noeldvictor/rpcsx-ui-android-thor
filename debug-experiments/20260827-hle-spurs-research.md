@@ -7186,3 +7186,33 @@ rendering progress.
   PPU PCs and bounded loading state to name the next repair boundary. Require
   moving 3D output and a comparable sustained 30 FPS measurement before a
   full-HLE or speed claim.
+
+## 146. Bound observation after the FMOD return
+
+- Status: route-tooling, host-pass, not-comparable
+- Scope: config-driver, PPU-census, thermal-safety
+- Hypothesis: A fixed post-FMOD slice window will capture the next PPU state
+  even when the repaired path bypasses late-load completion sample 2.
+- Changed files/settings: The Thor slice controller now accepts an optional
+  arm log match and zero to 64 post-arm slices. It records the exact arm line,
+  arm slice, requested window, completed window, and whether the stop came
+  from the ordinary marker or the post-arm bound. The Transformers wrapper
+  exposes these fields, writes them to the capture README, and rejects a
+  positive post-arm count without an arm marker.
+- Rollback: Leave the arm marker empty and the post-arm slice count at zero.
+  Existing slice-loop behavior is unchanged.
+- Windows result: Not run. This is Android route control.
+- Thor result: Not run. The APK and native core are unchanged.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The guarded controller test proves that an arm on slice 2 and
+  a two-slice post-arm window stop on slice 4 with the exact arm evidence. The
+  Transformers route contract, PowerShell parsing, Python bytecode compile, a
+  direct fail-closed invocation, and `git diff --check` passed.
+- Decision: Keep the bounded post-arm window. It prevents a repaired boundary
+  from turning the next probe into another full thermal-duration run.
+- Next: In one independently cool route, enable the PPU-only census, keep
+  late-load completion sample 2 as an earlier stop, arm on the proved FMOD
+  return, and stop after eight additional slices. Use the resulting PPU state
+  and image to select the next HLE repair. Require moving 3D output and a
+  comparable sustained 30 FPS measurement before a full-HLE or speed claim.

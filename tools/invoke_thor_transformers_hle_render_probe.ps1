@@ -59,7 +59,10 @@ param(
     [int]$SliceResumeStableSamples = 3,
     [ValidateRange(0.25, 5.0)]
     [double]$SliceResumeSampleIntervalSeconds = 1.0,
-    [string]$SliceStopMatch = "Thor LATE LOAD IO COMPLETION: sample=2"
+    [string]$SliceStopMatch = "Thor LATE LOAD IO COMPLETION: sample=2",
+    [string]$SliceArmMatch = "",
+    [ValidateRange(0, 64)]
+    [int]$SlicePostArmSlices = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,6 +87,10 @@ if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on" -and -not $PSBoundParamete
 if ($SliceLoop -and $SliceStopMatch.StartsWith("Thor LATE LOAD") -and
         $RuntimeCensus -ne "on" -and $PpuPcCensus -ne "on") {
     throw "A late-load slice marker requires -PpuPcCensus on or -RuntimeCensus on."
+}
+
+if ($SliceLoop -and $SlicePostArmSlices -gt 0 -and [string]::IsNullOrWhiteSpace($SliceArmMatch)) {
+    throw "Post-arm slices require -SliceArmMatch."
 }
 
 function Set-ThorRenderProbeProperty {
@@ -391,7 +398,9 @@ try {
             "- Slice-loop property readback: slice-loop-profile-effective.txt",
             "- Device watchdog early stop C: 66",
             "- Device watchdog poll interval seconds: 0.25",
-            "- Stop match: $SliceStopMatch"
+            "- Stop match: $SliceStopMatch",
+            "- Arm match: $SliceArmMatch",
+            "- Post-arm slices: $SlicePostArmSlices"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
         $sliceArguments = @{
@@ -407,6 +416,10 @@ try {
             stopMatch = $SliceStopMatch
             markerEvery = 1
             allowStarting = $true
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SliceArmMatch)) {
+            $sliceArguments.armMatch = $SliceArmMatch
+            $sliceArguments.postArmSlices = $SlicePostArmSlices
         }
         $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
         $controllerOutput = Invoke-ThorRenderProbeController `

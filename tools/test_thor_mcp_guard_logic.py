@@ -518,6 +518,36 @@ assert all(item["sampleIntervalS"] == 1 for item in loop_cool_requests), (
     "The slice loop did not pass the requested stable-sample interval."
 )
 
+loop_slices.clear()
+loop_cool_requests.clear()
+SERVER._matching_log_lines = lambda match, count=1: (
+    ["arm marker"]
+    if match == "arm after boundary" and len(loop_slices) >= 2
+    else []
+)
+result = SERVER.t_slice_loop({
+    "seconds": 1.0,
+    "maxSlices": 6,
+    "stopMatch": "unreached final marker",
+    "armMatch": "arm after boundary",
+    "postArmSlices": 2,
+})
+assert result["markerReached"] is True, (
+    "The post-arm slice loop did not reach its bounded exit."
+)
+assert result["markerKind"] == "post-arm", (
+    "The post-arm result lost its stop reason."
+)
+assert result["armedAtSlice"] == 2 and result["completedSlices"] == 4, (
+    "The post-arm slice loop used the wrong bounded window."
+)
+assert result["postArmSlicesCompleted"] == 2, (
+    "The post-arm result lost its completed-slice evidence."
+)
+assert result["armLines"] == ["arm marker"], (
+    "The post-arm result lost its exact arm marker."
+)
+
 stops = []
 loop_slices.clear()
 SERVER._matching_log_lines = lambda match, count=1: (
