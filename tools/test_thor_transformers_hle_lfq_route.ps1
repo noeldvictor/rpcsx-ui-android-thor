@@ -360,6 +360,9 @@ $requiredLv2LwmutexTraceFragments = @(
     '"UNLOCK-RETURN"',
     'thor_transformers_reown_with_trace(',
     '"Thor TWC POST AUDIO REOWN #%u.%u: stage=PRE-SCHEDULE "',
+    'constexpr u32 thor_transformers_reown_scan_limit = 64;',
+    'stage=PRE-SCHEDULE-SCAN depth=%u cycle=%u',
+    'if (cycle || limited)',
     '"Thor TWC POST AUDIO REOWN #%u.%u: stage=POST-SCHEDULE "',
     '"Thor TWC POST AUDIO REOWN #%u: stage=POST-FETCH attempts=%u "',
     'head && next == head ? 1u : 0u'

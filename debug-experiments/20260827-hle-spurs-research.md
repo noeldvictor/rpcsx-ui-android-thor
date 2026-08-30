@@ -9585,3 +9585,68 @@ rendering progress.
   - https://github.com/RPCS3/rpcs3/issues/18828
 - Decision: Keep the SPU cache and run one valid continuous queue handshake.
   Do not copy an unrelated upstream workaround or extend the guest timeout.
+
+## 225. The new round stops after the audio-owner wake
+
+- Status: device-confirmed pre-PhysX stall, HLE queue result not reached
+- Identity: Strict gate `20260830-175214-thor-input-strict-cool-gate`
+  passed at 34.9 C fixed silicon. Capture
+  `20260830-175248-thor-input-custom` used the corrected continuous PhysX
+  route with the low-level lwmutex trace disabled.
+- Progress: The run completed the FMOD event interpreter and the exact audio
+  owner wake at emulator time 3:57.422. Startup frame intervals then fell
+  from 2.30, 5.20, 6.10, and 6.20 FPS to zero.
+- Failure: The PPU PhysX thread did not start before the 360-second host
+  deadline. The controller completed 30 two-second slices and stopped at a
+  paused boundary. Therefore, the continuous queue window did not start and
+  this run gives no PhysX queue result.
+- Scope: This route shape is consistent with the earlier post-audio lwmutex
+  stall. The exact lwmutex trace was off, so this capture does not prove the
+  internal stop point. Do not claim a queue cycle or a 128-bit atomic fault
+  from this run.
+- Thermal and fan result: The device watchdog recorded 419 valid samples and
+  a final completion row. Every sample reported Smart fan mode `4`. Fixed
+  silicon peaked at 69.9 C. Cleanup stopped the package and reported no RPCSX
+  process in the process table.
+- Decision: Do not run the Thor again in this cool round. In a new cool round,
+  enable the bounded lwmutex trace and the PPU census. Require an internal
+  `POST AUDIO REOWN` row before any queue repair.
+
+## 226. The arXiv atomic literature does not identify this fault
+
+- Status: online-research-complete, no-code-change
+- Research: Recent work on multi-word compare-and-swap describes contention,
+  repeated helping, cache invalidation, and ABA as general failure risks.
+  Earlier work also explains that CAS performance can fall under contention.
+- Scope: These papers do not analyze RPCSX, its 16-byte `lv2_control`, or the
+  separate `next_cpu` links. The current capture also has no internal reown
+  rows. Therefore, the papers do not distinguish a linked-list cycle from a
+  compare-and-swap retry loop in this emulator.
+- Sources:
+  - https://arxiv.org/abs/2607.06034
+  - https://arxiv.org/abs/1305.5800
+- Decision: Do not add backoff, version fields, or a queue reset from the
+  literature alone. Get the exact `PRE-SCHEDULE`, `POST-SCHEDULE`, and
+  `POST-FETCH` sequence first.
+
+## 227. Bound the exact reown queue scan
+
+- Status: host-pass, device-pending, diagnostic-only
+- Change: The exact Transformers post-audio reown trace now scans at most 64
+  waiter links before it calls the normal scheduler. It reports the depth,
+  repeated node, cycle state, and depth-limit state. If the scan finds a cycle
+  or reaches the limit, it does not enter the unbounded scheduler.
+- Scope: This path still requires the Android trace property, title
+  `BLUS30357`, main PPU `0x01000000`, unlock link register `0x00e28c18`, and
+  lwmutex ID `0x95008d00`. Normal runs do not use it. It records a fault and
+  does not repair or reset the queue.
+- Verification: The focused Transformers route contract, the Thor thermal
+  contract, and `git diff --check` pass. The Android ARM64 RelWithDebInfo build
+  passes. The stripped core is 63,249,032 bytes, with SHA-256
+  `A4127B1E0B64AB6D6C73C918C49776673A70E174D4F70B197FC48C72B159EDC4`.
+  The core export and relocation surface test passes.
+- Thor result: Not run. The new core is not runtime evidence.
+- Next: In a new cool round, enable the lwmutex trace and the PPU census. If
+  `PRE-SCHEDULE-SCAN` reports a valid finite list but `POST-FETCH` is absent,
+  investigate the 16-byte atomic retry. If it reports a cycle, trace the
+  repeated PPU link back to its earlier queue insertion.

@@ -25,6 +25,7 @@ constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
 constexpr u32 thor_transformers_post_audio_lwmutex_id = 0x95008d00;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_post_audio_unlock_trace_limit = 8;
+constexpr u32 thor_transformers_reown_scan_limit = 64;
 constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
 constexpr u32 thor_transformers_audio_dependency_log_limit = 16;
 constexpr u32 thor_transformers_audio_dependency_yield_limit = 4096;
@@ -104,6 +105,43 @@ ppu_thread *thor_transformers_reown_with_trace(
         attempt++;
 
         if (head) {
+          ppu_thread *seen[thor_transformers_reown_scan_limit]{};
+          auto scan = head;
+          u32 depth = 0;
+          u32 repeated_at = thor_transformers_reown_scan_limit;
+          while (scan && depth < thor_transformers_reown_scan_limit) {
+            for (u32 index = 0; index < depth; index++) {
+              if (seen[index] == scan) {
+                repeated_at = index;
+                break;
+              }
+            }
+
+            if (repeated_at != thor_transformers_reown_scan_limit) {
+              break;
+            }
+
+            seen[depth++] = scan;
+            scan = +scan->next_cpu;
+          }
+
+          const bool cycle =
+              repeated_at != thor_transformers_reown_scan_limit;
+          const bool limited = !cycle && scan != nullptr;
+          if (attempt <= thor_transformers_post_audio_unlock_trace_limit) {
+            sys_lwmutex.error(
+                "Thor TWC POST AUDIO REOWN #%u.%u: "
+                "stage=PRE-SCHEDULE-SCAN depth=%u cycle=%u "
+                "repeated_at=%u limited=%u node=0x%x",
+                call, attempt - 1, depth, cycle ? 1u : 0u,
+                cycle ? repeated_at : 0u, limited ? 1u : 0u,
+                scan ? scan->id : 0);
+          }
+
+          if (cycle || limited) {
+            return false;
+          }
+
           result = mutex.schedule<ppu_thread>(data.sq, mutex.protocol, false);
 
           if (attempt <= thor_transformers_post_audio_unlock_trace_limit) {
