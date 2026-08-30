@@ -93,6 +93,7 @@ $ErrorActionPreference = "Stop"
 $adb = Resolve-ThorAdb
 $inputMacroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
 $thorCallPath = Join-Path $PSScriptRoot "thor_mcp\call.py"
+$transformersStartCheckPath = Join-Path $PSScriptRoot "bench\thor_transformers_start_check.py"
 $env:ANDROID_SERIAL = $Serial
 $hleLfqAny2Any = if ($Mode -eq "HLE") { $LfqAny2Any } else { "off" }
 $hleSpursSelectorFixes = if ($Mode -eq "HLE") { $SpursSelectorFixes } else { "off" }
@@ -150,6 +151,22 @@ function Resolve-ThorRenderProbeCaptureDirectory {
         throw "Transformers $Mode render probe capture does not exist: $candidate"
     }
     return (Resolve-Path -LiteralPath $candidate).Path
+}
+
+function Test-ThorTransformersStartFrame {
+    param(
+        [Parameter(Mandatory = $true)][string]$ImagePath,
+        [Parameter(Mandatory = $true)][string]$CaptureDir,
+        [Parameter(Mandatory = $true)][string]$OutputName
+    )
+
+    $checkOutput = @(& python $transformersStartCheckPath --image $ImagePath 2>&1)
+    $checkExitCode = $LASTEXITCODE
+    $checkOutput | Set-Content -LiteralPath (Join-Path $CaptureDir $OutputName) -Encoding UTF8
+    if ($checkExitCode -eq 2) {
+        throw "The Transformers START-frame check could not score '$ImagePath'."
+    }
+    return $checkExitCode -eq 0
 }
 
 function Invoke-ThorRenderProbeController {
@@ -437,6 +454,7 @@ try {
             "- Arm match: $SliceArmMatch",
             "- Post-arm slices: $SlicePostArmSlices",
             "- Press START after the first loop: $SlicePressStartAfterFirstLoop",
+            "- START frame gate: Unreal and PhysX legal frame",
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
             "- After-START stop match: $SliceAfterStartStopMatch"
@@ -460,31 +478,62 @@ try {
             $sliceArguments.armMatch = $SliceArmMatch
             $sliceArguments.postArmSlices = $SlicePostArmSlices
         }
-        $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
-        $controllerOutput = Invoke-ThorRenderProbeController `
-            -Name "thor_slice_loop" `
-            -Arguments $sliceArguments `
-            -CaptureDir $captureDir `
-            -OutputName "slice-loop.json" `
-            -TimeoutSeconds $controllerTimeout
-        $sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json
-
         if ($SlicePressStartAfterFirstLoop) {
-            if ($sliceResult.error -or $sliceResult.refused -or
-                    $sliceResult.thermalStop -or $sliceResult.fatal -or
-                    -not $sliceResult.paused) {
-                throw "The first slice loop did not end at a controlled pause."
-            }
+            $startGateWatch = [Diagnostics.Stopwatch]::StartNew()
+            $startReady = $false
+            $sliceResult = $null
+            for ($startCheck = 1; $startCheck -le $MaxSlices; $startCheck++) {
+                if ($startGateWatch.Elapsed.TotalSeconds -ge $MaxSliceHostSeconds) {
+                    break
+                }
 
-            $preStartScreenshotArguments = @{
-                path = (Join-Path $captureDir "slice-loop-before-start.png")
+                $startGateArguments = @{}
+                foreach ($entry in $sliceArguments.GetEnumerator()) {
+                    $startGateArguments[$entry.Key] = $entry.Value
+                }
+                $startGateArguments.maxSlices = 1
+                $startGateArguments.maxHostS = [Math]::Min(
+                    600,
+                    [Math]::Max(30, $SliceCoolTimeoutSeconds + $SliceSeconds + 30)
+                )
+                $startGateArguments.stopMatch = "__THOR_TRANSFORMERS_START_GATE_UNREACHED__"
+                $startGateArguments.Remove("armMatch")
+                $startGateArguments.Remove("postArmSlices")
+
+                $startIndex = "{0:D2}" -f $startCheck
+                $startGateControllerTimeout = [int][Math]::Ceiling($startGateArguments.maxHostS + 90)
+                $controllerOutput = Invoke-ThorRenderProbeController `
+                    -Name "thor_slice_loop" `
+                    -Arguments $startGateArguments `
+                    -CaptureDir $captureDir `
+                    -OutputName "slice-loop-before-start-$startIndex.json" `
+                    -TimeoutSeconds $startGateControllerTimeout
+                $sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json
+                if ($sliceResult.error -or $sliceResult.refused -or
+                        $sliceResult.thermalStop -or $sliceResult.fatal -or
+                        -not $sliceResult.paused) {
+                    throw "The START visual gate did not end at a controlled pause."
+                }
+
+                $preStartScreenshotPath = Join-Path $captureDir "slice-loop-before-start-$startIndex.png"
+                $null = Invoke-ThorRenderProbeController `
+                    -Name "thor_screenshot" `
+                    -Arguments @{ path = $preStartScreenshotPath } `
+                    -CaptureDir $captureDir `
+                    -OutputName "slice-loop-before-start-$startIndex-screenshot.json" `
+                    -TimeoutSeconds 60
+                $startReady = Test-ThorTransformersStartFrame `
+                    -ImagePath $preStartScreenshotPath `
+                    -CaptureDir $captureDir `
+                    -OutputName "slice-loop-before-start-$startIndex-check.json"
+                if ($startReady) {
+                    break
+                }
             }
-            $null = Invoke-ThorRenderProbeController `
-                -Name "thor_screenshot" `
-                -Arguments $preStartScreenshotArguments `
-                -CaptureDir $captureDir `
-                -OutputName "slice-loop-before-start-screenshot.json" `
-                -TimeoutSeconds 60
+            $startGateWatch.Stop()
+            if (-not $startReady) {
+                throw "The START visual gate did not find the Unreal and PhysX legal frame."
+            }
 
             $startCoolOutput = Invoke-ThorRenderProbeController `
                 -Name "thor_wait_cool_paused" `
@@ -548,6 +597,15 @@ try {
                     -not $sliceResult.markerReached -or -not $sliceResult.paused) {
                 throw "The after-START slice loop did not reach its requested paused marker."
             }
+        } else {
+            $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
+            $controllerOutput = Invoke-ThorRenderProbeController `
+                -Name "thor_slice_loop" `
+                -Arguments $sliceArguments `
+                -CaptureDir $captureDir `
+                -OutputName "slice-loop.json" `
+                -TimeoutSeconds $controllerTimeout
+            $sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json
         }
 
         $pidEvidence = Invoke-ThorAdbText $adb $captureDir "slice-loop-pid.txt" @("shell", "pidof net.rpcsx.easy") -AllowFailure

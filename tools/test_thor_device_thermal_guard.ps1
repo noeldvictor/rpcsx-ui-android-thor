@@ -99,6 +99,11 @@ foreach ($fragment in @(
     'resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds',
     '[switch]$SlicePressStartAfterFirstLoop',
     'if ($SlicePressStartAfterFirstLoop) {',
+    'function Test-ThorTransformersStartFrame',
+    '$startGateArguments.maxSlices = 1',
+    '$startGateArguments.stopMatch = "__THOR_TRANSFORMERS_START_GATE_UNREACHED__"',
+    'Test-ThorTransformersStartFrame',
+    'if (-not $startReady) {',
     '-Name "thor_wait_cool_paused"',
     'targetC = 65',
     'stableSamples = 2',
@@ -120,9 +125,12 @@ foreach ($fragment in @(
 
 $sliceGuardStart = $route.IndexOf('Start-ThorSliceDeviceGuard -CaptureDir $captureDir')
 $sliceController = $route.IndexOf('-Name "thor_slice_loop"', $sliceGuardStart)
+$startFrameCheck = $route.IndexOf('Test-ThorTransformersStartFrame `', $sliceController)
+$startPress = $route.IndexOf('-Name "thor_press"', $startFrameCheck)
 $verifiedStop = $route.IndexOf('-Name "thor_stop"', $sliceController)
 $sliceGuardStop = $route.IndexOf('Stop-ThorSliceDeviceGuard', $verifiedStop)
 if ($sliceGuardStart -lt 0 -or $sliceController -le $sliceGuardStart -or
+    $startFrameCheck -le $sliceController -or $startPress -le $startFrameCheck -or
     $verifiedStop -le $sliceController -or $sliceGuardStop -le $verifiedStop) {
     throw "The device guard does not cover the full Transformers slice controller lifetime."
 }
