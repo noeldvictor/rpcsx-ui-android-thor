@@ -9094,20 +9094,19 @@ rendering progress.
   saved no image and emitted no main-fence row. It has no visual or speed
   credit. Do not repeat this long route without a new build and a new gate.
 
-## 201. Ghidra maps a two-ring render wait
+## 201. The main and render queues continue to advance
 
-- Status: host-verified, diagnostic-expanded, device-pending
+- Status: device-confirmed, theory-rejected, startup-only
 - Scope: BLUS30357, main task fence and RenderingThread command wait
 - Outer ring: The main caller at `0x00102e44` increments a stack counter,
   publishes an 8-byte record to the task ring at `0x01d2ffb0`, and waits for
   the counter to reach zero. The record method at `0x010f7ff0` decrements the
   counter. The RenderingThread must consume the record before the main thread
   can continue.
-- Inner ring: Saved PPU census data puts the RenderingThread at
+- Inner ring theory: Saved PPU census data puts the RenderingThread at
   `0x0152efc0`. Ghidra shows that this address is the wait loop in a separate
   title command-ring reader. A timeout of -1 waits until the published and
-  consumed sequence values differ. This wait can prevent the RenderingThread
-  from returning to the outer task-ring consumer.
+  consumed sequence values differ. This made a two-ring wait a testable theory.
 - Change: The main-fence probe now also accepts the helper link register
   `0x00102b98`. This matches the saved live samples. A second bounded probe
   records the command-ring base, lane, timeout, mask, sequence values, and one
@@ -9117,5 +9116,43 @@ rendering progress.
   The optimized ARM64 Debug build completed in 1 minute 16 seconds. The exact
   APK is `AAA38EA51EACD7E018C34B5C66513E2B74EE563B344CEF02A1C01DFE6AE4CAD3`,
   is 116,154,675 bytes, and passes the ARM64-only APK contract.
-- Next: Install this exact APK without a launch. Run one short capture after
-  an independent temperature gate. Confirm both ring states before a repair.
+- Identity: The no-launch install in
+  `20260830-050440-transformers-render-command-wait-install` proved the same
+  device hash and left no PID. Capture
+  `20260830-050749-thor-input-custom` ran after a separate strict gate.
+- Outer-ring result: At emulator time 43.310, the main counter was one with a
+  target of zero. The task ring contained pending work. Ten seconds later, the
+  main thread was in the staged loader. The fence was transient.
+- Inner-ring result: The command sequences advanced from 2/2 to 88/88 and then
+  to 342/340. The RenderingThread continued to consume commands. Register 27
+  held a loop scratch address after the first sleep, not the original timeout.
+  The probe now reads the saved timeout from stack address `SP - 0x28`.
+- Visual result: The 60-second image showed the correct legal screen. The
+  90-second image showed the animated Transformers loading screen. This is not
+  gameplay or speed credit.
+- Stability and thermal result: The route had no access violation, dead FIFO,
+  GCM assertion, verification failure, fatal error, `SIGSEGV`, or `SIGBUS`.
+  Fixed silicon peaked at 44.5 C. The macro stopped RPCSX and the final PID was
+  absent.
+- Decision: Reject the two-ring deadlock theory. Do not bypass either wait.
+  Use the existing staged-loader probe during a continuous late-loading window
+  to find the request that does not complete.
+
+## 202. Correct the saved render timeout probe
+
+- Status: host-verified, diagnostic-only, device-pending
+- Scope: BLUS30357, RenderingThread command wait
+- Cause: Register 27 holds the timeout only before the first sleep. The command
+  reader reuses it as an address register after the sleep. The first device
+  probe therefore reported the command-ring base as the timeout.
+- Change: The bounded probe now reads the original timeout from its saved stack
+  slot at `SP - 0x28`. It also records the live register 27 value as scratch
+  data. No HLE behavior changes.
+- Verification: The focused PPU probe contract, the ARM64-only APK contract,
+  and `git diff --check` pass. The optimized ARM64 Debug build completed in
+  1 minute 16 seconds. The exact APK is
+  `E5953CEBDF5869C37CDC0016DCACC2C50E0CCE6B2F589F1C47D4D77466C3ED30`
+  and is 116,155,393 bytes.
+- Next: Install this exact APK without a launch. After a separate strict gate,
+  run through a continuous late-loading window. Use the staged-loader state,
+  not the healthy render wait, to select the next repair.

@@ -280,17 +280,21 @@ void perf_monitor::operator()()
 								}
 							}
 
-							// The RenderingThread can wait forever in the title command-ring
+							// The RenderingThread can use an infinite wait in the title command-ring
 							// reader at 0x0152efc0. Ghidra identifies register 25 as the
-							// command-ring base, register 26 as the lane, and register 27 as
-							// the timeout. A timeout of -1 blocks the outer task-ring consumer.
+							// command-ring base and register 26 as the lane. The loop uses
+							// register 27 as scratch after its first sleep, so read the saved
+							// timeout from the function's stack slot.
 							static std::atomic<u32> s_render_command_wait_dumps{0};
 							if (pc == 0x0152efc0u &&
 								s_render_command_wait_dumps.load(std::memory_order_relaxed) < 16)
 							{
 								const u32 command_base = static_cast<u32>(ppu.gpr[25]);
 								const u32 lane = static_cast<u32>(ppu.gpr[26]);
-								const s32 timeout = static_cast<s32>(ppu.gpr[27]);
+								const u32 timeout_addr = static_cast<u32>(ppu.gpr[1]) - 0x28u;
+								const bool timeout_ok = vm::check_addr(timeout_addr, 0, 4);
+								const s32 timeout = timeout_ok
+									? static_cast<s32>(+vm::_ref<be_t<u32>>(timeout_addr)) : 0;
 								const u32 published_addr = command_base + lane * 0x100u + 0x100u;
 								const u32 consumed_addr = command_base + lane * 4u + 0x680u;
 								const bool command_ok = vm::check_addr(command_base, 0, 4) &&
@@ -302,8 +306,9 @@ void perf_monitor::operator()()
 
 								if (sample < 16)
 								{
-									perf_log.error("Thor RENDER COMMAND WAIT: sample=%u base=%s:0x%08x lane=%u timeout=%d mask=0x%08x published=%u consumed=%u delta=%d",
-										sample + 1, command_ok ? "mapped" : "unmapped", command_base, lane, timeout,
+									perf_log.error("Thor RENDER COMMAND WAIT: sample=%u base=%s:0x%08x lane=%u timeout=%s:%d scratch27=0x%08x mask=0x%08x published=%u consumed=%u delta=%d",
+										sample + 1, command_ok ? "mapped" : "unmapped", command_base, lane,
+										timeout_ok ? "mapped" : "unmapped", timeout, static_cast<u32>(ppu.gpr[27]),
 										enabled_mask, published, consumed, static_cast<s32>(published - consumed));
 
 									if (sample == 0)
