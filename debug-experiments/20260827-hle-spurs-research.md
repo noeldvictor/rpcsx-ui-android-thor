@@ -9655,3 +9655,25 @@ rendering progress.
   `PRE-SCHEDULE-SCAN` reports a valid finite list but `POST-FETCH` is absent,
   investigate the 16-byte atomic retry. If it reports a cycle, trace the
   repeated PPU link back to its earlier queue insertion.
+
+## 228. The 16-byte compare-exchange still uses an exclusive retry
+
+- Status: host-confirmed code path, fault not proved
+- Source result: The AArch64 16-byte load, store, and release paths use the
+  LSE2 straight-line implementation. The 16-byte compare-exchange path does
+  not. It uses an `LDAXP` and `STLXP` loop. The `fetch_op` helper can also
+  retry the complete compare-exchange when another update wins.
+- Binary result: The linked Android core contains this exclusive loop in the
+  exact traced `lv2_control.fetch_op` path. This result confirms that the
+  source path is active in the device binary.
+- Compiler probe: Android NDK Clang 18 emits one `CASPAL` instruction for an
+  equivalent 16-byte sequentially consistent compare-exchange when the target
+  is Armv8.4-A. The temporary probe source was removed after the assembly
+  check.
+- Scope: This result identifies a possible replacement if the device trace
+  stops after `PRE-SCHEDULE-SCAN`. It does not prove that the exclusive loop
+  caused the current stall. A waiter-list cycle would make this change
+  unrelated.
+- Decision: Do not change the generic atomic helper yet. Run the bounded exact
+  trace first. If the scan reports a finite list and `POST-FETCH` is absent,
+  test a `CASPAL` compare-exchange implementation as a separate experiment.
