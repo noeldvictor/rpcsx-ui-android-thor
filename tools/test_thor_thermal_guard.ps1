@@ -193,6 +193,10 @@ if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
 if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$telemetryCommand') {
     throw "The input route does not use the lossless native argument capture path for combined thermal telemetry."
 }
+if ($temperatureSnapshotBody -notmatch '\$telemetryTimeoutSeconds\s*=\s*if\s*\(\$RuntimeFast\)\s*\{\s*3\s*\}\s*else\s*\{\s*8\s*\}' -or
+    $temperatureSnapshotBody -notmatch '-TimeoutSeconds\s+\$telemetryTimeoutSeconds') {
+    throw "The full thermal census does not allow a measured slow Thor zone walk while the fast route stays bounded."
+}
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*1') {
     throw "The input route does not default to one thermal preflight sample."
 }

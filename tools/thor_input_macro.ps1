@@ -634,8 +634,12 @@ function Get-ThorTemperatureSnapshot {
     } else {
         Get-ThorThermalZoneShellCommand
     }
+    # A full Thor zone walk can take more than three seconds while ADB is
+    # responsive. Give the cold-start census enough time to finish. Keep the
+    # short bound for the fixed runtime sensor list.
+    $telemetryTimeoutSeconds = if ($RuntimeFast) { 3 } else { 8 }
     $telemetryCommand = 'printf "__THOR_BATTERY__\n"; dumpsys battery; printf "__THOR_HARDWARE__\n"; dumpsys hardware_properties; printf "__THOR_ZONES__\n"; ' + $thermalZoneCommand
-    $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
+    $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds $telemetryTimeoutSeconds)
     $batteryLines = @()
     $hardwareLines = @()
     $thermalZoneLines = @()
