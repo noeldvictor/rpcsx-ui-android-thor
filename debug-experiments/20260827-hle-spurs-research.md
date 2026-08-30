@@ -9321,3 +9321,63 @@ rendering progress.
 - Next: Install this exact APK without a launch. Use a new strict gate. Stop
   at the queue-scan dependency row. Use its owner and forced-wake result to
   select the next HLE change.
+
+## 211. The FMOD queue scan misses, but the direct wake reaches PhysX
+
+- Status: device-confirmed, partial HLE progress, not-gameplay
+- Identity: Exact APK
+  `05D9B37599B418F15A4B25B5E1CC64AD9AC1228DF6ABBA5D4DF93151BB2521EE`
+  ran in `20260830-104647-thor-input-custom` after a separate strict gate.
+- Queue result: The bounded live-object scan did not find an lwmutex sleep
+  queue that contained PPU `0x0100000c`. It reported `queue-scan-miss`. The
+  existing direct wake changed the FMOD receiver state from `0x224` to
+  `0x304`. The receiver then reached its event loop.
+- PhysX result: The game created task 0 in taskset `0x01ec4700` from ELF
+  `0x018c1000`. Sixteen samples showed the task advancing through PCs
+  `0x03050`, `0x06930`, `0x04b88`, `0x03d90`, `0x05320`, and `0x03128`.
+  The task did not publish its queue reply in five seconds. The title then
+  removed modules and reached the known dead-FIFO teardown.
+- Thermal result: Fixed silicon peaked at 44.9 C. The process was absent after
+  the forced stop.
+- Decision: The queue scan is not the repair. Keep the exact direct wake. The
+  first PhysX task is the next measured boundary.
+
+## 212. Capture the exact PhysX SPU local store
+
+- Status: device-confirmed diagnostic, not-gameplay
+- Identity: Exact APK
+  `DD33EE3977F03BDF977C82FE1739C120C86D9F91882A36325F6409AEC7B3FD00`
+  ran in `20260830-113135-thor-input-custom` after strict gate
+  `20260830-113110-thor-input-strict-cool-gate`.
+- Route result: The legal frame check passed. START was sent to the same PID.
+  Five uninterrupted 15-second slices reached the FMOD wake. It changed the
+  receiver state from `0x224` to `0x304`. Twenty-six 2.5-second slices then
+  reached the exact PhysX task.
+- Dump result: RPCSX wrote the full 262,144-byte local store from
+  `CellSpursKernel2` at PC `0x06930`. The file SHA-256 is
+  `13C78B97D2E975FE7533579B058F34BBCE4D589A0A60AF4E2858119DCA4EC726`.
+  The captured taskset is `0x01ec4700`, and the ELF is `0x018c1000`.
+- Measurement limit: The controller paused the emulator 201 milliseconds
+  after task creation. The five-second HLE queue clock continued while the
+  emulator was paused. This timeout is valid diagnostic evidence, but it is
+  not an uninterrupted speed result.
+- Thermal result: Fixed silicon peaked at 47.4 C. The clean stop found no PID
+  and no RPCSX row in top.
+
+## 213. Ghidra maps the PhysX cold-compile chain
+
+- Status: host-confirmed cause candidate, device control in progress
+- Evidence: `spu_cfg.py` reached 4,449 instructions from the six observed PCs.
+  It found 21 reachable halt instructions and no DMA argument assert. Ghidra
+  imported the exact local store as `SPU:BE:128:default` at base zero.
+- Startup chain: Function `0x06800` calls `0x04b88`, `0x03d90`, `0x05320`,
+  and `0x03128` in order. Function `0x06878` calls this chain before it enters
+  the reservation and queue path. PC `0x06ac4` is the logged GETLLAR pattern.
+- Compile timing: The earlier uninterrupted run loaded `0x04b88` in about
+  0.51 seconds and `0x03d90` in about 2.48 seconds. The five-second HLE window
+  ended before `0x05320` or `0x03128` loaded. The SPU continued through several
+  startup PCs; it did not remain in one reservation loop.
+- Decision: Do not extend the five-second wait. First run one uninterrupted
+  warm control with the exact cached objects. If that control replies, repair
+  cold compilation at this exact task boundary. If it does not reply, inspect
+  the reservation path next.
