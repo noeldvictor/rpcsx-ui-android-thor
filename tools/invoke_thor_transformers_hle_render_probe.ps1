@@ -82,6 +82,8 @@ param(
     [ValidateRange(0, 64)]
     [int]$SlicePostArmSlices = 0,
     [switch]$SlicePressStartAfterFirstLoop,
+    [ValidateRange(0.0, 15.0)]
+    [double]$SliceAfterStartSeconds = 0.0,
     [ValidateRange(1, 256)]
     [int]$SliceAfterStartMaxSlices = 32,
     [ValidateRange(30, 600)]
@@ -102,6 +104,11 @@ $env:ANDROID_SERIAL = $Serial
 $hleLfqAny2Any = if ($Mode -eq "HLE") { $LfqAny2Any } else { "off" }
 $hleSpursSelectorFixes = if ($Mode -eq "HLE") { $SpursSelectorFixes } else { "off" }
 $hleTasksetSelectAtomic = if ($Mode -eq "HLE") { $TasksetSelectAtomic } else { "off" }
+$effectiveAfterStartSliceSeconds = if ($SliceAfterStartSeconds -gt 0.0) {
+    $SliceAfterStartSeconds
+} else {
+    $SliceSeconds
+}
 
 if ($SliceLoop -and $StartPaused -ne "on") {
     throw "The Transformers slice loop requires -StartPaused on."
@@ -459,6 +466,7 @@ try {
             "- Post-arm slices: $SlicePostArmSlices",
             "- Press START after the first loop: $SlicePressStartAfterFirstLoop",
             "- START frame gate: Unreal and PhysX legal frame",
+            "- After-START active slice seconds: $effectiveAfterStartSliceSeconds",
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
             "- After-START marker: $SliceAfterStartStopMatch",
@@ -583,6 +591,7 @@ try {
             foreach ($entry in $sliceArguments.GetEnumerator()) {
                 $afterStartArguments[$entry.Key] = $entry.Value
             }
+            $afterStartArguments.seconds = $effectiveAfterStartSliceSeconds
             $afterStartArguments.maxSlices = $SliceAfterStartMaxSlices
             $afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds
             $afterStartArguments.Remove("armMatch")
