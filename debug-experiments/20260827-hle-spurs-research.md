@@ -9230,3 +9230,51 @@ rendering progress.
 - Next: Install this exact APK without a launch. Use a new strict gate. Prove
   whether the saved owner wakes and whether the route reaches the first PhysX
   task. Give no speed credit until a correct moving gameplay frame is visible.
+
+## 207. The post-sleep dependency recorder runs too late
+
+- Status: device-confirmed, HLE blocker, not-gameplay
+- Scope: BLUS30357, first FMOD dependency-wake proof
+- Identity: Exact APK
+  `51F7935D3AA332255813BBB483DB058C5F59FEE031103DAB69EAFDC0EC258B0D`
+  ran in `20260830-100731-thor-input-custom` after a separate strict gate.
+- Visual result: The exact legal-screen check passed on guest slice 6. START
+  was accepted in the same process.
+- Wake result: At emulator time 6:30, the main-thread owner wake changed FMOD
+  receiver state from `0x224` to `0x304`. The immediate dependency retry had
+  no saved lwmutex or owner and made no change. The main thread then advanced
+  to the user lwmutex wrapper with `r3=0x95008e00`.
+- Block result: The FMOD event receiver remained in `_sys_lwmutex_lock`. The
+  bounded PPU census showed the same kernel PC and link register through the
+  remainder of the run. Frame production stayed at 0 FPS. The first PhysX task
+  was not created.
+- Cause: The dependency recorder ran only after `mutex.sleep()`. The blocked
+  FMOD receiver did not reach this post-sleep point. The route therefore could
+  not save the owner that FMOD was waiting for.
+- Control result: The after-START route completed 23 slices in 622.0 host
+  seconds. Fixed silicon peaked at 46.2 C. The stop check found no PID and no
+  RPCSX row in top. Post-stop fixed silicon was 41.3 C.
+- Decision: Record the FMOD lwmutex and owner on lock entry. Keep the actual
+  scheduler wake in the guarded main-thread route.
+
+## 208. Record the FMOD dependency before sleep
+
+- Status: host-verified, device-pending, title-specific
+- Change: The exact FMOD receiver now records its lwmutex, control address,
+  owner, and owner state at `LOCK-ENTER`. This point is before any signal,
+  ownership, or sleep operation. The recorder does not change scheduler or
+  guest state. The main-thread route uses the saved owner through the existing
+  guarded wake helper.
+- Safety: The recorder requires the Transformers audio fix, BLUS30357, the
+  exact lwmutex link register, and the exact FMOD receiver name. The main wake
+  still rejects the main thread, the current primary owner, and a missing PPU
+  owner.
+- Verification: The focused route contract now proves that dependency capture
+  occurs before `mutex.sleep()`. The contract, `git diff --check`, and the
+  optimized ARM64 native build pass. Commit `03665e7d1` contains the change.
+  The exact ARM64 APK is
+  `B69F0EBC5BC382B808E8792E4C6B6D2B70A0ECBE95F0A1D0138617503284ADA5`,
+  is 116,157,454 bytes, and passes the ARM64-only APK contract.
+- Next: Install this exact APK without a launch. Use a new strict gate. Stop
+  after the dependency and chain-wake rows. Continue to PhysX only if the main
+  thread advances from the FMOD lock chain.
