@@ -9944,3 +9944,21 @@ rendering progress.
   cool check, require fixed silicon below 68 C before every guest execution
   slice. Push the exact experiment 237 core without a launch, then run one
   guarded source-repair proof.
+
+## 240. The third availability check remains blocked by the foreground app
+
+- Status: external-device-blocker, third-consecutive-check
+- Observation: RPCSX remained stopped. `com.reblue` PID `5314` remained the
+  top resumed activity and focused app. Smart fan mode `4` remained active.
+- Thermal result: The four CPU-subsystem sensors reported 84.7, 82.7, 84.3,
+  and 82.3 C. These values are above both the 68 C slice ceiling and the 72 C
+  hard stop.
+- Scope: The exact source-repair core and guarded route are ready. More host
+  changes without a device result would be speculative and would not prove HLE
+  progress or 30 FPS. Stopping the unrelated foreground app is outside this
+  experiment's authority.
+- Decision: Stop the active device goal as externally blocked. Resume only
+  after the user closes `com.reblue` and fixed silicon falls below 68 C. Then
+  push core
+  `DBB76F0EC7BB375A4451420EE968BA1FBA13D8AEBCFCDC6E67652D3FC4EF35F5`
+  without a launch and run the guarded source-repair proof.
