@@ -720,7 +720,7 @@ def t_wait_cool_paused(a):
 
 def _matching_log_lines(match, count=1):
     if held_process_pid():
-        raw = adb(["exec-out", "run-as", PKG, "cat",
+        raw = adb(["exec-out", "run-as", PKG, "tail", "-n", "4096",
                    f"{FILES}/cache/RPCSX.log"], timeout=30)
         return [line for line in raw.splitlines() if str(match) in line][-count:]
     encoded = urllib.parse.quote(str(match), safe="")

@@ -25,8 +25,10 @@ LOG_CHANNEL(sys_event);
 namespace {
 constexpr u64 thor_transformers_audio_queue_key = 0x80004d494f323221;
 constexpr u32 thor_transformers_audio_queue_trace_limit = 64;
+constexpr u32 thor_transformers_audio_wake_log_limit = 8;
 
 std::atomic<u32> g_thor_transformers_audio_queue_trace_seq{0};
+std::atomic<u32> g_thor_transformers_audio_wake_log_seq{0};
 
 bool thor_transformers_audio_queue_trace_enabled() noexcept {
 #ifdef __ANDROID__
@@ -245,10 +247,16 @@ CellError lv2_event_queue::send(lv2_event event, bool *notified_thread,
                                         forced_pending);
 
     if (forced_pending) {
-      sys_event.error(
-          "Thor TWC AUDIO WAKE FIX: queue=0x%x ppu=0x%x state=0x%x->0x%x "
-          "pending=%u",
-          id, ppu.id, wake_state_before, wake_state_after, forced_pending);
+      const u32 sequence =
+          g_thor_transformers_audio_wake_log_seq.fetch_add(
+              1, std::memory_order_relaxed);
+      if (sequence < thor_transformers_audio_wake_log_limit) {
+        sys_event.error(
+            "Thor TWC AUDIO WAKE FIX: sample=%u queue=0x%x ppu=0x%x "
+            "state=0x%x->0x%x pending=%u",
+            sequence, id, ppu.id, wake_state_before, wake_state_after,
+            forced_pending);
+      }
     }
 
     if (port &&

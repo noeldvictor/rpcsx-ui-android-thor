@@ -358,6 +358,7 @@ foreach ($fragment in $requiredCellAudioTraceFragments) {
 $requiredAudioQueueTraceFragments = @(
     'constexpr u64 thor_transformers_audio_queue_key = 0x80004d494f323221;',
     'constexpr u32 thor_transformers_audio_queue_trace_limit = 64;',
+    'constexpr u32 thor_transformers_audio_wake_log_limit = 8;',
     '"debug.rpcsx.thor.transformers_lwmutex_trace"',
     'Emu.GetTitleID() == "BLUS30357"',
     '"Thor TWC AUDIOQ #%u:',
@@ -368,6 +369,7 @@ $requiredAudioQueueTraceFragments = @(
     '"RECV-READY"',
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'lv2_obj::complete_deferred_wake(ppu)',
+    'g_thor_transformers_audio_wake_log_seq.fetch_add(',
     '"Thor TWC AUDIO WAKE FIX:'
 )
 

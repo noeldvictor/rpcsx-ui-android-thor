@@ -55,6 +55,7 @@ foreach ($required in @(
     '("thor_slice",',
     '("thor_slice_loop",',
     '("thor_wait_cool_paused",'
+    '"tail", "-n", "4096"',
     'def t_clearprops(_):',
     '("thor_clearprops",'
 )) {
