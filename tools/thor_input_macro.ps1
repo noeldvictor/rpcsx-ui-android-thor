@@ -1984,7 +1984,13 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "startup-profile-reset-effective.txt" @("shell", $startupProfileResetPropertyCommand) | Out-Null
 }
 
-Assert-ThorRuntimeThermalBudget "post-run"
+if ($Profile -ne "strict-cool-gate") {
+    if ($BootGame) {
+        Assert-ThorRuntimeThermalBudget "post-run"
+    } else {
+        Assert-ThorThermalBudget "post-run"
+    }
+}
 
 if ($PostSnapshot) {
     Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post"

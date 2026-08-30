@@ -7999,3 +7999,122 @@ rendering progress.
   fixed-silicon cold sample below 70 C. Arm on an owner transition from `0x224`
   to `0x304`. Require the FMOD return, mutex handoff, correct moving gameplay,
   and a sustained 30 FPS result before performance credit.
+
+## 165. Apply only the cold-start rule to the no-launch gate
+
+- Status: controller-fix, host-pass, android-boundary-pass
+- Scope: strict cold-start gate, thermal safety
+- Problem: The strict no-launch gate took its required fixed-silicon sample at
+  56.0 C, then applied the runtime near-limit guard at `post-run`. That guard
+  uses 56 C as the start of a sustained-load probe. It rejected a cold device
+  even though the cold-start rule permits every fixed-silicon value below
+  70 C. The capture is
+  `debug-captures/android-speed-sprint/20260829-232944-thor-input-strict-cool-gate`.
+  It did not launch the emulator and it force-stopped the package.
+- Change: The strict no-launch profile now ends after its one cold-start
+  sample. Booted routes still use the runtime guard. Other no-boot routes keep
+  the ordinary hard-limit check. This change does not weaken a booted run or
+  change the 72 C hard limit.
+- Verification: The strict-gate and multi-sensor thermal tests pass.
+  `git diff --check` passes.
+- Thor result: The corrected strict gate passed at 56.0 C. It used one
+  fixed-silicon sample, did not launch the emulator, and force-stopped the
+  package. The capture is
+  `debug-captures/android-speed-sprint/20260829-233055-thor-input-strict-cool-gate`.
+- Decision: Keep the correction. It implements the stated cold-start rule:
+  a fixed-silicon value that is strictly below 70 C can run.
+
+## 166. The exact audio-owner wake completes the mutex handoff
+
+- Status: android-boundary-pass, next-mutex-stall-identified, not-comparable
+- Scope: HLE, FMOD, LV2 lightweight mutex, PPU scheduler, thermal safety
+- Hypothesis: The forced owner wake will let the FMOD event worker release the
+  mutex that blocks the main PPU thread.
+- Installed artifact: The no-launch installer proved that the host and device
+  APK SHA-256 values were both
+  `5979BEC509A873C1EF387065E327903675AA1AFBCE73A537036F7A84C9B82682`.
+  The PID was absent before and after installation. The capture is
+  `debug-captures/android-speed-sprint/20260829-233105-transformers-forced-audio-owner-wake-install`.
+- Route: The fresh HLE process enabled the exact FMOD event, audio-queue,
+  lightweight-mutex, owner-wake, and PPU census controls. It requested 120
+  half-second slices, a 600-second host limit, an arm on the owner-wake row,
+  and 40 later slices.
+- Scheduler result: At emulator time 6 minutes 4.195603 seconds, the exact
+  helper changed FMOD PPU `0x0100000c` from `0x224` to `0x304` and reported
+  `forced=1`. In the next 0.118 milliseconds, the owner entered the unlock and
+  handed mutex `0x95008c00` to main PPU `0x01000000`. The main PPU returned
+  from the lock at 6 minutes 4.195915 seconds. It released the mutex back to
+  the FMOD worker 6.452 milliseconds later. This is the required full mutex
+  handoff, not only a scheduler-state change.
+- Audio result: The FMOD worker returned to the event receive path and consumed
+  one stored audio event. This proves that the original audio-owner deadlock is
+  fixed. The small queue could still fill while the diagnostic route paused
+  the process between execution slices.
+- Next boundary: Later PPU samples at 6 minutes 21 seconds, 7 minutes 44
+  seconds, and 9 minutes 9 seconds show the main PPU in the same generic FMOD
+  lock wrapper with state `0x224`, but at stack pointer `0xd003fa40` instead of
+  `0xd003fc30`. The first mutex trace had completed and was pinned to its first
+  ID. It recorded no second entry. Therefore, the later wait is a different
+  lightweight mutex and its caller and owner are not yet proved.
+- Route result: The route completed 65 slices and 47.518 active seconds. It
+  armed at slice 43 and completed 22 later slices. Host time was 653.781
+  seconds because the final paused cooldown timed out while the fixed-silicon
+  value remained exactly 60.0 C. The late-load marker did not occur.
+- Visual correctness: Not measured. The incomplete post-arm window did not
+  save a boundary image. No correct moving gameplay is proved.
+- FPS/frame-time: No performance credit.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Thermal result: The controller maximum was 65.8 C fixed silicon. The device
+  guard recorded 1,161 normal samples and 18 early holds. Its fixed-silicon
+  maximum was 69.1 C and its CPU-junction maximum was 82.7 C. No fixed-silicon
+  sample reached 70 C, and no junction sample reached 95 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup cleared all 62 listed properties and found zero
+  remaining `debug.rpcsx.thor.*` values. The final fixed-silicon sample was
+  60.0 C.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-233128-thor-input-custom`.
+- Decision: Keep the exact first-mutex repair. Do not extend the wake to a new
+  mutex until its caller, real owner, and owner state are measured.
+- Next: Record the first non-matching main-thread FMOD mutex sleep after the
+  proved repair. Include its mutex ID, saved caller, real owner, and owner
+  state. Use that row to select the next HLE repair or reject it.
+
+## 167. Trace the next post-repair FMOD mutex owner
+
+- Status: instrumentation, host-pass, unmeasured
+- Scope: BLUS30357, LV2 lightweight mutex, FMOD, config contract
+- Hypothesis: The first non-matching main-thread FMOD mutex sleep after the
+  proved owner wake will identify the caller and owner of the next HLE stall.
+- Change: After the exact `0x00dd6264` owner wake succeeds once, the same
+  default-off, title-scoped property can record up to 64 later main-thread
+  sleeps in the generic FMOD lock wrapper. Each candidate row includes the
+  saved caller, mutex ID, real owner, owner state, and control address. The
+  candidate path returns without changing a thread state, mutex, event, or
+  scheduler value.
+- Rollback: Run with `-FmodAudioWakeFix off`, leave the Android property unset,
+  or revert the candidate log.
+- Android build result: `:app:assembleDebug --no-configuration-cache` passed
+  in 1 minute 10 seconds with 42 tasks. The modified native file compiled and
+  linked.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,156,098 bytes, and its SHA-256 is
+  `DFD93D983230EFE48057DCFAC37193C6B33639EE6157C57BBD702F4811F40505`.
+- Native identity: The unstripped and merged core SHA-256 is
+  `0D324DCDE77D6AA373CF84150ADA79A389BA0BBA6436D78714FC435D2B0F3F6F`.
+  The stripped core SHA-256 is
+  `3A2FD826A1FD0F3F33AF7654EBFC01A784C7379F44C04A9E96ED452BBF0A7B26`.
+- Verification: The focused HLE route, PPU PC, load-wait, strict cold-gate,
+  and multi-sensor thermal contracts pass. `git diff --check` passes. The
+  `Thor TWC AUDIO OWNER CANDIDATE` marker is present in the unstripped,
+  merged, and stripped Android native libraries.
+- Thor result: Not run. Experiment 166 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the bounded diagnostic for one later device decision run.
+- Next: After a new strict cold-start sample below 70 C, install this exact
+  APK. Arm on `Thor TWC AUDIO OWNER CANDIDATE` and stop after a short bounded
+  window. Do not wake the candidate until its identity and state are proved.

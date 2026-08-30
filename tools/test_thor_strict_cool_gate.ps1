@@ -29,10 +29,17 @@ foreach ($fragment in @(
     'if ([double]$snapshot.silicon_temperature_c -ge $launchLimitC)'
     'if ($Profile -eq "strict-cool-gate") {'
     'Assert-ThorStrictColdStartGate "pre-run"'
+    'if ($Profile -ne "strict-cool-gate") {'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing strict cool-gate contract: $fragment"
     }
+}
+
+$postRunIndex = $macroSource.LastIndexOf('if ($Profile -ne "strict-cool-gate") {')
+$postRunRuntimeIndex = $macroSource.LastIndexOf('Assert-ThorRuntimeThermalBudget "post-run"')
+if ($postRunIndex -lt 0 -or $postRunRuntimeIndex -le $postRunIndex) {
+    throw "The strict cool gate must skip the runtime near-limit guard after its one cold-start sample."
 }
 
 $strictGuardIndex = $macroSource.IndexOf('if ($Profile -eq "strict-cool-gate")')

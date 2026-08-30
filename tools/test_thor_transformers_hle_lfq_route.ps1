@@ -380,7 +380,11 @@ $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
     'lv2_obj::force_owner_wake_after_waiter_sleep(*owner)',
-    '"Thor TWC AUDIO OWNER WAKE:'
+    '"Thor TWC AUDIO OWNER WAKE:',
+    'g_thor_transformers_audio_owner_wake_completed.store(',
+    'g_thor_transformers_audio_owner_wake_completed.load(',
+    'thor_transformers_audio_owner_candidate_limit = 64',
+    '"Thor TWC AUDIO OWNER CANDIDATE #%u:'
 )
 
 foreach ($fragment in $requiredAudioOwnerWakeFragments) {

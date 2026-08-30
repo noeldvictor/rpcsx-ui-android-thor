@@ -22,9 +22,12 @@ namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
+constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
 
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_trace_seq{0};
+std::atomic<u32> g_thor_transformers_audio_owner_candidate_seq{0};
+std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
 
 bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #ifdef __ANDROID__
@@ -155,12 +158,11 @@ void thor_transformers_complete_audio_owner_wake(
   if (!thor_transformers_audio_wake_fix_enabled() ||
       waiting_ppu.id != 0x0100'0000 ||
       static_cast<u32>(waiting_ppu.lr) !=
-          thor_transformers_main_lwmutex_lock_lr ||
-      thor_transformers_lv2_lwmutex_caller_lr(waiting_ppu) !=
-          thor_transformers_main_lwmutex_caller) {
+          thor_transformers_main_lwmutex_lock_lr) {
     return;
   }
 
+  const u32 caller = thor_transformers_lv2_lwmutex_caller_lr(waiting_ppu);
   const u32 control = mutex.control.addr();
   const u32 owner_id =
       control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
@@ -168,10 +170,35 @@ void thor_transformers_complete_audio_owner_wake(
       idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
   const u32 state_before =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
+
+  if (caller != thor_transformers_main_lwmutex_caller) {
+    if (!g_thor_transformers_audio_owner_wake_completed.load(
+            std::memory_order_relaxed)) {
+      return;
+    }
+
+    const u32 sequence =
+        g_thor_transformers_audio_owner_candidate_seq.fetch_add(
+            1, std::memory_order_relaxed);
+    if (sequence < thor_transformers_audio_owner_candidate_limit) {
+      sys_lwmutex.error(
+          "Thor TWC AUDIO OWNER CANDIDATE #%u: waiter=0x%x caller=0x%x "
+          "id=0x%x owner=0x%x owner_state=0x%x control=0x%x",
+          sequence, waiting_ppu.id, caller, lwmutex_id, owner_id, state_before,
+          control);
+    }
+    return;
+  }
+
   const bool forced_wake =
       owner ? lv2_obj::force_owner_wake_after_waiter_sleep(*owner) : false;
   const u32 state_after =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
+
+  if (forced_wake) {
+    g_thor_transformers_audio_owner_wake_completed.store(
+        true, std::memory_order_relaxed);
+  }
 
   sys_lwmutex.error(
       "Thor TWC AUDIO OWNER WAKE: waiter=0x%x owner=0x%x id=0x%x "
