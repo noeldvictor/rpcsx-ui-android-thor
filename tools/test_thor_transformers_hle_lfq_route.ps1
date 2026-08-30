@@ -357,6 +357,20 @@ if (-not $sysSync.Contains('static u32 complete_deferred_wake(ppu_thread &thread
     throw "The deferred PPU wake repair declaration is missing."
 }
 
+$requiredAudioOwnerWakeFragments = @(
+    '"debug.rpcsx.thor.transformers_audio_wake_fix"',
+    'thor_transformers_main_lwmutex_caller = 0x00dd6264',
+    'lv2_obj::complete_deferred_wake(*owner)',
+    'owner->state.notify_one();',
+    '"Thor TWC AUDIO OWNER WAKE:'
+)
+
+foreach ($fragment in $requiredAudioOwnerWakeFragments) {
+    if (-not $lv2Lwmutex.Contains($fragment)) {
+        throw "The deferred audio-owner wake repair is missing: $fragment"
+    }
+}
+
 $requiredPcCensusFragments = @(
     '"debug.rpcsx.thor.spu_pc_census"',
     'static constexpr u32 max_samples = 64;',

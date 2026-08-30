@@ -20,6 +20,7 @@ LOG_CHANNEL(sys_lwmutex);
 
 namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
+constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
@@ -31,6 +32,20 @@ bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
     char value[PROP_VALUE_MAX]{};
     return __system_property_get(
                "debug.rpcsx.thor.transformers_lwmutex_trace", value) > 0 &&
+           value[0] && value[0] != '0';
+  }();
+  return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+  return false;
+#endif
+}
+
+bool thor_transformers_audio_wake_fix_enabled() noexcept {
+#ifdef __ANDROID__
+  static const bool s_on = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get(
+               "debug.rpcsx.thor.transformers_audio_wake_fix", value) > 0 &&
            value[0] && value[0] != '0';
   }();
   return s_on && Emu.GetTitleID() == "BLUS30357";
@@ -132,6 +147,44 @@ void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
       thor_transformers_lv2_lwmutex_caller_lr(ppu), lwmutex_id, control, owner,
       waiter, attribute, sleep_queue, static_cast<u32>(signaled), queue_ppu,
       wake_ppu, result);
+}
+
+void thor_transformers_complete_audio_owner_wake(
+    const ppu_thread &waiting_ppu, u32 lwmutex_id,
+    const lv2_lwmutex &mutex) {
+  if (!thor_transformers_audio_wake_fix_enabled() ||
+      waiting_ppu.id != 0x0100'0000 ||
+      static_cast<u32>(waiting_ppu.lr) !=
+          thor_transformers_main_lwmutex_lock_lr ||
+      thor_transformers_lv2_lwmutex_caller_lr(waiting_ppu) !=
+          thor_transformers_main_lwmutex_caller) {
+    return;
+  }
+
+  const u32 control = mutex.control.addr();
+  const u32 owner_id =
+      control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
+  const auto owner =
+      idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
+  const u32 state_before =
+      owner ? static_cast<u32>((+owner->state).raw()) : 0;
+  const u32 forced_pending =
+      owner ? lv2_obj::complete_deferred_wake(*owner) : 0;
+  auto state_after_bits = owner ? +owner->state : rx::EnumBitSet<cpu_flag>{};
+  const u32 state_after = static_cast<u32>(state_after_bits.raw());
+  const bool forced_notify =
+      owner && state_after_bits & cpu_flag::wait &&
+      state_after_bits & cpu_flag::signal;
+
+  if (forced_notify) {
+    owner->state.notify_one();
+  }
+
+  sys_lwmutex.error(
+      "Thor TWC AUDIO OWNER WAKE: waiter=0x%x owner=0x%x id=0x%x "
+      "state=0x%x->0x%x pending=%u notify=%u",
+      waiting_ppu.id, owner_id, lwmutex_id, state_before, state_after,
+      forced_pending, forced_notify ? 1u : 0u);
 }
 } // namespace
 
@@ -295,6 +348,9 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
         thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                             "LOCK-SLEEP", timeout);
         const bool finished = !mutex.sleep(ppu, timeout);
+        if (!finished) {
+          thor_transformers_complete_audio_owner_wake(ppu, lwmutex_id, mutex);
+        }
         notify.cleanup();
         thor_transformers_lv2_lwmutex_trace(
             ppu, lwmutex_id, mutex,

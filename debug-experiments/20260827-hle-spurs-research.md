@@ -7801,3 +7801,95 @@ rendering progress.
   cold-start fixed-silicon sample below 70 C. Stop after the repair marker and
   a bounded post-marker window. Credit performance only if the result shows
   correct moving gameplay.
+
+## 161. The event wake completes before the owner is suspended again
+
+- Status: android-counterproof, owner-resuspend-identified, not-comparable
+- Scope: HLE, FMOD, LV2 event queue, PPU scheduler, thermal-safety
+- Hypothesis: The event-side helper will complete the deferred state transition
+  and let the FMOD receive worker release the main-thread mutex.
+- Installed artifact: The strict no-boot gate passed at 51.0 C fixed silicon.
+  The no-launch installer then proved that the host and installed APK SHA-256
+  values were both
+  `D1B43D1E3AC969B5B545090A63A7BB254A879355CF91661D5BCD17E3FA24F0F3`.
+  The RPCSX PID was absent before and after installation.
+- Route: The HLE property readback included
+  `debug.rpcsx.thor.transformers_audio_wake_fix=1`. The route requested 80
+  half-second slices, a 600-second host limit, an arm on the event-side repair
+  marker, and 12 later slices.
+- Event result: The audio queue send selected FMOD PPU `0x0100000c` and changed
+  its state from `0x224` to `0x304`. This is a normal scheduler transition from
+  `wait + suspend + memory` to `wait + signal + memory`. `awake` returned true,
+  and the event-side deferred helper correctly returned zero because no
+  deferred suspend remained at that instant.
+- Counterproof: The worker did not return to game address `0x00e2b454`. The main
+  PPU thread entered its proved mutex sleep 9.101 milliseconds after the event
+  transition. The queue stored two later audio events and then remained full.
+  Later PPU samples again showed both the main thread and the FMOD worker in
+  state `0x224`. The worker had consumed its signal and was suspended again
+  before it could return and release the mutex.
+- Route result: The event-side repair marker did not occur. The route reached
+  its host deadline after 72 slices. Active windows totaled 52.612 seconds,
+  and host time was 600.875 seconds. Every slice ended in a process hold.
+- Visual correctness: Not measured. The marker did not occur, so the route did
+  not save a boundary image.
+- FPS/frame-time: No performance credit. Paused diagnostics fell from 128
+  frames in 76 seconds to zero frames in the last 85-second interval. This is
+  a stalled loading route, not moving gameplay.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Thermal result: The independent guard recorded 1,042 samples and 15 early
+  holds. Fixed silicon peaked at 68.7 C, and CPU junction peaked at 82.7 C. No
+  fixed-silicon sample reached 70 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup cleared all 62 listed properties and found zero
+  remaining `debug.rpcsx.thor.*` values. The final fixed-silicon sample was
+  54.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-224240-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-224305-transformers-audio-wake-fix-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-224334-thor-input-custom`.
+- Decision: Keep the event-side helper for the previously measured deferred
+  mode, but do not treat it as sufficient. Complete the owner wake after the
+  main thread has entered the mutex sleep and released a scheduler slot.
+- Next: Add one exact owner-handoff repair at the proved BLUS30357 caller. It
+  must use the real mutex owner and must not release the mutex itself.
+
+## 162. Complete the audio-owner wake after the main thread sleeps
+
+- Status: HLE-repair, host-pass, unmeasured
+- Scope: LV2 lightweight-mutex, PPU scheduler, BLUS30357
+- Hypothesis: The FMOD worker can return if its wake is completed after the
+  main PPU thread enters the exact mutex sleep and releases its scheduler slot.
+- Changed files/settings: The existing default-off audio-wake property now also
+  gates a repair at the exact main PPU, wrapper link register `0x00e28c5c`,
+  saved caller `0x00dd6264`, and real lightweight-mutex owner. It resolves that
+  owner through the PPU ID manager only after the main wait is queued.
+- Repair: If the owner still has a deferred selected wake, the existing helper
+  completes it. If the owner already has `wait + signal`, the repair sends a
+  direct state notification. It logs the owner ID, state transition, returned
+  deferred-barrier value, and notification result. It does not fabricate an
+  event, change the mutex owner, signal the mutex, or release the mutex.
+- Rollback: Run with `-FmodAudioWakeFix off`, or leave the Android property
+  unset. Revert the owner-handoff helper call to remove this successor.
+- Android build result: The first incremental build found one const bit-set
+  accessor error. A local non-const snapshot corrected it. The final
+  `:app:assembleDebug --no-configuration-cache` build passed in 1 minute 2
+  seconds with 42 tasks.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,152,883 bytes, and its SHA-256 is
+  `DB8E342445766828C0C50AA27D09E9BAD0B6574AE382DCE274BF026A7196CB08`.
+- Verification: The focused HLE route contract and `git diff --check` pass.
+  The `Thor TWC AUDIO OWNER WAKE` marker is present in the unstripped, merged,
+  and stripped Android native libraries.
+- Thor result: Not run. Experiment 161 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep this successor for one device decision run. It acts at the
+  later state that experiment 161 proved and retains an explicit rollback.
+- Next: In one later independently cool round, install this exact APK. Arm on
+  `Thor TWC AUDIO OWNER WAKE`, keep a bounded post-arm window, and require an
+  owner return or mutex handoff before any performance claim.
