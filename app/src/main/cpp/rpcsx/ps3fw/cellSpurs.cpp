@@ -164,7 +164,7 @@ static bool thor_transformers_fmod_event_interp() noexcept
 //
 // The title starts a cold SPU task and calls the nonblocking queue pop about
 // 45 microseconds later. It treats BUSY as fatal. On Thor, the exact SPU
-// program can need about 48 milliseconds to finish its first native compile.
+// program can still compile native blocks for more than 500 milliseconds.
 // This switch adds one bounded scheduling window for that exact startup
 // handshake. It does not fabricate queue data and it does not change later
 // nonblocking pops.
@@ -5736,10 +5736,10 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					expected_queue, queue.addr(), std::memory_order_acq_rel))
 			{
 				static constexpr u32 c_poll_us = 100;
-				static constexpr u32 c_max_wait_us = 100'000;
+				static constexpr u64 c_max_wait_us = 5'000'000;
 				const u64 started = get_system_time();
 
-				for (u32 waited_us = 0; waited_us < c_max_wait_us; waited_us += c_poll_us)
+				while (get_system_time() - started < c_max_wait_us)
 				{
 					if (ppu.is_stopped())
 					{

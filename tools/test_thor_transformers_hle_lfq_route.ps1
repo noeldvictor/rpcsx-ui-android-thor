@@ -573,7 +573,8 @@ $requiredPhysxQueueWaitFragments = @(
     '"debug.rpcsx.thor.transformers_physx_queue_wait"',
     'static_cast<u32>(ppu.lr) == 0x00a94678u',
     'first_task_elf == 0x018c1000u',
-    'static constexpr u32 c_max_wait_us = 100''000;',
+    'static constexpr u64 c_max_wait_us = 5''000''000;',
+    'while (get_system_time() - started < c_max_wait_us)',
     'thread_ctrl::wait_for(c_poll_us, false);',
     'Thor Transformers PhysX queue startup wait:'
 )
