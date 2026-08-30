@@ -9645,7 +9645,12 @@ rendering progress.
   passes. The stripped core is 63,249,032 bytes, with SHA-256
   `A4127B1E0B64AB6D6C73C918C49776673A70E174D4F70B197FC48C72B159EDC4`.
   The core export and relocation surface test passes.
-- Thor result: Not run. The new core is not runtime evidence.
+- Thor result: No-launch push
+  `20260830-181215-transformers-reown-scan-dev-core-push` installed the exact
+  core in the app-private dev-core path. The remote SHA-256 matches. The
+  package PID was absent after the push, and the device remained in Smart fan
+  mode `4`. The saved `fan_speed=100` Custom slider was inactive. This push is
+  not runtime evidence.
 - Next: In a new cool round, enable the lwmutex trace and the PPU census. If
   `PRE-SCHEDULE-SCAN` reports a valid finite list but `POST-FETCH` is absent,
   investigate the 16-byte atomic retry. If it reports a cycle, trace the
