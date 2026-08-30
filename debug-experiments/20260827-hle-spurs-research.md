@@ -9870,3 +9870,38 @@ rendering progress.
   Wait for the user to release the shared Thor and for fixed silicon to fall
   below the strict launch gate. Then use one new guarded run with the 68 C
   slice ceiling and early hold.
+
+## 237. Discard the forced owner signal before a new lwmutex wait
+
+- Status: host-pass, device-pending
+- Cause: The forced FMOD owner wake adds `cpu_flag::signal`. The target PPU can
+  start a new lwmutex wait before the earlier wait consumes that signal. The
+  new wait then queues the PPU, consumes the old signal, and returns without a
+  normal queue selection. A later wait can insert the same PPU again and make
+  its shared `next_cpu` link point to itself. This sequence agrees with the
+  measured queue-scan miss, the forced owner wake, and the later one-node cycle.
+- Change: The exact initial owner wake now sets a one-shot pending marker before
+  it notifies the selected PPU. At the start of the next lwmutex call, only
+  BLUS30357 PPU `0x0100000c` with the exact FMOD thread name can consume this
+  marker. The call discards a remaining `cpu_flag::signal` before it enters the
+  new wait. It records the lwmutex ID, state transition, and discard result.
+- Race control: The scheduler helper sets the marker only after its state
+  update succeeds and before it notifies the PPU. If the earlier wait already
+  consumed the signal, the next call consumes the marker and changes no state.
+- Scope: Only the exact initial FMOD owner wake passes the marker. Dependency
+  wakes and all other callers use the unchanged default behavior. The generic
+  lwmutex insertion code is unchanged. The exact one-node repair remains as a
+  fail-safe.
+- Verification: The focused Transformers HLE route contract, both thermal
+  contracts, `git diff --check`, and the Android ARM64 RelWithDebInfo build
+  pass. The stripped dev core is 63,250,664 bytes with SHA-256
+  `DBB76F0EC7BB375A4451420EE968BA1FBA13D8AEBCFCDC6E67652D3FC4EF35F5`.
+  It contains the `Thor TWC AUDIO OWNER SIGNAL` marker. Its export and
+  relocation surface passes with 40 defined dynamic symbols, 596 explicit
+  relocations, 392 jump slots, and 44,437 encoded relocation bytes.
+- Device result: Not run. The build and checks did not contact the occupied
+  Thor.
+- Next: After a read-only check proves that the other foreground workload is
+  gone and the device is cool, push this exact core without a launch. Then run
+  one guarded route. Require the owner-signal row, no self-cycle, a normal
+  post-audio handoff, and later HLE progress before any speed credit.

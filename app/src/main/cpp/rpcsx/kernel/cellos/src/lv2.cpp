@@ -1827,7 +1827,8 @@ u32 lv2_obj::complete_deferred_wake(ppu_thread &thread) {
   return pending;
 }
 
-bool lv2_obj::force_owner_wake_after_waiter_sleep(ppu_thread &thread) {
+bool lv2_obj::force_owner_wake_after_waiter_sleep(
+    ppu_thread &thread, std::atomic<bool> *signal_pending) {
   bool changed = false;
 
   {
@@ -1857,6 +1858,10 @@ bool lv2_obj::force_owner_wake_after_waiter_sleep(ppu_thread &thread) {
     changed = result.second;
 
     if (changed) {
+      if (signal_pending) {
+        signal_pending->store(true, std::memory_order_release);
+      }
+
       thread.start_time = 0;
 
       if (std::exchange(thread.ack_suspend, false)) {

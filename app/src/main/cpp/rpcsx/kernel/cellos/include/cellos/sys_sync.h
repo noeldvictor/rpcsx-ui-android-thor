@@ -247,7 +247,8 @@ public:
 
   // Complete a proven mutex-owner wake after its waiter leaves the schedule.
   // The caller must limit this repair to an exact owner and waiter handoff.
-  static bool force_owner_wake_after_waiter_sleep(ppu_thread &thread);
+  static bool force_owner_wake_after_waiter_sleep(
+      ppu_thread &thread, std::atomic<bool> *signal_pending = nullptr);
 
   // Returns true on successful context switch, false otherwise
   static bool yield(cpu_thread &thread);

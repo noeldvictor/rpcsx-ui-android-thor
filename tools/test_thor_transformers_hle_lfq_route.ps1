@@ -451,8 +451,10 @@ if (-not $sysSync.Contains('static u32 complete_deferred_wake(ppu_thread &thread
 }
 
 $requiredOwnerWakeFragments = @(
-    'bool lv2_obj::force_owner_wake_after_waiter_sleep(ppu_thread &thread)',
+    'bool lv2_obj::force_owner_wake_after_waiter_sleep(',
+    'std::atomic<bool> *signal_pending)',
     'if (!g_scheduler_ready)',
+    'signal_pending->store(true, std::memory_order_release);',
     'std::exchange(thread.ack_suspend, false)',
     'state += cpu_flag::signal;',
     'state -= cpu_flag::suspend;',
@@ -465,7 +467,8 @@ foreach ($fragment in $requiredOwnerWakeFragments) {
     }
 }
 
-if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(ppu_thread &thread);')) {
+if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(') -or
+    -not $sysSync.Contains('std::atomic<bool> *signal_pending = nullptr);')) {
     throw "The post-wait owner wake repair declaration is missing."
 }
 
@@ -473,7 +476,13 @@ $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
     'thor_transformers_post_audio_lwmutex_id = 0x95008d00',
-    'lv2_obj::force_owner_wake_after_waiter_sleep(*owner)',
+    'lv2_obj::force_owner_wake_after_waiter_sleep(',
+    '*owner, &g_thor_transformers_audio_owner_signal_pending)',
+    'g_thor_transformers_audio_owner_signal_pending',
+    'thor_transformers_discard_stale_audio_owner_signal(ppu, lwmutex_id);',
+    'g_thor_transformers_audio_owner_signal_pending.exchange(',
+    'ppu.state.test_and_reset(cpu_flag::signal)',
+    '"Thor TWC AUDIO OWNER SIGNAL:',
     '"Thor TWC AUDIO OWNER WAKE:',
     'g_thor_transformers_audio_owner_wake_completed.store(',
     'g_thor_transformers_audio_owner_wake_completed.load(',

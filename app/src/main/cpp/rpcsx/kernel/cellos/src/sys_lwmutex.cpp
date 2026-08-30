@@ -38,6 +38,7 @@ std::atomic<u32> g_thor_transformers_audio_dependency_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_owner_id{0};
 std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
+std::atomic<bool> g_thor_transformers_audio_owner_signal_pending{false};
 
 bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #ifdef __ANDROID__
@@ -202,6 +203,26 @@ bool thor_transformers_audio_wake_fix_enabled() noexcept {
 #else
   return false;
 #endif
+}
+
+void thor_transformers_discard_stale_audio_owner_signal(
+    ppu_thread &ppu, u32 lwmutex_id) {
+  if (!thor_transformers_audio_wake_fix_enabled() ||
+      ppu.id != 0x0100'000c ||
+      static_cast<std::string>(ppu.thread_name) !=
+          "FMOD libAudio event receive thread" ||
+      !g_thor_transformers_audio_owner_signal_pending.exchange(
+          false, std::memory_order_acq_rel)) {
+    return;
+  }
+
+  const u32 state_before = static_cast<u32>((+ppu.state).raw());
+  const bool discarded = ppu.state.test_and_reset(cpu_flag::signal);
+  const u32 state_after = static_cast<u32>((+ppu.state).raw());
+  sys_lwmutex.error(
+      "Thor TWC AUDIO OWNER SIGNAL: ppu=0x%x id=0x%x "
+      "state=0x%x->0x%x discarded=%u",
+      ppu.id, lwmutex_id, state_before, state_after, discarded ? 1u : 0u);
 }
 
 u32 thor_transformers_lv2_lwmutex_caller_lr(const ppu_thread &ppu) noexcept {
@@ -473,7 +494,9 @@ void thor_transformers_complete_audio_owner_wake(
   }
 
   const bool forced_wake =
-      owner ? lv2_obj::force_owner_wake_after_waiter_sleep(*owner) : false;
+      owner ? lv2_obj::force_owner_wake_after_waiter_sleep(
+                  *owner, &g_thor_transformers_audio_owner_signal_pending)
+            : false;
   const u32 state_after =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
 
@@ -607,6 +630,7 @@ error_code _sys_lwmutex_destroy(ppu_thread &ppu, u32 lwmutex_id) {
 }
 
 error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
+  thor_transformers_discard_stale_audio_owner_signal(ppu, lwmutex_id);
   ppu.state += cpu_flag::wait;
 
   sys_lwmutex.trace("_sys_lwmutex_lock(lwmutex_id=0x%x, timeout=0x%llx)",
