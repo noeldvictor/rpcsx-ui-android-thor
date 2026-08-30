@@ -22,7 +22,7 @@ param(
     [ValidateSet("on", "off")]
     [string]$YieldFastPath = "off",
     [ValidateSet("on", "off")]
-    [string]$QueuePublishOrder = "off",
+    [string]$QueuePublishOrder = "on",
     [ValidateSet(1, 2, 4, 8, 16, 32, 64)]
     [int]$YieldRedispatchEvery = 1,
     [ValidateSet("on", "off")]

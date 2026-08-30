@@ -104,7 +104,7 @@ $requiredRenderProbeFragments = @(
     '[string]$SpuReserve = "on"',
     '[string]$StartPaused = "on"',
     '[string]$YieldFastPath = "off"',
-    '[string]$QueuePublishOrder = "off"',
+    '[string]$QueuePublishOrder = "on"',
     '[ValidateSet(1, 2, 4, 8, 16, 32, 64)]',
     '[int]$YieldRedispatchEvery = 1',
     '[string]$PpuCachedRtimeFix = "on"',
@@ -562,6 +562,25 @@ foreach ($fragment in $requiredTransformersSpuReserveFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers SPU reserve is missing: $fragment"
     }
+}
+
+$requiredQueuePublishFragments = @(
+    'static bool thor_queue_publish_order() noexcept',
+    'return Emu.GetTitleID() == "BLUS30357";',
+    'if (thor_queue_reserve_fix() || order_fix)',
+    'std::memcpy(vm::base(queue->buffer.addr() + claimed * entry_size), buffer.get_ptr(), entry_size);',
+    'op.tail = (seen_tail + 1) % spurs_ring_range(depth);',
+    'published = order_fix;'
+)
+
+foreach ($fragment in $requiredQueuePublishFragments) {
+    if (-not $cellSpurs.Contains($fragment)) {
+        throw "The Transformers queue publish route is missing: $fragment"
+    }
+}
+
+if ($cellSpurs.Contains('const u32 guess_slot')) {
+    throw "The queue publish route must not write a guessed slot before ownership."
 }
 
 if ($cellSpurs.Contains('pm.addr() == 0x02390000')) {

@@ -4864,14 +4864,22 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 // Writing the payload first makes the counter mean what the consumer assumes it
 // means: "this slot is complete".
 //
-//   debug.rpcsx.thor.queue_publish_order = 1
+// BLUS30357 uses this corrected route by default. An explicit property value
+// remains available for controlled comparisons:
+//
+//   debug.rpcsx.thor.queue_publish_order = 0   use the old publish order
+//   debug.rpcsx.thor.queue_publish_order = 1   use the corrected publish order
 static bool thor_queue_publish_order() noexcept
 {
 #ifdef __ANDROID__
 	static const bool s_on = []() noexcept
 	{
 		char v[PROP_VALUE_MAX]{};
-		return __system_property_get("debug.rpcsx.thor.queue_publish_order", v) > 0 && v[0] && v[0] != '0';
+		if (__system_property_get("debug.rpcsx.thor.queue_publish_order", v) > 0 && v[0])
+		{
+			return v[0] != '0';
+		}
+		return Emu.GetTitleID() == "BLUS30357";
 	}();
 	return s_on;
 #else
@@ -5232,6 +5240,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 	u32 slot = 0;
 	u32 spins = 0;
 	bool published = false;   // see thor_queue_publish_order
+	const bool order_fix = thor_queue_publish_order();
 
 	while (true)
 	{
@@ -5239,24 +5248,11 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		// full, and take the slot in one reservation on the queue line. A full
 		// ring returns false so the line is left untouched and the consumer keeps
 		// its reservation.
-		if (thor_queue_reserve_fix())
+		if (thor_queue_reserve_fix() || order_fix)
 		{
 			u32 claimed = umax;
 			u32 seen_head = 0;
 			u32 seen_tail = 0;
-
-			// See thor_queue_publish_order. Fill the slot this iteration is ABOUT to
-			// claim before the reservation publishes the new tail. If another producer
-			// takes that slot first the copy is redone below at the slot actually
-			// claimed - wasted work under contention, never a slot visible to the
-			// consumer before its payload has landed.
-			const bool order_fix = thor_queue_publish_order();
-			const u32 guess_slot = order_fix ? (+queue->tail.load() % depth) : 0;
-
-			if (order_fix)
-			{
-				std::memcpy(vm::base(queue->buffer.addr() + guess_slot * entry_size), buffer.get_ptr(), entry_size);
-			}
 
 			vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_queue_op>(queue), [&](spurs_queue_op& op)
 				{
@@ -5269,6 +5265,13 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 					}
 
 					claimed = seen_tail % depth;
+					if (order_fix)
+					{
+						// Hold the queue reservation while the payload lands. No other
+						// producer can own this slot, and the consumer cannot observe the
+						// new tail before the complete payload is available.
+						std::memcpy(vm::base(queue->buffer.addr() + claimed * entry_size), buffer.get_ptr(), entry_size);
+					}
 					op.tail = (seen_tail + 1) % spurs_ring_range(depth);
 					return true;
 				});
@@ -5276,13 +5279,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			if (claimed != umax)
 			{
 				slot = claimed;
-
-				if (order_fix && claimed == guess_slot)
-				{
-					// The guess held: the payload is already in place, published before
-					// the tail that advertises it.
-					published = true;
-				}
+				published = order_fix;
 
 				break;
 			}
@@ -5413,21 +5410,14 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 			return CELL_SPURS_TASK_ERROR_BUSY;
 		}
 
-		// See thor_queue_publish_order: fill the slot BEFORE the CAS makes it
-		// visible. If the CAS loses the race the copy is simply redone at the new
-		// slot next iteration - wasted work under contention, never stale data.
+		// The corrected order always uses the reservation route above. This old
+		// comparison route publishes the counter first for controlled rollback.
 		const u32 pending_slot = thor_queue_monotonic_fix() ? tail % depth : tail;
-
-		if (thor_queue_publish_order())
-		{
-			std::memcpy(vm::base(queue->buffer.addr() + pending_slot * entry_size), buffer.get_ptr(), entry_size);
-		}
 
 		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? (tail + 1) % spurs_ring_range(depth) : (tail + 1) % depth))
 		{
 			// The COUNTER is monotonic; the BUFFER INDEX is the counter mod depth.
 			slot = pending_slot;
-			published = thor_queue_publish_order();
 			break;
 		}
 	}
