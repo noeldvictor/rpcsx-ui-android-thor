@@ -9921,3 +9921,26 @@ rendering progress.
 - Decision: Do not push or launch RPCSX. Do not stop the unrelated foreground
   app. Wait until that app is absent and fixed silicon is below the guarded
   start point. Then use the exact core from experiment 237.
+
+## 239. Apply the 68 C ceiling to the START handoff
+
+- Status: controller-fix, host-pass, device-blocked
+- Device check: RPCSX remained stopped. `com.reblue` PID `4101` remained the
+  top resumed activity. Smart fan mode `4` remained active. The four CPU-
+  subsystem sensors reported 75.1, 72.7, 77.5, and 75.1 C. No device setting
+  changed, and RPCSX did not launch.
+- Safety mismatch: The main slice controller used the 68 C start ceiling, but
+  its 150 ms START handoff still used 70 C. The handoff executes guest code, so
+  it must use the same 68 C ceiling. The separate cold process launch rule
+  remains strictly below 70 C.
+- Change: The START handoff now uses `maxStartC=68`. Both route contracts reject
+  any remaining `maxStartC=70` value. The after-START controller also watches
+  for `stage=REPAIR-SELF-CYCLE` and fails immediately if the fallback repair
+  runs. A valid source-repair proof must continue without that fallback.
+- Verification: The focused Transformers HLE route contract, the device
+  thermal-guard contract, the multi-sensor thermal tests, and
+  `git diff --check` pass.
+- Next: Keep the device idle while the unrelated workload is active. In a later
+  cool check, require fixed silicon below 68 C before every guest execution
+  slice. Push the exact experiment 237 core without a launch, then run one
+  guarded source-repair proof.

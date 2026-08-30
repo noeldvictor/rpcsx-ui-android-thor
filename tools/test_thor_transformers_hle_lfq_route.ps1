@@ -161,11 +161,14 @@ $requiredRenderProbeFragments = @(
     '$afterStartArguments.seconds = $effectiveAfterStartSliceSeconds',
     '[string]$SliceAfterStartHandoffMatch = ''Thread "PPU PhysX thread" created''',
     '[string]$SliceAfterStartDiagnosticMatch = ''stage=PRE-SCHEDULE-SCAN''',
+    '[string]$SliceAfterStartFailureMatch = ''stage=REPAIR-SELF-CYCLE''',
     '[string]$SliceAfterStartDiagnosticStopMatch = ''stage=POST-FETCH''',
     '[double]$SliceAfterHandoffSeconds = 30.0',
     '[ValidateRange(0.0, 300.0)]',
     '$afterStartArguments.stopMatches = @(',
     '$matchedHandoff = [string]$handoffResult.matchedStopMatch',
+    '$failedSourceRepair = (',
+    'throw "The stale-signal repair failed and the waiter self-cycle fallback ran."',
     '$diagnosticHandoff = (',
     '$afterStartArguments.maxSlices = 1',
     '$effectiveAfterStartStopMatch = $SliceAfterStartDiagnosticStopMatch',
@@ -275,7 +278,6 @@ $requiredRenderProbeFragments = @(
     '$afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices',
     '-OutputName "slice-loop-after-start.json"',
     'maxStartC = 68',
-    'maxStartC = 70',
     'resumeTargetC = 68',
     'resumeStableSamples = $SliceResumeStableSamples',
     'resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds',
@@ -294,6 +296,10 @@ $requiredRenderProbeFragments = @(
     '& $adb -s $Serial shell am force-stop net.rpcsx.easy',
     '-Name "thor_clearprops"'
 )
+
+if ($renderProbe.Contains('maxStartC = 70')) {
+    throw "Every Transformers guest execution slice must start below 68 C."
+}
 
 foreach ($fragment in $requiredRenderProbeFragments) {
     if (-not $renderProbe.Contains($fragment)) {

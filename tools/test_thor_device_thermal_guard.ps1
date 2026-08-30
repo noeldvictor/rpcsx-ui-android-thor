@@ -109,7 +109,6 @@ foreach ($fragment in @(
     'stableSamples = 2',
     '-Name "thor_press"',
     'maxStartC = 68',
-    'maxStartC = 70',
     'maxSiliconC = 72',
     '$afterStartArguments.maxSlices = $SliceAfterStartMaxSlices',
     '$afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds',
@@ -123,6 +122,10 @@ foreach ($fragment in @(
     if (-not $route.Contains($fragment)) {
         throw "The Transformers slice route is missing its device guard contract: $fragment"
     }
+}
+
+if ($route.Contains('maxStartC = 70')) {
+    throw "Every Transformers guest execution slice must start below 68 C."
 }
 
 $sliceGuardStart = $route.IndexOf('Start-ThorSliceDeviceGuard -CaptureDir $captureDir')

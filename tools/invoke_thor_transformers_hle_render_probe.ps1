@@ -94,6 +94,7 @@ param(
     [double]$SliceAfterStartMaxHostSeconds = 240,
     [string]$SliceAfterStartHandoffMatch = 'Thread "PPU PhysX thread" created',
     [string]$SliceAfterStartDiagnosticMatch = 'stage=PRE-SCHEDULE-SCAN',
+    [string]$SliceAfterStartFailureMatch = 'stage=REPAIR-SELF-CYCLE',
     [string]$SliceAfterStartDiagnosticStopMatch = 'stage=POST-FETCH',
     [ValidateRange(0.0, 300.0)]
     [double]$SliceAfterHandoffSeconds = 30.0,
@@ -602,7 +603,7 @@ try {
                     ms = 150
                     settleS = 0.5
                     rePause = $true
-                    maxStartC = 70
+                    maxStartC = 68
                     maxSiliconC = 72
                 } `
                 -CaptureDir $captureDir `
@@ -629,6 +630,7 @@ try {
                 $afterStartArguments.Remove("stopMatch")
                 $afterStartArguments.stopMatches = @(
                     @(
+                        $SliceAfterStartFailureMatch,
                         $SliceAfterStartDiagnosticMatch,
                         $SliceAfterStartHandoffMatch
                     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
@@ -648,6 +650,14 @@ try {
                 }
 
                 $matchedHandoff = [string]$handoffResult.matchedStopMatch
+                $failedSourceRepair = (
+                    -not [string]::IsNullOrWhiteSpace($SliceAfterStartFailureMatch) -and
+                    $matchedHandoff -ceq $SliceAfterStartFailureMatch
+                )
+                if ($failedSourceRepair) {
+                    throw "The stale-signal repair failed and the waiter self-cycle fallback ran."
+                }
+
                 $diagnosticHandoff = (
                     -not [string]::IsNullOrWhiteSpace($SliceAfterStartDiagnosticMatch) -and
                     $matchedHandoff -ceq $SliceAfterStartDiagnosticMatch
