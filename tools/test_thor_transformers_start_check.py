@@ -46,6 +46,19 @@ class TransformersStartCheckTests(unittest.TestCase):
 
         self.assertFalse(self.score_image(draw)["startReady"])
 
+    def test_bright_noise_band_is_not_ready(self):
+        def draw(image):
+            pixels = image.load()
+            for y in range(562, 1015):
+                for x in range(154, 1766):
+                    value = 255 if x % 2 else 0
+                    pixels[x, y] = (value, value, value)
+
+        result = self.score_image(draw)
+        self.assertGreater(result["neutralBrightFraction"], 0.1)
+        self.assertGreater(result["highFrequencyFraction"], 0.2)
+        self.assertFalse(result["startReady"])
+
 
 if __name__ == "__main__":
     unittest.main()

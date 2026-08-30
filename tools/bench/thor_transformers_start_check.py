@@ -19,6 +19,8 @@ import sys
 
 
 MIN_NEUTRAL_BRIGHT_FRACTION = 0.10
+MAX_HIGH_FREQUENCY_FRACTION = 0.20
+HIGH_FREQUENCY_DELTA = 96
 REGION_LEFT = 0.08
 REGION_TOP = 0.52
 REGION_RIGHT = 0.92
@@ -49,13 +51,44 @@ def score(path):
         if max(red, green, blue) >= 190 and min(red, green, blue) >= 150
     )
     fraction = float(neutral_bright) / len(pixels) if pixels else 0.0
+
+    # A broken RSX frame can contain a dense black-and-white noise band. Its
+    # neutral-bright fraction is larger than the real legal text, so the first
+    # gate alone can accept corruption. Count large changes between adjacent
+    # pixels and reject that high-frequency pattern.
+    region_width, region_height = region.size
+    luminance = list(region.convert("L").getdata())
+    high_frequency = 0
+    adjacent_pairs = 0
+    for row in range(region_height):
+        offset = row * region_width
+        for column in range(1, region_width):
+            adjacent_pairs += 1
+            if abs(luminance[offset + column] - luminance[offset + column - 1]) >= HIGH_FREQUENCY_DELTA:
+                high_frequency += 1
+    for row in range(1, region_height):
+        offset = row * region_width
+        previous = offset - region_width
+        for column in range(region_width):
+            adjacent_pairs += 1
+            if abs(luminance[offset + column] - luminance[previous + column]) >= HIGH_FREQUENCY_DELTA:
+                high_frequency += 1
+    high_frequency_fraction = (
+        float(high_frequency) / adjacent_pairs if adjacent_pairs else 0.0
+    )
+    start_ready = (
+        fraction >= MIN_NEUTRAL_BRIGHT_FRACTION
+        and high_frequency_fraction <= MAX_HIGH_FREQUENCY_FRACTION
+    )
     return {
         "path": path,
         "width": width,
         "height": height,
         "neutralBrightFraction": round(fraction, 6),
         "minimumFraction": MIN_NEUTRAL_BRIGHT_FRACTION,
-        "startReady": fraction >= MIN_NEUTRAL_BRIGHT_FRACTION,
+        "highFrequencyFraction": round(high_frequency_fraction, 6),
+        "maximumHighFrequencyFraction": MAX_HIGH_FREQUENCY_FRACTION,
+        "startReady": start_ready,
     }
 
 
