@@ -363,7 +363,15 @@ def held_process_pid():
 def stop_process_for_slice(p):
     """Stop every app thread while RPCSX is still in startup compilation."""
     global _process_hold_pid
+    current = pid()
+    if current != p:
+        return {"ok": False, "pid": p, "currentPid": current or None,
+                "error": "the target process is no longer live"}
     sh(f"run-as {PKG} kill -STOP {p}")
+    current = pid()
+    if current != p:
+        return {"ok": False, "pid": p, "currentPid": current or None,
+                "error": "the target process exited during the hold"}
     state = _process_state(p)
     if state not in ("T", "t"):
         return {"ok": False, "pid": p, "processState": state}
@@ -469,7 +477,17 @@ def t_slice(a):
                 deadline_pause["state"] = EMU_STATE_STARTING
                 deadline_pause["settledAtS"] = time.monotonic() - started
                 return
-        deadline_pause["result"] = api("/pause", "POST")
+        # A saturated guest can accept the pause but fail to return its HTTP
+        # response. Bound that request, then hold the same live PID. This keeps
+        # one slow control request from extending a short guest slice.
+        deadline_pause["result"] = api(
+            "/pause", "POST", timeout=min(pause_timeout, 1.0))
+        if (isinstance(deadline_pause["result"], dict) and
+                deadline_pause["result"].get("error")):
+            deadline_pause["processHold"] = stop_process_for_slice(p)
+            if deadline_pause["processHold"].get("ok"):
+                deadline_pause["state"] = None
+                deadline_pause["settledAtS"] = time.monotonic() - started
 
     deadline_timer = threading.Timer(duration, pause_at_deadline)
     deadline_timer.daemon = True
@@ -535,7 +553,7 @@ def t_slice(a):
                 "processHold": process_hold,
                 "paused": True, "holdMode": "process",
                 "initialState": initial_state,
-                "finalState": EMU_STATE_STARTING,
+                "finalState": deadline_pause.get("state"),
                 "startupHandoff": startup_handoff}
 
     # Check liveness only after the independent deadline pause. A pid read can

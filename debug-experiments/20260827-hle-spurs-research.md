@@ -7216,3 +7216,71 @@ rendering progress.
   return, and stop after eight additional slices. Use the resulting PPU state
   and image to select the next HLE repair. Require moving 3D output and a
   comparable sustained 30 FPS measurement before a full-HLE or speed claim.
+
+## 147. The control pause times out during startup
+
+- Status: route-tooling, failed, not-comparable
+- Scope: controller, loading, PPU-census, thermal-safety
+- Hypothesis: Eight slices after the repaired FMOD return will identify the
+  next persistent loading boundary.
+- Changed files/settings: The route used the exact experiment 143 APK. Its
+  installed SHA-256 was
+  `CB0806B23C9101D7A591A284888C5B9911655855630DAA437EED15D5974A8FAA`.
+  The route enabled the PPU-only census and armed on
+  `Thor FMOD EFWAIT RETURN #0`. It requested eight later half-second slices.
+- Thor result: The one-sample cold-start gate passed at 45.3 C fixed silicon.
+  The route completed 39 slices. It did not reach the FMOD return or arm the
+  later window. The last requested half-second slice took 50.688 host seconds.
+  Its pause request started at 0.500 seconds, but the local control request
+  timed out. The controller could not prove a held state and used its verified
+  package stop. This is a controller failure, not an HLE result.
+- Guest evidence: The final PPU sample put `main_thread` at `0x01016e3c`,
+  `RenderingThread` at `0x009e4ba4`, and the pool and I/O threads at
+  `0x00a02218`. These are pre-FMOD startup states. They do not prove a new HLE
+  boundary.
+- Visual correctness: Not measured. The route did not reach its marker, so it
+  did not save a boundary image.
+- FPS/frame-time: No performance credit. The diagnostic interval reported 85
+  frames in 93.26 seconds, or 0.91 FPS. Paused startup slices are not a
+  gameplay measurement.
+- Thermal result: The independent guard recorded 629 samples. Fixed silicon
+  peaked at 68.2 C, and CPU junction peaked at 83.9 C. It recorded four early
+  holds and no hard stop.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Property cleanup cleared all 60 listed properties and found
+  zero remaining `debug.rpcsx.thor.*` values. The final fixed-silicon sample
+  was 52.2 C.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-202142-thor-input-custom`.
+- Decision: Keep the HLE repair and the bounded post-FMOD route. Do not use
+  this run to select an emulator repair.
+- Next: Make a timed-out pause request use a verified process hold. Do not run
+  the Thor again in this work round.
+
+## 148. Fall back to a verified process hold
+
+- Status: route-tooling, host-pass, not-comparable
+- Scope: controller, pause, process-liveness, thermal-safety
+- Hypothesis: A bounded control timeout and a verified process hold will keep
+  a slow pause response from ending the next loading route.
+- Changed files/settings: A normal slice now gives its deadline pause request
+  at most one second. If that request fails, the controller sends `SIGSTOP` to
+  the same live PID and verifies the stopped process state. The process-hold
+  helper checks the current PID before and after the signal. It refuses a
+  stale or replaced PID.
+- Rollback: Revert this controller change. The APK and native core are
+  unchanged.
+- Windows result: Not run. This is Android route control.
+- Thor result: Not run. Experiment 147 used the one allowed launch for this
+  independently cool work round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The guarded controller test proves that a timed-out pause
+  request completes with `holdMode=process`. It also proves that a stale PID
+  receives no signal. Python bytecode compilation and `git diff --check` pass.
+- Decision: Keep the process-hold fallback. It removes the 50-second control
+  failure that ended experiment 147.
+- Next: In one later independently cool route, use the PPU-only census. Stop at
+  late-load completion sample 2, or arm on the proved FMOD return and stop
+  after eight more slices. Use the final PPU state and image to select the next
+  HLE repair.

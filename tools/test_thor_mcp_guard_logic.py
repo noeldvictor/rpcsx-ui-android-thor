@@ -106,6 +106,17 @@ SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 
 original_sh = SERVER.sh
+stale_hold_commands = []
+SERVER.pid = lambda: "456"
+SERVER.sh = lambda command, timeout=120: stale_hold_commands.append(command) or ""
+stale_hold = SERVER.stop_process_for_slice("123")
+assert stale_hold["ok"] is False and stale_hold["currentPid"] == "456", (
+    "The process hold accepted a stale target PID."
+)
+assert stale_hold_commands == [], (
+    "The stale process hold sent a signal to the replacement process."
+)
+
 SERVER._process_hold_pid = "123"
 SERVER.pid = lambda: "123"
 process_states = iter(["T", "T"])
@@ -195,6 +206,42 @@ assert result["completed"] is True, "The raced pause did not recover."
 assert calls.count(("/pause", "POST")) == 2, "The raced pause was not retried."
 assert ("/device", "GET") not in calls, "The compact slice fetched device state."
 assert ("/diag", "GET") not in calls, "The compact slice fetched diagnostics."
+
+clock.now = 0.0
+calls = prepare_paused_guest()
+use_temperatures([42.0, 45.0])
+fallback_holds = []
+
+
+def timeout_pause_api(path, method="GET", timeout=8):
+    calls.append((path, method, timeout))
+    if path == "/pause":
+        return {"error": "control API unreachable: timed out"}
+    return {"ok": True}
+
+
+def hold_after_pause_timeout(process_id):
+    fallback_holds.append(process_id)
+    SERVER._process_hold_pid = process_id
+    return {"ok": True, "pid": process_id, "processState": "T"}
+
+
+SERVER.api = timeout_pause_api
+SERVER.stop_process_for_slice = hold_after_pause_timeout
+result = SERVER.t_slice({"seconds": 0.1, "includeState": False})
+assert result["completed"] is True and result["paused"] is True, (
+    "The timed-out pause request did not complete in a held state."
+)
+assert result["holdMode"] == "process" and fallback_holds == ["123"], (
+    "The timed-out pause request did not use the live process fallback."
+)
+assert result["pause"]["error"].endswith("timed out"), (
+    "The process fallback lost the pause-timeout evidence."
+)
+assert ("/pause", "POST", 1.0) in calls, (
+    "The deadline pause request did not use the bounded timeout."
+)
+SERVER._process_hold_pid = None
 
 clock.now = 0.0
 calls = prepare_paused_guest()
