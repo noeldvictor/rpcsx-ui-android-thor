@@ -9564,3 +9564,24 @@ rendering progress.
 - Next: In a new cool round, stop first on `Thread "PPU PhysX thread"
   created`. Then require either the queue `ready after` row or the queue
   `timed out after` row from the uninterrupted 30-second window.
+
+## 224. Current RPCS3 has no SPURS queue implementation to import
+
+- Status: online-source-confirmed, no-port-candidate
+- Source result: Current RPCS3 master lists `cellSpursQueuePopBody` and the
+  other SPURS queue functions only as commented declarations. It does not
+  register `cellSpursQueuePopBody` as an HLE function. Therefore, there is no
+  current upstream queue implementation to import into this branch.
+- ARM context: RPCS3 issue 18769 reports that some ARM systems can advance
+  past cold SPU compilation hangs after repeated boots save more cache data.
+  This result supports persistent cache use. It does not prove the cause of
+  the Transformers queue timeout.
+- Related context: RPCS3 issue 18828 reports nondeterministic SPURS and RSX
+  stalls on AArch64 with Adreno. Its SPURS fault is an event disconnect. It is
+  not the same as the Transformers PhysX queue result.
+- Sources:
+  - https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/Cell/Modules/cellSpurs.cpp
+  - https://github.com/RPCS3/rpcs3/issues/18769
+  - https://github.com/RPCS3/rpcs3/issues/18828
+- Decision: Keep the SPU cache and run one valid continuous queue handshake.
+  Do not copy an unrelated upstream workaround or extend the guest timeout.
