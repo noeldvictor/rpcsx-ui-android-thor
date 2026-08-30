@@ -88,6 +88,13 @@ param(
     [int]$SliceAfterStartMaxSlices = 32,
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
+    [string]$SliceAfterStartHandoffMatch = "",
+    [ValidateRange(0.0, 15.0)]
+    [double]$SliceAfterHandoffSeconds = 0.0,
+    [ValidateRange(1, 256)]
+    [int]$SliceAfterHandoffMaxSlices = 32,
+    [ValidateRange(30, 600)]
+    [double]$SliceAfterHandoffMaxHostSeconds = 240,
     [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:",
     [ValidateRange(0, 64)]
     [int]$SliceAfterStartPostMarkerSlices = 0
@@ -108,6 +115,11 @@ $effectiveAfterStartSliceSeconds = if ($SliceAfterStartSeconds -gt 0.0) {
     $SliceAfterStartSeconds
 } else {
     $SliceSeconds
+}
+$effectiveAfterHandoffSliceSeconds = if ($SliceAfterHandoffSeconds -gt 0.0) {
+    $SliceAfterHandoffSeconds
+} else {
+    $effectiveAfterStartSliceSeconds
 }
 
 if ($SliceLoop -and $StartPaused -ne "on") {
@@ -469,6 +481,10 @@ try {
             "- After-START active slice seconds: $effectiveAfterStartSliceSeconds",
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
+            "- After-START handoff marker: $SliceAfterStartHandoffMatch",
+            "- After-handoff active slice seconds: $effectiveAfterHandoffSliceSeconds",
+            "- After-handoff maximum slices: $SliceAfterHandoffMaxSlices",
+            "- After-handoff maximum host seconds: $SliceAfterHandoffMaxHostSeconds",
             "- After-START marker: $SliceAfterStartStopMatch",
             "- After-START post-marker slices: $SliceAfterStartPostMarkerSlices"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
@@ -596,6 +612,28 @@ try {
             $afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds
             $afterStartArguments.Remove("armMatch")
             $afterStartArguments.Remove("postArmSlices")
+
+            if (-not [string]::IsNullOrWhiteSpace($SliceAfterStartHandoffMatch)) {
+                $afterStartArguments.stopMatch = $SliceAfterStartHandoffMatch
+                $handoffControllerTimeout = [int][Math]::Ceiling($SliceAfterStartMaxHostSeconds + 150)
+                $handoffOutput = Invoke-ThorRenderProbeController `
+                    -Name "thor_slice_loop" `
+                    -Arguments $afterStartArguments `
+                    -CaptureDir $captureDir `
+                    -OutputName "slice-loop-after-start-handoff.json" `
+                    -TimeoutSeconds $handoffControllerTimeout
+                $handoffResult = ($handoffOutput -join [Environment]::NewLine) | ConvertFrom-Json
+                if ($handoffResult.error -or $handoffResult.refused -or
+                        $handoffResult.thermalStop -or $handoffResult.fatal -or
+                        -not $handoffResult.markerReached -or -not $handoffResult.paused) {
+                    throw "The after-START handoff loop did not reach its requested paused marker."
+                }
+
+                $afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds
+                $afterStartArguments.maxSlices = $SliceAfterHandoffMaxSlices
+                $afterStartArguments.maxHostS = $SliceAfterHandoffMaxHostSeconds
+            }
+
             if ($SliceAfterStartPostMarkerSlices -gt 0) {
                 $afterStartArguments.stopMatch = "__THOR_TRANSFORMERS_AFTER_START_UNREACHED__"
                 $afterStartArguments.armMatch = $SliceAfterStartStopMatch
@@ -604,7 +642,7 @@ try {
                 $afterStartArguments.stopMatch = $SliceAfterStartStopMatch
             }
 
-            $afterStartControllerTimeout = [int][Math]::Ceiling($SliceAfterStartMaxHostSeconds + 150)
+            $afterStartControllerTimeout = [int][Math]::Ceiling($afterStartArguments.maxHostS + 150)
             $afterStartOutput = Invoke-ThorRenderProbeController `
                 -Name "thor_slice_loop" `
                 -Arguments $afterStartArguments `
