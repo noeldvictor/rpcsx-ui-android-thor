@@ -27,7 +27,7 @@ foreach ($required in @(
     'def continue_process_for_slice(p):',
     'run-as {PKG} kill -CONT {p}',
     'return emulation_state() in (EMU_STATE_PAUSED, EMU_STATE_READY)',
-    'duration = max(0.1, min(float(a.get("seconds", 1.5)), 5.0))',
+    'duration = max(0.1, min(float(a.get("seconds", 1.5)), 15.0))',
     'interval = min(0.25, duration - elapsed)',
     '"the bounded slice could not restore a held state"',
     'startup_handoff = process_held or initial_state == EMU_STATE_READY',

@@ -180,6 +180,7 @@ $requiredRenderProbeFragments = @(
     '[int]$SpuCachePreloadLimit = 64',
     '[string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop"',
     '[switch]$SliceLoop',
+    '[ValidateRange(0.1, 15.0)]',
     '[double]$SliceSeconds = 1.0',
     '[int]$MaxSlices = 64',
     '[double]$MaxSliceHostSeconds = 240',

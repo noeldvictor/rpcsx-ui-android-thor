@@ -63,7 +63,7 @@ param(
     [int]$SpuCachePreloadLimit = 64,
     [string]$Macro = "wait:8000;shot:render-boundary;wait:4000;shot:active-draw-boundary;stop",
     [switch]$SliceLoop,
-    [ValidateRange(0.1, 5.0)]
+    [ValidateRange(0.1, 15.0)]
     [double]$SliceSeconds = 1.0,
     [ValidateRange(1, 256)]
     [int]$MaxSlices = 64,

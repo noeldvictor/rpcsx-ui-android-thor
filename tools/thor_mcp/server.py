@@ -484,7 +484,7 @@ def t_slice(a):
         return {"refused": True,
                 "reason": "the emulator must be paused before a bounded slice"}
 
-    duration = max(0.1, min(float(a.get("seconds", 1.5)), 5.0))
+    duration = max(0.1, min(float(a.get("seconds", 1.5)), 15.0))
     start_ceiling = float(a.get("maxStartC", 70))
     hard_limit = float(a.get("maxSiliconC", 72))
     pause_timeout = max(1.0, min(float(a.get("pauseTimeoutS", 8.0)), 30.0))
@@ -754,7 +754,7 @@ def t_slice_loop(a):
                 "processHeld": process_held,
                 "allowStarting": allow_starting}
 
-    duration = max(0.1, min(float(a.get("seconds", 1.0)), 5.0))
+    duration = max(0.1, min(float(a.get("seconds", 1.0)), 15.0))
     max_slices = max(1, min(int(a.get("maxSlices", 64)), 256))
     max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 600.0))
     start_ceiling = float(a.get("maxStartC", 70))
@@ -1175,7 +1175,7 @@ TOOLS = [
     ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
-    ("thor_slice", "Run a paused guest for 0.1 to 5 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
+    ("thor_slice", "Run a paused guest for 0.1 to 15 seconds, monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
     ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool to or below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "armMatch": {"type": "string"}, "postArmSlices": {"type": "integer"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays at or below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
