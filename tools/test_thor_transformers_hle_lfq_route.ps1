@@ -465,14 +465,7 @@ $requiredAudioOwnerWakeFragments = @(
     'dependency_owner_id != owner_id',
     'phase=queue-scan',
     'phase=queue-scan-miss',
-    '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:',
-    'g_thor_transformers_audio_reserved_replay_stack_pointer.store(',
-    'g_thor_transformers_audio_reserved_replay_lwmutex_id.store(',
-    'thor_transformers_complete_reserved_audio_replay(',
-    'mutex.control->vars.owner.load() != lwmutex_reserved',
-    '.compare_exchange_strong(armed_lwmutex_id, 0,',
-    '"Thor TWC AUDIO RESERVED HANDOFF REPLAY:',
-    '"LOCK-RESERVED-REPLAY"'
+    '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:'
 )
 
 foreach ($fragment in $requiredAudioOwnerWakeFragments) {

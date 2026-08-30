@@ -9381,3 +9381,37 @@ rendering progress.
   warm control with the exact cached objects. If that control replies, repair
   cold compilation at this exact task boundary. If it does not reply, inspect
   the reservation path next.
+
+## 214. The audio reserved owner is a valid baton pass
+
+- Status: device-confirmed correction, not-gameplay
+- Identity: Exact APK
+  `81C711BD3ED6ABB69ABABBAAF294509DB6326729D5D3A4407FBE8CD3B8E0168C`
+  ran in `20260830-133028-thor-input-custom` after strict gate
+  `20260830-133009-thor-input-strict-cool-gate`.
+- Trace result: The first exact FMOD wake occurred at emulator time 7:04.935.
+  The owner changed from the FMOD receiver to `lwmutex_reserved`. The main
+  thread received the mutex. The main thread then gave the mutex to the FMOD
+  receiver, and the receiver gave it back to the main thread. All handoffs
+  completed in about 12 milliseconds.
+- Correction: `lwmutex_reserved` is not a stuck owner in this route. It is the
+  normal intermediate value for the owner handoff. The reserved-owner replay
+  did not run because the second main-thread call used a different stack
+  pointer. Remove this unproved replay.
+
+## 215. The later HLE blocker is a main-thread busy loop
+
+- Status: device-confirmed blocker, not-gameplay
+- Run result: After the valid audio handoff, SPU compilation continued for
+  about 10 seconds. Frame output decreased from 4.60 FPS to 0 FPS. No PhysX
+  task or queue marker appeared during the next 300 uninterrupted seconds.
+- Thread result: The final host snapshot showed the main PPU at 82.9 percent
+  of one core. RSX and the six SPURS workers were mainly idle. The control API
+  reported 0 FPS, 0.9 busy cores, no RSX FIFO idle polls, and no SPU self-loop
+  parks. This result identifies a guest PPU busy loop before PhysX task
+  creation.
+- Thermal result: Fixed silicon peaked at 46.6 C. The clean stop found no PID
+  and no RPCSX row in top.
+- Decision: Enable the existing low-rate PPU PC and stack census. Use a short
+  post-audio window to identify the exact guest loop. Do not change PhysX or
+  RSX code until this PC is known.

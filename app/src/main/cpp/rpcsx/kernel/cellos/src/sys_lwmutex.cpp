@@ -32,8 +32,6 @@ std::atomic<u32> g_thor_transformers_audio_dependency_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_owner_id{0};
 std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
-std::atomic<u32> g_thor_transformers_audio_reserved_replay_lwmutex_id{0};
-std::atomic<u32> g_thor_transformers_audio_reserved_replay_stack_pointer{0};
 
 bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #ifdef __ANDROID__
@@ -308,10 +306,6 @@ void thor_transformers_complete_audio_owner_wake(
   if (forced_wake) {
     g_thor_transformers_audio_owner_wake_completed.store(
         true, std::memory_order_relaxed);
-    g_thor_transformers_audio_reserved_replay_stack_pointer.store(
-        static_cast<u32>(waiting_ppu.gpr[1]), std::memory_order_relaxed);
-    g_thor_transformers_audio_reserved_replay_lwmutex_id.store(
-        lwmutex_id, std::memory_order_release);
   }
 
   sys_lwmutex.error(
@@ -320,38 +314,6 @@ void thor_transformers_complete_audio_owner_wake(
       waiting_ppu.id, owner_id, lwmutex_id, state_before, state_after,
       forced_wake ? 1u : 0u);
   retry_dependency_wake("initial");
-}
-
-bool thor_transformers_complete_reserved_audio_replay(
-    const ppu_thread &ppu, u32 lwmutex_id, const lv2_lwmutex &mutex) {
-  if (!thor_transformers_audio_wake_fix_enabled() ||
-      ppu.id != 0x0100'0000 ||
-      static_cast<u32>(ppu.lr) != thor_transformers_main_lwmutex_lock_lr ||
-      thor_transformers_lv2_lwmutex_caller_lr(ppu) !=
-          thor_transformers_main_lwmutex_caller ||
-      static_cast<u32>(ppu.gpr[1]) !=
-          g_thor_transformers_audio_reserved_replay_stack_pointer.load(
-              std::memory_order_relaxed)) {
-    return false;
-  }
-
-  u32 armed_lwmutex_id =
-      g_thor_transformers_audio_reserved_replay_lwmutex_id.load(
-          std::memory_order_acquire);
-  if (armed_lwmutex_id != lwmutex_id || !mutex.control ||
-      mutex.control->vars.owner.load() != lwmutex_reserved ||
-      !g_thor_transformers_audio_reserved_replay_lwmutex_id
-           .compare_exchange_strong(armed_lwmutex_id, 0,
-                                    std::memory_order_acq_rel)) {
-    return false;
-  }
-
-  sys_lwmutex.error(
-      "Thor TWC AUDIO RESERVED HANDOFF REPLAY: ppu=0x%x id=0x%x "
-      "control=0x%x owner=0x%x sp=0x%llx",
-      ppu.id, lwmutex_id, mutex.control.addr(),
-      static_cast<u32>(mutex.control->vars.owner.load()), ppu.gpr[1]);
-  return true;
 }
 } // namespace
 
@@ -478,13 +440,6 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
         thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                             "LOCK-ENTER", timeout);
-        if (thor_transformers_complete_reserved_audio_replay(
-                ppu, lwmutex_id, mutex)) {
-          thor_transformers_lv2_lwmutex_trace(
-              ppu, lwmutex_id, mutex, "LOCK-RESERVED-REPLAY", CELL_OK);
-          return true;
-        }
-
         if (s32 signal = mutex.lv2_control
                              .fetch_op([](lv2_lwmutex::control_data_t &data) {
                                if (data.signaled) {
