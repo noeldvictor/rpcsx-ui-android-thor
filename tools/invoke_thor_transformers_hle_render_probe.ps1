@@ -78,7 +78,13 @@ param(
     [string]$SliceStopMatch = "Thor LATE LOAD IO COMPLETION: sample=2",
     [string]$SliceArmMatch = "",
     [ValidateRange(0, 64)]
-    [int]$SlicePostArmSlices = 0
+    [int]$SlicePostArmSlices = 0,
+    [switch]$SlicePressStartAfterFirstLoop,
+    [ValidateRange(1, 256)]
+    [int]$SliceAfterStartMaxSlices = 32,
+    [ValidateRange(30, 600)]
+    [double]$SliceAfterStartMaxHostSeconds = 240,
+    [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:"
 )
 
 $ErrorActionPreference = "Stop"
@@ -109,6 +115,10 @@ if ($SliceLoop -and $SliceStopMatch.StartsWith("Thor LATE LOAD") -and
 
 if ($SliceLoop -and $SlicePostArmSlices -gt 0 -and [string]::IsNullOrWhiteSpace($SliceArmMatch)) {
     throw "Post-arm slices require -SliceArmMatch."
+}
+
+if ($SlicePressStartAfterFirstLoop -and -not $SliceLoop) {
+    throw "The slice START handoff requires -SliceLoop."
 }
 
 function Set-ThorRenderProbeProperty {
@@ -425,7 +435,11 @@ try {
             "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch",
             "- Arm match: $SliceArmMatch",
-            "- Post-arm slices: $SlicePostArmSlices"
+            "- Post-arm slices: $SlicePostArmSlices",
+            "- Press START after the first loop: $SlicePressStartAfterFirstLoop",
+            "- After-START maximum slices: $SliceAfterStartMaxSlices",
+            "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
+            "- After-START stop match: $SliceAfterStartStopMatch"
         ) | Add-Content -LiteralPath (Join-Path $captureDir "README.md") -Encoding UTF8
 
         $sliceArguments = @{
@@ -454,6 +468,69 @@ try {
             -OutputName "slice-loop.json" `
             -TimeoutSeconds $controllerTimeout
         $sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json
+
+        if ($SlicePressStartAfterFirstLoop) {
+            if ($sliceResult.error -or $sliceResult.refused -or
+                    $sliceResult.thermalStop -or $sliceResult.fatal -or
+                    -not $sliceResult.paused -or
+                    $sliceResult.holdMode -ne "emulator") {
+                throw "The first slice loop did not end at an emulator-controlled pause."
+            }
+
+            $preStartScreenshotArguments = @{
+                path = (Join-Path $captureDir "slice-loop-before-start.png")
+            }
+            $null = Invoke-ThorRenderProbeController `
+                -Name "thor_screenshot" `
+                -Arguments $preStartScreenshotArguments `
+                -CaptureDir $captureDir `
+                -OutputName "slice-loop-before-start-screenshot.json" `
+                -TimeoutSeconds 60
+
+            $pressOutput = Invoke-ThorRenderProbeController `
+                -Name "thor_press" `
+                -Arguments @{
+                    buttons = "START"
+                    ms = 150
+                    settleS = 0.5
+                    rePause = $true
+                    maxStartC = 70
+                    maxSiliconC = 72
+                } `
+                -CaptureDir $captureDir `
+                -OutputName "slice-loop-start-press.json" `
+                -TimeoutSeconds 60
+            $pressResult = ($pressOutput -join [Environment]::NewLine) | ConvertFrom-Json
+            if ($pressResult.error -or $pressResult.thermalStop -or
+                    $pressResult.refused -or
+                    -not $pressResult.wasPaused -or -not $pressResult.rePaused) {
+                throw "The cooled START handoff did not complete at a paused thermal-safe boundary."
+            }
+
+            $afterStartArguments = @{}
+            foreach ($entry in $sliceArguments.GetEnumerator()) {
+                $afterStartArguments[$entry.Key] = $entry.Value
+            }
+            $afterStartArguments.maxSlices = $SliceAfterStartMaxSlices
+            $afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds
+            $afterStartArguments.stopMatch = $SliceAfterStartStopMatch
+            $afterStartArguments.Remove("armMatch")
+            $afterStartArguments.Remove("postArmSlices")
+
+            $afterStartControllerTimeout = [int][Math]::Ceiling($SliceAfterStartMaxHostSeconds + 150)
+            $afterStartOutput = Invoke-ThorRenderProbeController `
+                -Name "thor_slice_loop" `
+                -Arguments $afterStartArguments `
+                -CaptureDir $captureDir `
+                -OutputName "slice-loop-after-start.json" `
+                -TimeoutSeconds $afterStartControllerTimeout
+            $sliceResult = ($afterStartOutput -join [Environment]::NewLine) | ConvertFrom-Json
+            if ($sliceResult.error -or $sliceResult.refused -or
+                    $sliceResult.thermalStop -or $sliceResult.fatal -or
+                    -not $sliceResult.markerReached -or -not $sliceResult.paused) {
+                throw "The after-START slice loop did not reach its requested paused marker."
+            }
+        }
 
         $pidEvidence = Invoke-ThorAdbText $adb $captureDir "slice-loop-pid.txt" @("shell", "pidof net.rpcsx.easy") -AllowFailure
         $pidRows = @(
