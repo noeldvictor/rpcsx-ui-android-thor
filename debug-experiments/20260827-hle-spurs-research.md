@@ -8171,3 +8171,51 @@ rendering progress.
 - Next: In a new independently cool round, reuse the exact experiment 167 APK.
   Arm on the first owner-candidate row and keep the eight-slice post-marker
   limit.
+
+## 170. The fixed-silicon floor remains above the old resume target
+
+- Status: controller-counterproof, android-no-result, not-comparable
+- Scope: paused slice controller, thermal safety, HLE candidate trace
+- Cold gate: A new one-sample gate passed at 61.0 C, which is below the 70 C
+  launch limit. The exact experiment 167 APK was installed with no launch and
+  no remaining PID.
+- Route result: The inclusive comparison worked, but fixed silicon stayed at
+  61.0 or 62.0 C while the package was held. The route completed one
+  0.703-second slice, then reached the 120-second cooldown timeout. It did not
+  reach the first owner wake or candidate marker.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup cleared all 62 properties and found zero remaining
+  `debug.rpcsx.thor.*` values. The final fixed-silicon sample was 62.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-235810-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-235819-transformers-next-owner-candidate-retry-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-235834-thor-input-custom`.
+- Decision: The old 60 C inter-slice target cannot work when the fixed SoC
+  sensor has a stable 61-62 C floor. Do not treat the result as HLE evidence.
+
+## 171. Raise the Transformers slice resume target to 65 C
+
+- Status: controller-fix, host-pass, unmeasured
+- Scope: Transformers HLE route, thermal documentation, route contract
+- Change: The Transformers paused-slice route now requires three consecutive
+  fixed-silicon readings at or below 65 C before a later slice. The device
+  watchdog still holds the package at 66 C. The hard stop remains 72 C.
+- Safety: A later slice lasts 0.5 seconds. The 65 C resume target leaves one
+  degree before the independent hold and seven degrees before the hard stop.
+  The device watchdog continues to sample every 0.25 seconds. The cold-start
+  launch rule remains strictly below 70 C.
+- Verification: The focused HLE route, guarded-slice logic, and fixed-silicon
+  contracts pass. `git diff --check` passes.
+- Thor result: Not run. Experiment 170 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the 65 C target for the bounded Transformers route. It is
+  below every runtime stop and above the measured idle sensor floor.
+- Next: In a new independently cool round, reuse the exact experiment 167 APK
+  and stop on the first owner-candidate row plus eight later slices.
