@@ -92,9 +92,9 @@ param(
     [int]$SliceAfterStartMaxSlices = 32,
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
-    [string]$SliceAfterStartHandoffMatch = "",
+    [string]$SliceAfterStartHandoffMatch = 'Thread "PPU PhysX thread" created',
     [ValidateRange(0.0, 300.0)]
-    [double]$SliceAfterHandoffSeconds = 0.0,
+    [double]$SliceAfterHandoffSeconds = 30.0,
     [ValidateRange(1, 256)]
     [int]$SliceAfterHandoffMaxSlices = 32,
     [ValidateRange(30, 600)]

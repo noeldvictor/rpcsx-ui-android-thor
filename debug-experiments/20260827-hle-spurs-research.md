@@ -9514,3 +9514,53 @@ rendering progress.
 - Decision: Do not suppress the access violation. Use the existing bounded
   queue payload and work-item diagnostic to identify the packet that produces
   the unmapped page sentinel.
+
+## 222. The paused route makes the PhysX timeout invalid
+
+- Status: device-confirmed route error, HLE progress, not-gameplay
+- Identity: Capture `20260830-173509-thor-input-custom` used commit
+  `f43637c4d` and dev-core SHA-256
+  `16AED62AD86F1060EC1629E696C6474187DF0966D3D5FCA94B9739DD53CAB09F`.
+- Unlock result: The exact `0x95008d00` unlock did not occur. Therefore, the
+  new waiter-link trace did not run. The route did complete the exact audio
+  owner wake at emulator time 3:53.417.
+- PhysX result: The title created the PPU PhysX thread at 4:20.159. It created
+  the exact PhysX task at 4:32.137. The SPU entered the startup interpreter at
+  4:32.213. The PPU queue wait timed out five seconds later. The interpreter
+  left at 4:43.409 after 11.196 seconds.
+- Measurement error: The route used two-second active slices. The five-second
+  queue timer continued while RPCSX was paused. The timeout does not prove
+  that the PhysX task needs more than five uninterrupted seconds.
+- Guest result: The title printed `SPURS PPU queue pop wasn't successful:
+  8041090A` and started module teardown. A later dead FIFO occurred during
+  this teardown. It is not the first fault.
+- FPS result: The frame counter reported 8.40, 5.10, 2.10, 3.70, 6.10, and
+  3.40 FPS in the startup intervals before teardown. It then reported zero
+  FPS. These values are not gameplay credit.
+- Thermal and fan result: The controller maximum was 66.2 C fixed silicon.
+  The device guard recorded 436 samples, a 67.0 C fixed-silicon maximum, and
+  an 86.3 C junction maximum. Every sample reported Smart fan mode `4`. The
+  process was absent after the stop. The saved `fan_speed=100` value remained
+  an inactive Custom-mode slider value.
+- Decision: Do not extend the five-second HLE wait. Give the existing wait one
+  valid uninterrupted window before a synchronization change.
+
+## 223. Start the continuous PhysX window before task creation
+
+- Status: controller correction, host-pass, device-pending
+- Cause: The old default kept two-second slices until the PhysX queue result.
+  This made the queue timer include controller pause time.
+- Change: The Transformers route now pauses when it first sees the PPU PhysX
+  thread creation row. It then uses one 30-second continuous window. The
+  measured run put this row about 12 seconds before the exact PhysX task, so
+  the continuous window starts before the five-second queue timer.
+- Safety: The Smart fan check and the independent device thermal guard stay
+  active during the continuous window. The controller still stops the package
+  after the bounded window.
+- Verification: The focused Transformers HLE route contract and
+  `git diff --check` pass.
+- Thor result: Not run. Experiment 222 used the one hardware run for this cool
+  round.
+- Next: In a new cool round, stop first on `Thread "PPU PhysX thread"
+  created`. Then require either the queue `ready after` row or the queue
+  `timed out after` row from the uninterrupted 30-second window.
