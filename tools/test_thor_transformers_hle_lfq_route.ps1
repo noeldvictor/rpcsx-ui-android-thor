@@ -519,6 +519,11 @@ foreach ($fragment in $requiredEdgeEventWaitTraceFragments) {
 $requiredFmodEventWaitTraceFragments = @(
     'static bool thor_transformers_fmod_event_wait_trace() noexcept',
     '"debug.rpcsx.thor.fmod_event_wait_trace"',
+	'static bool thor_transformers_fmod_event_interp() noexcept',
+	'"debug.rpcsx.thor.fmod_event_interp"',
+	'const bool thor_fmod_trace = thor_transformers_fmod_event_wait_trace();',
+	'(thor_fmod_trace || thor_transformers_fmod_event_interp()) && block',
+	'const bool thor_log_fmod_wait = thor_fmod_trace && thor_fmod_wait',
     'static_cast<u32>(ppu.lr) == 0x00e2bab4u',
     'Thor FMOD EFWAIT BUSY #%u',
     'Thor FMOD EFWAIT ARM #%u',

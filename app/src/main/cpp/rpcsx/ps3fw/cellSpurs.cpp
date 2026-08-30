@@ -141,6 +141,25 @@ static bool thor_transformers_fmod_event_wait_trace() noexcept
 #endif
 }
 
+// Arm the FMOD wait snapshot when the exact interpreter handoff is enabled.
+// The handoff uses this snapshot to match the live taskset. It must not depend
+// on the separate diagnostic log switch.
+//
+//   debug.rpcsx.thor.fmod_event_interp = 1
+static bool thor_transformers_fmod_event_interp() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_interp", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
 static bool thor_taskset_enabled_fix() noexcept
 {
 #ifdef ANDROID
@@ -4058,12 +4077,13 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 	const u32 thor_edge_wait_sequence = thor_edge_wait_index + 1;
 	const bool thor_log_edge_wait = thor_edge_wait &&
 		(thor_edge_wait_index < 4 || (thor_edge_wait_index < 2048 && (thor_edge_wait_index & 0x7f) == 0));
-	const bool thor_fmod_wait = thor_transformers_fmod_event_wait_trace() && block &&
+	const bool thor_fmod_trace = thor_transformers_fmod_event_wait_trace();
+	const bool thor_fmod_wait = (thor_fmod_trace || thor_transformers_fmod_event_interp()) && block &&
 		static_cast<u32>(ppu.lr) == 0x00e2bab4u;
 	const u32 thor_fmod_wait_index = thor_fmod_wait
 		? s_fmod_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
 	const u32 thor_fmod_wait_sequence = thor_fmod_wait_index + 1;
-	const bool thor_log_fmod_wait = thor_fmod_wait && thor_fmod_wait_index < 16;
+	const bool thor_log_fmod_wait = thor_fmod_trace && thor_fmod_wait && thor_fmod_wait_index < 16;
 	const u32 thor_fmod_taskset = thor_fmod_wait && !eventFlag->isIwl
 		? static_cast<u32>(+eventFlag->addr) : 0;
 	const bool thor_fmod_taskset_ok = thor_fmod_taskset &&
@@ -4259,7 +4279,7 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			thor_fmod_taskset, +eventFlag->eventQueueId, +eventFlag->spuPort,
 			requested_mask, mode, +ctrl.ppuWaitSlotAndMode >> 4, get_system_time());
 	}
-	else if (thor_fmod_wait)
+	else if (thor_log_fmod_wait)
 	{
 		cellSpurs.error("Thor FMOD EFWAIT ERROR #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x "
 			"request=0x%04x mode=%u block=%u rc=0x%x",
