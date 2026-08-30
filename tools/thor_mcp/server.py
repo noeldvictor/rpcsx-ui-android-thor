@@ -306,6 +306,7 @@ def t_press(a):
         return {"refused": True, "fixedSiliconC": start_silicon,
                 "reason": f"fixed silicon is not below {start_ceiling} C"}
 
+    wake_display_for_guest()
     resume = None
     if process_held:
         resume = continue_process_for_slice(p)
@@ -440,6 +441,17 @@ def continue_process_for_slice(p):
             "deadlineHoldRaced": state in ("T", "t")}
 
 
+def wake_display_for_guest():
+    """Make an Android Surface available before a guarded guest resume.
+
+    The Thor can destroy its SurfaceView surface during a long start-paused
+    handoff. KEYCODE_WAKEUP is idempotent when the display is already awake.
+    Send it while the guest is held, then let the UI thread redeliver the
+    Surface before RSX needs it.
+    """
+    sh("input keyevent KEYCODE_WAKEUP")
+
+
 def is_paused():
     # system_state: 4 Paused, 6 Ready. A start-paused debug boot is Ready and
     # has no guest threads until the first resume. Treat it as a valid held
@@ -500,6 +512,7 @@ def t_slice(a):
                            if start_silicon < 0 else
                            f"fixed silicon is not below {start_ceiling} C")}
 
+    wake_display_for_guest()
     started = time.monotonic()
     deadline_pause = {}
 

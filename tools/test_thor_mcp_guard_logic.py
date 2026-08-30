@@ -160,8 +160,11 @@ SERVER.hold = original_hold
 SERVER.api = original_api
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
+shell_commands = []
+SERVER.sh = lambda command, timeout=120: shell_commands.append(command) or ""
 
 calls = prepare_paused_guest()
+shell_commands.clear()
 use_temperatures([42.0, 45.0, 50.0, 55.0, 60.0])
 result = SERVER.t_slice({"seconds": 1.0})
 assert result["completed"] is True, "The safe slice did not complete."
@@ -170,6 +173,9 @@ assert result["pauseRequestedAtS"] == 1.0, "The deadline pause did not use the r
 assert result["paused"] is True, "The safe slice did not end paused."
 assert result["maxFixedSiliconC"] == 60.0, "The safe slice lost its maximum temperature."
 assert ("/resume", "POST") in calls and ("/pause", "POST") in calls, "The safe slice did not resume and pause."
+assert shell_commands == ["input keyevent KEYCODE_WAKEUP"], (
+    "The safe slice did not wake the display before it resumed."
+)
 assert calls.index(("/pause", "POST")) < len(calls) - 1 - calls[::-1].index(("pid", None)), (
     "The safe slice checked the pid before it paused."
 )
@@ -650,6 +656,7 @@ assert result["clearedCount"] == 2 and result["remainingCount"] == 0, (
 SERVER.pid = lambda: "123"
 result = SERVER.t_clearprops({})
 assert result["refused"] is True, "Property cleanup changed a running experiment."
+SERVER.sh = lambda command, timeout=120: shell_commands.append(command) or ""
 
 clock.now = 0.0
 prepare_paused_guest()
@@ -684,10 +691,14 @@ assert result["hostElapsedS"] == 32.0, "The host deadline reported the wrong ela
 
 clock.now = 0.0
 calls = prepare_paused_guest()
+shell_commands.clear()
 use_temperatures([42.0, 45.0, 50.0])
 result = SERVER.t_press({"buttons": "START", "settleS": 0.5})
 assert result["rePaused"] is True, "The guarded press did not restore the paused state."
 assert ("/pad/press?buttons=START&ms=150", "POST") in calls, "The guarded press did not send the input."
+assert shell_commands == ["input keyevent KEYCODE_WAKEUP"], (
+    "The guarded press did not wake the display before it resumed."
+)
 
 clock.now = 0.0
 held_press_calls = []
