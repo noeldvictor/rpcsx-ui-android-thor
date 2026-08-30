@@ -39,6 +39,8 @@ param(
     [string]$RuntimeCensus = "off",
     [ValidateSet("on", "off")]
     [string]$SpuPcCensus = "off",
+    [ValidateSet("on", "off")]
+    [string]$PpuPcCensus = "off",
     [ValidateSet("Virtual", "OdinRaw", "Direct")]
     [string]$InputMode = "Direct",
     [ValidateRange(1, 4096)]
@@ -77,6 +79,11 @@ if ($SliceLoop -and $StartPaused -ne "on") {
 
 if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on" -and -not $PSBoundParameters.ContainsKey("SliceStopMatch")) {
     $SliceStopMatch = "Thor FMOD EFWAIT RETURN #0"
+}
+
+if ($SliceLoop -and $SliceStopMatch.StartsWith("Thor LATE LOAD") -and
+        $RuntimeCensus -ne "on" -and $PpuPcCensus -ne "on") {
+    throw "A late-load slice marker requires -PpuPcCensus on or -RuntimeCensus on."
 }
 
 function Set-ThorRenderProbeProperty {
@@ -256,7 +263,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.spu_pc_census" = if ($RuntimeCensus -eq "on" -or $SpuPcCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_event_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.edge_event_interp" = if ($Mode -eq "HLE" -and $EdgeEventInterp -eq "on") { "1" } else { "0" }
-    "debug.rpcsx.thor.ppu_pc_census" = if ($RuntimeCensus -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.ppu_pc_census" = if ($RuntimeCensus -eq "on" -or $PpuPcCensus -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.ppu_call_trace" = "0"
     "debug.rpcsx.thor.spurs_probe" = if ($SpursProbe -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"

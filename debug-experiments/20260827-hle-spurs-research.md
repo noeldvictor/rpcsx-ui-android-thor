@@ -7102,3 +7102,87 @@ rendering progress.
   persistent PPU or SPU wait if loading does not complete. Require moving 3D
   output and a comparable sustained 30 FPS measurement before a full-HLE or
   speed claim.
+
+## 144. The late-load route lacks its marker producer
+
+- Status: thermal-stop, route-tooling, not-comparable
+- Scope: HLE-SPURS, loading, PPU-census, thermal-safety
+- Hypothesis: After the repaired FMOD return, the title will reach the second
+  late-load completion sample or expose the next persistent HLE boundary.
+- Changed files/settings: The run used the exact experiment 143 APK and HLE
+  stack. Its installed SHA-256 was
+  `CB0806B23C9101D7A591A284888C5B9911655855630DAA437EED15D5974A8FAA`,
+  and its size was 116,146,165 bytes. It used 0.5-second slices and requested
+  `Thor LATE LOAD IO COMPLETION: sample=2` as its stop marker. The full runtime
+  census, PPU PC census, general SPU census, and EDGE traces were off.
+- Thor result: The one-sample cold-start gate passed immediately at 45.8 C
+  fixed silicon. The controller completed 64 slices in 582.609 host seconds.
+  It accumulated 41.207 active seconds. Active windows were 0.593 to 0.782
+  seconds. Cooldown waits totaled 145 seconds. The independent guard then
+  stopped the package at the 72 C fixed-silicon hard limit.
+- FMOD proof: The repaired path repeated. The helper entered at PC `0x14008`,
+  sent the real guest event at PC `0x14044` with result zero and matching queue
+  IDs, left at PC `0x12150`, woke the PPU, and returned request `0x0001`
+  successfully. The event occurred 8.147 seconds after the wait armed because
+  the sliced route paused the task before it reached the helper.
+- Forward evidence: After the FMOD return, one complete performance interval
+  reported 112 frames in 88.38 seconds, or 1.27 FPS. The title shut down its
+  loading taskset, searched its loading-video fallback paths, and started its
+  audio path. The next interval reported zero frames in 111.78 seconds. This
+  shows later startup work, but it does not identify the final zero-frame
+  state.
+- Marker failure: The requested late-load marker is emitted only inside the
+  PPU PC census. This run disabled that census, so the marker could not exist.
+  The marker result cannot classify the guest path. The route must not be
+  repeated without its marker producer.
+- Visual correctness: Not measured. The marker did not occur, so the route did
+  not save a boundary image.
+- FPS/frame-time: No performance credit. The route used paused slices, ended
+  in a zero-frame interval, and hit a thermal hard stop.
+- Thermal result: The controller maximum was 67.0 C fixed silicon. The
+  independent guard recorded 977 temperature samples and 23 early holds.
+  Fixed silicon peaked at 72.3 C, and CPU junction peaked at 87.5 C. The hard
+  stop was required and worked as designed.
+- Rollback: After the hard stop, the verified stop found no PID, zero RPCSX
+  rows in `top`, and `quiet=true`. Property cleanup cleared all 60 listed
+  properties and found zero remaining `debug.rpcsx.thor.*` values. Final fixed
+  silicon was 54.2 C.
+- Capture path:
+  `debug-captures/android-speed-sprint/20260829-200239-thor-input-custom`.
+- Decision: Keep the FMOD repair. Do not infer a new HLE defect from this
+  run. Classify the late result as route-tooling evidence because the stop
+  marker had no enabled producer and the thermal guard ended the process.
+- Next: Add a PPU-only census switch. Fail closed when a late-load marker is
+  requested without the PPU or full runtime census. Use the PPU-only switch in
+  one later independently cool route to reduce observation load.
+
+## 145. Give late-load markers a PPU-only route
+
+- Status: route-tooling, host-pass, not-comparable
+- Scope: config-driver, PPU-census, thermal-safety
+- Hypothesis: A PPU-only census can produce the late-load marker and boundary
+  PCs without the draw and SPU-event load of the full runtime census.
+- Changed files/settings: The Transformers HLE wrapper now exposes default-off
+  `-PpuPcCensus`. It enables `debug.rpcsx.thor.ppu_pc_census` alone unless the
+  caller also requests other censuses. A sliced route that requests a
+  `Thor LATE LOAD` marker now fails before any ADB or device action unless the
+  PPU-only or full runtime census is on.
+- Rollback: Leave `-PpuPcCensus off`. The property remains default-off and the
+  wrapper resets it after every run.
+- Windows result: Not run. This is Android route control.
+- Thor result: Not run. Experiment 144 used the one allowed launch for this
+  independently cool round, and the Thor remains stopped.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Verification: The focused Transformers HLE route contract, a direct
+  fail-closed invocation, PowerShell parsing, and `git diff --check` passed.
+  The scripts do not change the APK or native core.
+- Decision: Keep the PPU-only route. It prevents an impossible stop marker and
+  limits the next diagnostic to the census that produces the requested
+  evidence.
+- Next: In a separate independently cool round, use the exact installed APK,
+  keep the full runtime census off, enable the PPU-only census, and stop at
+  late-load completion sample 2. If the marker does not occur, use the final
+  PPU PCs and bounded loading state to name the next repair boundary. Require
+  moving 3D output and a comparable sustained 30 FPS measurement before a
+  full-HLE or speed claim.
