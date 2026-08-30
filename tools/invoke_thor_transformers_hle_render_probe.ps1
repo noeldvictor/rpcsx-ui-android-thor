@@ -91,7 +91,7 @@ param(
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
     [string]$SliceAfterStartHandoffMatch = "",
-    [ValidateRange(0.0, 15.0)]
+    [ValidateRange(0.0, 60.0)]
     [double]$SliceAfterHandoffSeconds = 0.0,
     [ValidateRange(1, 256)]
     [int]$SliceAfterHandoffMaxSlices = 32,
@@ -633,6 +633,11 @@ try {
                 }
 
                 $afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds
+                if ($effectiveAfterHandoffSliceSeconds -gt 15.0) {
+                    # Use one continuous window only after the exact handoff.
+                    # Both fixed-silicon guards stay active during this window.
+                    $afterStartArguments.maxDurationS = $effectiveAfterHandoffSliceSeconds
+                }
                 $afterStartArguments.maxSlices = $SliceAfterHandoffMaxSlices
                 $afterStartArguments.maxHostS = $SliceAfterHandoffMaxHostSeconds
             }
