@@ -99,6 +99,7 @@ Obey these rules for it:
 
 - Active goal: make Eternal Sonata `BLUS30161` stable and faster on AYN Thor while preserving correct field, title Options/menu, first-battle visuals, and bounded thermals.
 - The clean-current-upstream Windows 200% gate is cleared. Thor work is permitted only as one short, temperature-guarded validation per cool round; do not heat-soak or immediately repeat a route.
+- Protect the Thor fan during each device run. Do not select or keep a sustained maximum-fan setting. Record `fan_mode` before launch, preserve Smart or another bounded automatic mode, and stop the run if fixed silicon reaches `70 C`. Do not increase the fan to extend a run. Stop immediately if the fan makes abnormal noise or vibration.
 - Keep RPCS3 gameplay on screen 1 with `-WindowsGameScreen 1`.
 - Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, `ps3-spu-contract-compiler`, and `thor-measurement-validity`.
 - `thor-measurement-validity` gates any number taken off the device. Read it before you quote cores, FPS, power, or a crash rate from Thor, and before you read a `simpleperf` capture.
