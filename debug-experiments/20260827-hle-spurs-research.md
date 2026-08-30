@@ -8349,3 +8349,36 @@ rendering progress.
 - Next: Run the exact experiment 173 APK after a new strict gate. Arm on the
   repaired audio-owner marker and keep 20 later slices for the old dead-FIFO
   boundary and screenshot.
+
+## 176. The instrumented 68 C route reaches the hard limit first
+
+- Status: thermal-stop, android-no-result, not-comparable
+- Scope: paused slice controller, ordered-FIFO decision run, thermal safety
+- Cold gate and install: A new strict gate passed at 67.0 C. The no-launch
+  installer again proved the exact experiment 173 APK and left no PID.
+- Route result: The controller completed 28 slices and 20.687 seconds of active
+  time. It advanced to emulated time 4:07, which is later than experiment 174.
+  The fixed SoC sensor then rose from 69 C to 72 C while the process was held.
+  The controller force-stopped the package at its 72 C hard limit. It did not
+  reach the audio-owner wake or the old dead-FIFO time.
+- Configuration proof: The ordered-FIFO property and effective configuration
+  were correct. No dead FIFO or other fatal error occurred before the thermal
+  stop. This does not prove ordered-FIFO stability.
+- Visual correctness: Not measured. The arm marker did not occur.
+- FPS/frame-time: No performance credit.
+- Thermal result: The slice controller maximum was 72.0 C fixed silicon. Its
+  hard limit stopped the run. The independent device guard uses the CPU
+  subsystem sensor and recorded 698 normal samples, one early hold, a 67.4 C
+  fixed-silicon maximum, and an 83.9 C CPU-junction maximum.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup found zero remaining `debug.rpcsx.thor.*` values.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-003805-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-003815-transformers-ordered-fifo-68c-install`,
+  and
+  `debug-captures/android-speed-sprint/20260830-003830-thor-input-custom`.
+- Decision: Keep the 68 C controller target. Remove the no-longer-needed FMOD
+  event trace, lightweight-mutex trace, local-store dump, and PPU PC census
+  from the next decision run. The audio-owner repair still emits its exact
+  marker without those probes. This reduces work and gives ordered FIFO a
+  cleaner speed and thermal test.
