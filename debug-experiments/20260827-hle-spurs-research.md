@@ -8778,3 +8778,39 @@ rendering progress.
 - Next: After a new strict gate, run the identical macro with
   `-YieldRedispatchEvery 4`. Reject it on any wrong visual, SPU access
   violation, stopped queue, or lower matching-window frame rate.
+
+## 187. Every fourth yield is slower and delays loading progress
+
+- Status: rejected, visual-progress, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS, `yield_redispatch_fix=4`, continuous unpaused
+  startup
+- Cold gate and identity: A separate strict gate passed at 38.9 C. The route
+  proved the installed APK SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  The startup property readback proved
+  `debug.rpcsx.thor.yield_redispatch_fix=4`. The macro was identical to the
+  control except for this property.
+- Visual result: Both images showed the animated Transformers loading screen,
+  but both remained on the Decepticon phase. The control changed from the
+  Decepticon phase at 120 seconds to the Autobot phase at 140 seconds. The
+  candidate therefore did not show faster loading progress.
+- Frame result: The complete ten-second samples ending at 2:04, 2:14, and
+  2:24 reported 20.3, 21.2, and 20.3 FPS. Their mean is 20.60 FPS. The control
+  mean was 20.93 FPS. The candidate is 1.6 percent lower. The image overlays
+  also fell from 22.23 and 24.21 FPS in the control to 14.45 and 15.13 FPS in
+  the candidate.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, verification
+  failure, access violation, or process restart occurred. Correctness alone
+  does not authorize a slower speed route.
+- Thermal result: The device watchdog recorded 42 normal samples. Fixed
+  silicon reached 43.7 C, and CPU junction reached 45.3 C. It recorded no hold
+  or thermal stop action.
+- Rollback: The macro stopped the package. The verified post-run state had no
+  PID.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-021627-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-021650-thor-input-custom`.
+- Decision: Reject value 4 and keep the default value 1. Do not test larger
+  intervals because this smaller reduction already delays progress. The next
+  diagnostic must use the PPU profiler on the proven every-yield route.
