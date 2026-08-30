@@ -5712,7 +5712,7 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 	const u32 entry_size = queue->entry_size;
 	const bool thor_physx_start_shape = thor_transformers_physx_queue_wait() &&
 		!isBlocking && static_cast<u32>(ppu.lr) == 0x00a94678u &&
-		queue->direction == 1 && depth == 128 && entry_size == 16 && queue->taskset;
+		queue->direction == 1u && depth == 128 && entry_size == 16 && queue->taskset;
 	const auto taskset = thor_physx_start_shape
 		? vm::static_ptr_cast<CellSpursTaskset>(queue->taskset)
 		: vm::ptr<CellSpursTaskset>::make(0);

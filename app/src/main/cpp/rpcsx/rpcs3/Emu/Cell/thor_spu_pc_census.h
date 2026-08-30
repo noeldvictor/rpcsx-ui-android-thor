@@ -12,6 +12,7 @@
 //   debug.rpcsx.thor.spu_pc_census = 1
 
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/IdManager.h"
 #include "cellos/sys_spu.h"
