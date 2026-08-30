@@ -8596,3 +8596,53 @@ rendering progress.
 - Next: Do not launch in this install round. After a separate new strict gate,
   run Atomic with the PPU PC census through the first confirmed zero-frame
   interval. Map the final main-thread PC and stack before changing HLE code.
+
+## 182. The late Atomic route is progressing, not deadlocked
+
+- Status: progress-proof, controller-counterproof, not-comparable
+- Scope: BLUS30357, HLE SPURS, Atomic RSX FIFO, bounded PPU stacks
+- Cold gate and identity: A separate strict gate passed at 36.9 C. The route
+  proved the installed APK SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  Atomic FIFO and PPU PC census were on. The other heavy probes were off.
+- Route result: The controller completed 33 slices across 606.359 host seconds.
+  It reached emulated time 10:38. The frame counter advanced by 66 frames from
+  8:18 through 10:28. Zero-frame ten-second samples alternated with nonzero
+  samples up to 12 frames. The main thread changed PC and stack throughout the
+  window. `FlipPump` continued to push its queue and reached signal sample
+  1,792. The title was therefore progressing and was not in the previously
+  reported dead stall.
+- Correction: Experiment 179 called two long zero-frame samples a stall. The
+  paused-slice controller made those samples non-continuous, and this longer
+  census disproves the stall classification. Treat them only as missing work
+  during held windows. Do not design an HLE wake fix from them.
+- PPU result: The bounded census captured eight distinct main-thread PC and LR
+  pairs between 7:28 and 9:38. No pair dominated. The samples included LV2,
+  the known `0x00fdcf60` polling function, memory allocation and free paths,
+  file-system work, and module loading. This is active initialization, not one
+  blocked wait.
+- Controller limitation: The first 21 process-held slices report 22.969 active
+  seconds. The later emulator-held slices omit `activeElapsedS`, so the total
+  active time is not exact. The 66 frames and logged FPS values are invalid for
+  speed credit. The pauses also explain why a zero-frame wall-time sample does
+  not prove a guest stall.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, or verification
+  failure occurred. Atomic remained alive to the host deadline.
+- Visual correctness: Not measured. The controller did not save a boundary
+  image because the explicit never-match marker did not occur.
+- FPS/frame-time: No performance credit. This was a paused diagnostic route.
+- Thermal result: The slice controller and device watchdog both reached a
+  43.7 C fixed-silicon maximum. The watchdog junction maximum was 45.3 C. It
+  recorded no hold or stop action and completed when the package stopped. No
+  fixed-silicon sample reached 70 C.
+- Rollback: The host deadline stopped the package. The verified stop found no
+  PID, zero RPCSX rows in `top`, and `quiet=true`. Cleanup cleared 63 properties
+  and found zero remaining `debug.rpcsx.thor.*` values.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-014132-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-014155-thor-input-custom`.
+- Decision: Keep Atomic and the audio-owner repair. Stop treating this boundary
+  as an HLE deadlock. The next round must use a guarded continuous route with a
+  screenshot. It must first identify the visible scene, then measure continuous
+  frame presentation. A paused route cannot answer the speed question.
