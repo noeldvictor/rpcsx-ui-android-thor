@@ -9278,3 +9278,46 @@ rendering progress.
 - Next: Install this exact APK without a launch. Use a new strict gate. Stop
   after the dependency and chain-wake rows. Continue to PhysX only if the main
   thread advances from the FMOD lock chain.
+
+## 209. The FMOD lock-entry recorder does not observe the wait
+
+- Status: device-confirmed, HLE blocker, not-gameplay
+- Scope: BLUS30357, FMOD pre-sleep dependency proof
+- Identity: Exact APK
+  `B69F0EBC5BC382B808E8792E4C6B6D2B70A0ECBE95F0A1D0138617503284ADA5`
+  ran in `20260830-102835-thor-input-custom` after a separate strict gate.
+- Timing result: RPCSX published BLUS30357 at emulator time 0:04. The FMOD
+  event receiver was created at 6:30.531. The main owner wake ran 38
+  milliseconds later at 6:30.569. The title gate was already valid.
+- Dependency result: No pre-sleep dependency row appeared. The main wake again
+  changed FMOD state from `0x224` to `0x304`, but its chain retry had no saved
+  lwmutex or owner. The main thread moved to the user wrapper for lwmutex
+  `0x95008e00`. FMOD stayed in `_sys_lwmutex_lock`, and frames stayed at zero.
+- Control result: The exact chain marker was reached. Eight post-marker slices
+  completed. The route completed 13 after-START slices in 344.906 host seconds.
+  Fixed silicon peaked at 46.2 C. The stop check found no PID and no RPCSX row
+  in top. Post-stop fixed silicon was 41.7 C.
+- Decision: Do not depend on the short FMOD lock-entry window. At the proven
+  main wake point, scan the live lwmutex sleep queues for FMOD and read the
+  owner from the matching object.
+
+## 210. Find the live FMOD lwmutex sleep queue
+
+- Status: host-verified, device-pending, title-specific
+- Change: The main owner-wake route now scans the live `lv2_lwmutex` objects
+  while it holds the ID-manager reader lock. It finds the queue that contains
+  PPU `0x0100000c` with the exact FMOD receiver name. It records that lwmutex,
+  its guest control address, its owner, and the owner state. A bounded row also
+  reports a scan miss. The existing guarded helper performs the only wake.
+- Safety: The scan runs only in the exact BLUS30357 main-thread wake route.
+  It uses the unlocked ID-manager selector because the caller already holds
+  the reader lock. The scan does not change a queue, scheduler state, or guest
+  control word.
+- Verification: The focused route contract, `git diff --check`, and the
+  optimized ARM64 native build pass. Commit `ea653d70b` contains the change.
+  The exact ARM64 APK is
+  `05D9B37599B418F15A4B25B5E1CC64AD9AC1228DF6ABBA5D4DF93151BB2521EE`,
+  is 116,156,275 bytes, and passes the ARM64-only APK contract.
+- Next: Install this exact APK without a launch. Use a new strict gate. Stop
+  at the queue-scan dependency row. Use its owner and forced-wake result to
+  select the next HLE change.
