@@ -666,7 +666,7 @@ $requiredPhysxStartInterpFragments = @(
     'static_cast<u32>(+spu._ref<u64>(0x27b8)) != task.taskset',
     '+spu._ref<u32>(0x27d4) != task.task_id',
     'spu.interp_fallback_begin = 0x030a8;',
-    'spu.interp_fallback_end = 0x068c0;',
+    'spu.interp_fallback_end = 0x06e54;',
     'Thor Transformers PhysX startup interpreter leave'
 )
 
