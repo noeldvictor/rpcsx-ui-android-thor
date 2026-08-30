@@ -21,6 +21,8 @@ param(
     [string]$StartPaused = "on",
     [ValidateSet("on", "off")]
     [string]$YieldFastPath = "off",
+    [ValidateSet(1, 2, 4, 8, 16, 32, 64)]
+    [int]$YieldRedispatchEvery = 1,
     [ValidateSet("on", "off")]
     [string]$PpuCachedRtimeFix = "on",
     [ValidateSet("on", "off")]
@@ -299,7 +301,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.taskset_enabled_fix" = "1"
     "debug.rpcsx.thor.taskset_snapshot_fix" = "1"
     "debug.rpcsx.thor.taskset_syscall_fix" = "1"
-    "debug.rpcsx.thor.yield_redispatch_fix" = "1"
+    "debug.rpcsx.thor.yield_redispatch_fix" = "$YieldRedispatchEvery"
 }
 
 # The input macro owns its launch properties and clears them when it returns.

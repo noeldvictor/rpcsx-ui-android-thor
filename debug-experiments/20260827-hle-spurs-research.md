@@ -8682,3 +8682,65 @@ rendering progress.
 - Decision: Keep Atomic HLE. In the next independently cool round, use
   `gate:ppu-ready` before the first image. Do not measure speed until an image
   proves that the compilation overlay is absent.
+
+## 184. HLE renders the correct Transformers startup sequence
+
+- Status: visual-progress, gate-mismatch, android-clean, not-comparable
+- Scope: BLUS30357, HLE SPURS, Atomic RSX FIFO, continuous unpaused boot
+- Cold gate and identity: A separate strict gate passed at 37.3 C. The route
+  proved the installed APK SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  Atomic FIFO was on, and the heavy probes were off.
+- Visual result: The readiness sampler captured correct Unreal and PhysX legal
+  screens. It then captured the animated Transformers loading screen. The PPU
+  compilation overlay was absent from these images. This is the first
+  continuous visual proof that the current HLE repair stack advances through
+  normal Transformers startup.
+- Gate result: `gate:ppu-ready` timed out after 150 seconds because its
+  implementation requires the Eternal Sonata title selector in two images.
+  That recognition rule cannot pass on Transformers. The timeout is a route
+  mismatch, not an HLE failure.
+- Frame result: The final three complete ten-second samples reported 20.5,
+  20.8, and 19.1 FPS while the animated Transformers loading screen was
+  visible. These values describe startup only. They do not have gameplay or
+  30 FPS credit.
+- HLE queue result: The queue consumer continued to drain the ring. Near the
+  end, the head normally caught the tail, and the used count ranged from zero
+  to small transient values. The route did not reproduce the old full-ring
+  deadlock.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, verification
+  failure, access violation, or process restart occurred.
+- Thermal result: The device watchdog recorded 43 normal samples. Fixed
+  silicon reached 42.9 C, and CPU junction reached 45.3 C. It recorded no hold
+  or thermal stop action.
+- Rollback: The fail-closed route stopped the package. The failure capture has
+  no remaining process.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-020236-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-020303-thor-input-custom`.
+- Decision: HLE startup works. Do not use the Eternal Sonata readiness gate for
+  this title. Use fixed, identical continuous windows and explicit images for
+  the first yield-redispatch A/B.
+
+## 185. Add a bounded yield-redispatch interval control
+
+- Status: route-tooling, host-verified, unmeasured
+- Scope: Transformers HLE speed experiment, SPURS task yield redispatch
+- Reason: The required redispatch currently saves and restores almost all of a
+  256 KB SPU local store on every task yield. The zero-copy yield fast path is
+  not valid on this repair stack; experiment 87 recorded an SPU access
+  violation. The core already supports redispatch on every Nth yield with a
+  separate counter for each host SPU thread.
+- Change: The dedicated Transformers HLE route now accepts
+  `-YieldRedispatchEvery` values 1, 2, 4, 8, 16, 32, or 64. It writes the value
+  to `debug.rpcsx.thor.yield_redispatch_fix`. The default remains 1, so the
+  shipped route behavior does not change.
+- Verification: The focused Transformers HLE LFQueue route contract passes.
+  PowerShell syntax parsing and `git diff --check` pass.
+- APK result: No APK or native code changed. The installed exact APK remains
+  valid for this property A/B.
+- FPS/frame-time: Not measured.
+- Next: Use the same unpaused startup macro for control value 1 and candidate
+  value 4. Require the legal and loading images, normal queue draining, and no
+  SPU access violation before comparing continuous frame samples.
