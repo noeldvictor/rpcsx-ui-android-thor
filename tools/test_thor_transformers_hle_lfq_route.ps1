@@ -215,7 +215,7 @@ $requiredRenderProbeFragments = @(
     'Start-ThorSliceDeviceGuard -CaptureDir $captureDir',
     '$sliceResult = ($controllerOutput -join [Environment]::NewLine) | ConvertFrom-Json',
     'maxStartC = 70',
-    'resumeTargetC = 65',
+    'resumeTargetC = 68',
     'resumeStableSamples = $SliceResumeStableSamples',
     'resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds',
     'maxSiliconC = 72',

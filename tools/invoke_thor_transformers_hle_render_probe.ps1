@@ -403,7 +403,7 @@ try {
             "- Maximum slices: $MaxSlices",
             "- Maximum host seconds: $MaxSliceHostSeconds",
             "- Cool timeout seconds: $SliceCoolTimeoutSeconds",
-            "- Runtime slice resume target C: 65",
+            "- Runtime slice resume target C: 68",
             "- Runtime resume stable samples: $SliceResumeStableSamples",
             "- Runtime resume sample interval seconds: $SliceResumeSampleIntervalSeconds",
             "- Slice-loop property readback: slice-loop-profile-effective.txt",
@@ -420,7 +420,7 @@ try {
             maxHostS = $MaxSliceHostSeconds
             coolTimeoutS = $SliceCoolTimeoutSeconds
             maxStartC = 70
-            resumeTargetC = 65
+            resumeTargetC = 68
             resumeStableSamples = $SliceResumeStableSamples
             resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds
             maxSiliconC = 72

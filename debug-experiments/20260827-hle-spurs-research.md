@@ -8291,3 +8291,61 @@ rendering progress.
 - Next: Commit the exact host result. In a new cool hardware round, prove the
   property readback, the effective FIFO mode, survival past emulated time
   7:56, and a boundary image after the audio-owner repair.
+
+## 174. The 65 C resume target blocks the ordered-FIFO proof
+
+- Status: controller-counterproof, android-no-result, not-comparable
+- Scope: paused slice controller, ordered-FIFO decision run, thermal safety
+- Cold gate and install: A new strict gate passed at 65.0 C. The no-launch
+  installer proved the expected, host, and device APK SHA-256 as
+  `89F08AF1E455F98A3B94A711FA8413B5D83F70ED97E4042FF75B6DA93E1DD332`.
+  No PID remained after installation.
+- Configuration proof: Both property readbacks reported
+  `debug.rpcsx.thor.transformers_fifo_ordered=1`. The core reported
+  `Transformers RSX FIFO accuracy forced to Ordered & Atomic`, and the
+  effective configuration reported `RSX FIFO Accuracy: "Ordered & Atomic"`.
+- Route result: The controller completed 25 slices and 18.560 seconds of
+  active time. It reached emulated time 3:28. It then used the full 120-second
+  cooldown while the fixed SoC sensor stayed at 66 C. The route stopped before
+  the audio-owner wake, PhysX creation, or the prior dead-FIFO time.
+- Visual correctness: Not measured. The arm marker did not occur, so the route
+  did not save a boundary image.
+- FPS/frame-time: No performance credit.
+- Stability: No dead FIFO, fatal error, access violation, out-of-memory error,
+  or assertion occurred before the controller stopped the run. This does not
+  prove ordered-FIFO stability because the route did not reach the old fault.
+- Thermal result: The controller maximum was 66.0 C fixed silicon. The device
+  guard recorded 805 normal samples and one early hold. Its fixed-silicon
+  maximum was 67.4 C and its CPU-junction maximum was 81.5 C. No fixed-silicon
+  sample reached 70 C.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup found zero remaining `debug.rpcsx.thor.*` values. The
+  final fixed-silicon sample was 66.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-002721-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-002734-transformers-ordered-fifo-install`,
+  and
+  `debug-captures/android-speed-sprint/20260830-002801-thor-input-custom`.
+- Decision: Do not accept or reject ordered FIFO from this run. Raise the
+  controller resume target, but keep the independent device watchdog and the
+  72 C hard stop.
+
+## 175. Raise the Transformers slice resume target to 68 C
+
+- Status: controller-fix, host-pass, unmeasured
+- Scope: Transformers HLE route, thermal documentation, route contract
+- Change: The Transformers paused-slice controller now requires three stable
+  fixed-silicon readings at or below 68 C. This permits a later slice when the
+  fixed SoC sensor has a stable 66 C floor. The independent device watchdog
+  still holds the app at 66 C, and the hard stop remains 72 C.
+- Safety: The target remains below the exclusive 70 C launch limit. The
+  independent watchdog continues to sample every 0.25 seconds. A new hardware
+  run still requires a new strict fixed-silicon sample below 70 C.
+- Rollback: Change the route target back to 65 C. No APK or core change is
+  required.
+- Thor result: Not run yet.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Next: Run the exact experiment 173 APK after a new strict gate. Arm on the
+  repaired audio-owner marker and keep 20 later slices for the old dead-FIFO
+  boundary and screenshot.
