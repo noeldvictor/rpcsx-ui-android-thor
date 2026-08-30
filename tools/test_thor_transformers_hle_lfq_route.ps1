@@ -357,7 +357,12 @@ $requiredLv2LwmutexTraceFragments = @(
     '"LOCK-WAKE"',
     '"UNLOCK-ENTER"',
     '"UNLOCK-HANDOFF"',
-    '"UNLOCK-RETURN"'
+    '"UNLOCK-RETURN"',
+    'thor_transformers_reown_with_trace(',
+    '"Thor TWC POST AUDIO REOWN #%u.%u: stage=PRE-SCHEDULE "',
+    '"Thor TWC POST AUDIO REOWN #%u.%u: stage=POST-SCHEDULE "',
+    '"Thor TWC POST AUDIO REOWN #%u: stage=POST-FETCH attempts=%u "',
+    'head && next == head ? 1u : 0u'
 )
 
 foreach ($fragment in $requiredLv2LwmutexTraceFragments) {

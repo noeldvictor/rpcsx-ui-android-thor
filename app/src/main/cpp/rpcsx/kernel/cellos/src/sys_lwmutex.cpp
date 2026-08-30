@@ -80,6 +80,60 @@ void thor_transformers_post_audio_unlock_trace(
       wake_ppu ? wake_ppu->id : 0);
 }
 
+ppu_thread *thor_transformers_reown_with_trace(
+    lv2_lwmutex &mutex, u32 call) {
+  ppu_thread *result = nullptr;
+  u32 attempt = 0;
+
+  mutex.lv2_control.fetch_op(
+      [&](lv2_lwmutex::control_data_t &data) -> bool {
+        result = nullptr;
+
+        const auto head = static_cast<ppu_thread *>(data.sq);
+        const auto next = head ? +head->next_cpu : nullptr;
+        const u32 state =
+            head ? static_cast<u32>((+head->state).raw()) : 0;
+        if (attempt < thor_transformers_post_audio_unlock_trace_limit) {
+          sys_lwmutex.error(
+              "Thor TWC POST AUDIO REOWN #%u.%u: stage=PRE-SCHEDULE "
+              "head=0x%x next=0x%x state=0x%x self=%u signaled=0x%x",
+              call, attempt, head ? head->id : 0, next ? next->id : 0,
+              state, head && next == head ? 1u : 0u,
+              static_cast<u32>(data.signaled));
+        }
+        attempt++;
+
+        if (head) {
+          result = mutex.schedule<ppu_thread>(data.sq, mutex.protocol, false);
+
+          if (attempt <= thor_transformers_post_audio_unlock_trace_limit) {
+            const auto queue = static_cast<ppu_thread *>(data.sq);
+            sys_lwmutex.error(
+                "Thor TWC POST AUDIO REOWN #%u.%u: stage=POST-SCHEDULE "
+                "result=0x%x queue=0x%x unchanged=%u",
+                call, attempt - 1, result ? result->id : 0,
+                queue ? queue->id : 0, head == queue ? 1u : 0u);
+          }
+
+          return head != data.sq;
+        }
+
+        data.signaled |= 1;
+        return true;
+      });
+
+  sys_lwmutex.error(
+      "Thor TWC POST AUDIO REOWN #%u: stage=POST-FETCH attempts=%u "
+      "result=0x%x",
+      call, attempt, result ? result->id : 0);
+
+  if (result && cpu_flag::again - result->state) {
+    result->next_cpu = nullptr;
+  }
+
+  return result;
+}
+
 bool thor_transformers_audio_wake_fix_enabled() noexcept {
 #ifdef __ANDROID__
   static const bool s_on = []() noexcept {
@@ -728,7 +782,12 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
 
         thor_transformers_post_audio_unlock_trace(
             ppu, lwmutex_id, post_audio_unlock_call, "PRE-REOWN", &mutex);
-        if (const auto cpu = mutex.reown<ppu_thread>()) {
+        const auto reowned =
+            trace_post_audio_unlock
+                ? thor_transformers_reown_with_trace(
+                      mutex, post_audio_unlock_call)
+                : mutex.reown<ppu_thread>();
+        if (const auto cpu = reowned) {
           thor_transformers_post_audio_unlock_trace(
               ppu, lwmutex_id, post_audio_unlock_call, "POST-REOWN", &mutex,
               cpu);
