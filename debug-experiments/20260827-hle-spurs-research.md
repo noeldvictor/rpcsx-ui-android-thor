@@ -9415,3 +9415,102 @@ rendering progress.
 - Decision: Enable the existing low-rate PPU PC and stack census. Use a short
   post-audio window to identify the exact guest loop. Do not change PhysX or
   RSX code until this PC is known.
+
+## 216. Ghidra defines the first PhysX queue operation
+
+- Status: static-analysis, host-verified, device-pending
+- Scope: BLUS30357, exact captured PhysX local store
+- Evidence: Ghidra identified the queue function from `0x06960` through its
+  return at `0x06e50`. It issues GETLLAR at `0x06ac4`, prepares PUTLLC at
+  `0x06cd0`, issues it at `0x06cf0`, reads its status at `0x06cf4`, and retries
+  from `0x06cf8` to `0x06a9c`. The next helper starts at `0x06e58`.
+- Change: The exact title, task, age, and code-signature gate now interprets
+  the first queue operation through `0x06e54`. It leaves helper `0x06e58` and
+  all later PhysX work on LLVM.
+- Verification: The focused route contract, `git diff --check`, and the
+  optimized ARM64 native build pass. Commit `f630598ca` contains the change.
+- Decision: This boundary is the minimum test of the captured reservation
+  operation. It does not replace PhysX and does not give gameplay credit.
+
+## 217. The PhysX queue interpreter did not run
+
+- Status: device-inconclusive, earlier-blocker, not-gameplay
+- Identity: Capture `20260830-153928-thor-input-custom` used the extended
+  PhysX queue interpreter.
+- Result: The legal START gate passed. The initial audio wake completed. The
+  route then completed 50 post-START slices in about 602 host seconds. It did
+  not create the PhysX task, so the new interpreter did not execute.
+- Thermal result: Fixed silicon peaked at 62.6 C. No thermal stop, native
+  crash, or dead FIFO occurred. The process was absent after the clean stop.
+- Decision: Diagnose the earlier PPU boundary. Do not change the PhysX
+  interpreter from a run that did not reach it.
+
+## 218. An explicit PPU census must start before audio
+
+- Status: host-verified, diagnostic-correction
+- Cause: The explicit `debug.rpcsx.thor.ppu_pc_census=1` control still waited
+  for the audio gate. It could not report a blocker that occurred before that
+  gate.
+- Change: An explicit PPU census now samples immediately. The implicit census
+  used by PPU call and event tracing stays behind the audio gate.
+- Verification: The focused route contract and optimized ARM64 native build
+  pass. Commit `2f1c5c7ef` contains the change.
+- Decision: An explicit diagnostic must not inherit an unrelated late-start
+  gate.
+
+## 219. The main PPU is in HLE lwmutex unlock
+
+- Status: device-confirmed correction, HLE blocker, not-gameplay
+- Identity: Capture `20260830-161130-thor-input-custom` used the corrected
+  explicit PPU census.
+- Result: After the audio owner wake, repeated samples showed main PPU
+  `0x01000000` at HLE PC `0x02224ffc`, link register `0x00e28c18`, stack
+  `0xd003f740`, and `r3=0x95008d00`. This maps to `_sys_lwmutex_unlock`.
+- Correction: Experiment 215 did not identify a guest busy loop. The stable
+  high host use occurred while the PPU was inside an HLE unlock call.
+- Thermal result: Fixed silicon peaked at 65.4 C. The final stop showed no
+  process. Post-stop fixed silicon was 38.1 C.
+- Decision: Trace each internal unlock stage. Do not force the reserved guest
+  owner because experiment 214 proves that it is a valid handoff value.
+
+## 220. The targeted unlock did not reproduce
+
+- Status: device-inconclusive, route-progress, not-gameplay
+- Change: Commit `57005aa8c` adds an eight-call, title, PPU, link-register,
+  and mutex-gated trace around ID lookup, the internal queue lock, waiter
+  selection, wake, and notification cleanup. The optimized ARM64 core SHA-256
+  is `690B1AD0D8B185F28DA413984221810378DA24B0E25FF4633B8324DD53E2816C`.
+- Identity: Capture `20260830-162623-thor-input-custom` ran this core with the
+  low-level lwmutex trace enabled.
+- Result: The exact main-thread unlock of `0x95008d00` did not occur. The run
+  created the PhysX workload at emulator time 2:52. It later completed the
+  FMOD handoff. One performance interval reported 77 frames in 10 seconds,
+  or 7.7 FPS. Later intervals reported zero frames. The PhysX task and its
+  startup queue operation did not start.
+- Thermal result: Fixed silicon peaked at 63.4 C. The final stop found no PID
+  and no RPCSX row. All 68 debug properties were clear, and fixed silicon was
+  36.1 C.
+- Decision: The `0x95008d00` symptom is timing-dependent. Keep the targeted
+  trace, but use the PPU census to identify the route when the symptom is
+  absent. The 7.7 FPS interval is startup evidence and not gameplay credit.
+
+## 221. The render-consumer DMA fault recurs
+
+- Status: device-confirmed fault, prior-stability-claim-corrected
+- Identity: Capture `20260830-164042-thor-input-custom` combined the explicit
+  PPU census with the targeted lwmutex trace.
+- Fault: Before the legal START frame, `CellSpursKernel0` stopped at SPU PC
+  `0x048e0` while it issued a 4 KiB GET from unmapped guest address
+  `0xfff30000`. The caller link register was `0x09b14`.
+- Ghidra correlation: This is the render consumer from experiment 191. Its
+  exact taskset is `0x10364100`, its ELF is `0x0177ec80`, and its mapped call
+  chain is `0x0c9b0` to `0x0b348` to `0x099a8` to `0x048e0`.
+- Correction: The safe queue publication order from experiments 192 and 193
+  was enabled. It did not prevent this recurrence. The earlier stability
+  result therefore proves one clean run, not a complete repair.
+- Thermal result: Fixed silicon peaked at 54.6 C. The failure cleanup found no
+  PID or RPCSX row. All 68 properties were clear, and fixed silicon was 34.5
+  C.
+- Decision: Do not suppress the access violation. Use the existing bounded
+  queue payload and work-item diagnostic to identify the packet that produces
+  the unmapped page sentinel.
