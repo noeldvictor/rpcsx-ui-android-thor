@@ -7893,3 +7893,109 @@ rendering progress.
 - Next: In one later independently cool round, install this exact APK. Arm on
   `Thor TWC AUDIO OWNER WAKE`, keep a bounded post-arm window, and require an
   owner return or mutex handoff before any performance claim.
+
+## 163. The generic owner wake rejects the zero-pending handoff
+
+- Status: android-counterproof, post-wait-state-identified, not-comparable
+- Scope: HLE, FMOD, LV2 lightweight-mutex, PPU scheduler, thermal-safety
+- Hypothesis: The generic deferred-wake helper will complete the FMOD owner
+  wake after the main PPU thread enters the exact mutex sleep.
+- Installed artifact: The one-sample cold-start gate passed at 55.0 C fixed
+  silicon. The no-launch installer proved that the host and installed APK
+  SHA-256 values were both
+  `DB8E342445766828C0C50AA27D09E9BAD0B6574AE382DCE274BF026A7196CB08`.
+  The RPCSX PID was absent before and after installation.
+- Route: The HLE route enabled the exact event, mutex, owner-wake, and PPU
+  census controls. It requested 96 half-second slices with a 600-second host
+  limit. It armed on `Thor TWC AUDIO OWNER WAKE` and collected 12 later
+  slices.
+- Counterproof: The exact handoff occurred at emulator time 5 minutes 51.738
+  seconds. Main PPU `0x01000000` had saved caller `0x00dd6264` and slept on
+  mutex `0x95008c00`, whose real owner was FMOD PPU `0x0100000c`. The owner
+  state was `0x224`, or `wait + suspend + memory`. The generic helper returned
+  zero and left the state at `0x224` because the global pending count was
+  already zero. It sent no notification. The main thread stayed queued, the
+  owner did not return, two audio events filled the queue, and later sends
+  returned `CELL_EBUSY`.
+- Route result: The post-arm route completed 54 slices in 447.734 host
+  seconds. Active windows totaled 38.466 seconds. It armed at slice 42 and
+  completed all 12 requested later slices.
+- Visual correctness: The saved image is a real Transformers loading screen,
+  not the Android pixel-refresh display. The loading symbol and overlay are
+  visible, but no moving gameplay is proved. Its SHA-256 is
+  `5E4D22910B592AC241D89B941C87AA43FE922843EB24C9DAA967BD3C147EE506`.
+- FPS/frame-time: No performance credit. The saved overlay shows 25.88 FPS on
+  the loading screen. A later paused diagnostic reports 97 frames in 83
+  seconds, or 1.17 FPS. Neither value is correct moving gameplay.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Thermal result: The independent guard recorded 793 normal samples and eight
+  early holds. Fixed silicon peaked at 69.9 C, and CPU junction peaked at
+  84.7 C. No fixed-silicon sample reached 70 C. The slice controller recorded
+  a 65.8 C maximum at its boundaries.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup cleared all 62 listed properties and found zero
+  remaining `debug.rpcsx.thor.*` values. The final fixed-silicon and CPU-
+  junction samples were 56.0 C and 54.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-230319-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-230340-transformers-audio-owner-wake-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-230405-thor-input-custom`.
+- Decision: The generic selected-thread repair is the wrong gate at the later
+  owner handoff. Keep it for the earlier event boundary, but use a separate
+  exact post-wait owner wake for this measured priority inversion.
+- Next: Wake only the real owner at this exact title, main PPU, wrapper, saved
+  caller, and mutex handoff. Require `0x224 -> 0x304`, an owner return, and a
+  mutex handoff before any speed claim.
+
+## 164. Force the exact owner wake after the waiter leaves the schedule
+
+- Status: HLE-repair, host-pass, unmeasured
+- Scope: LV2 lightweight-mutex, PPU scheduler, BLUS30357
+- Hypothesis: The FMOD owner can finish its delivered event and release the
+  mutex if it receives the missing run signal after the main waiter leaves the
+  schedule.
+- Changed files/settings: The existing default-off audio-wake property still
+  gates the exact BLUS30357 main PPU, wrapper link register `0x00e28c5c`, saved
+  caller `0x00dd6264`, and real mutex owner. The call occurs only after the main
+  wait is queued. A new scheduler helper requires a ready scheduler and owner
+  state `wait + suspend` with no `signal`.
+- Repair: The helper adds `signal`, removes `suspend` and applicable yield or
+  preempt state, resets the owner start time, consumes a paired suspend
+  acknowledgement if one exists, and notifies the owner. It does not depend on
+  a nonzero global pending count or prior slot selection because experiment
+  163 proved that both conditions have ended at this exact handoff.
+- Tradeoff: This title-local repair can run the proved mutex owner outside the
+  normal selected set after the main waiter releases a slot. The exact title,
+  property, PPU, wrapper, saved caller, real-owner, timing, and state gates
+  limit that behavior. It does not fabricate an event, change the mutex owner,
+  signal the mutex, or release the mutex.
+- Rollback: Run with `-FmodAudioWakeFix off`, or leave the Android property
+  unset. Revert the post-wait helper and call to remove this successor.
+- Android build result: `:app:assembleDebug` passed in 2 minutes 41 seconds
+  with 42 tasks. The changed native code compiled and linked.
+- Artifact: The APK is
+  `app/build/outputs/apk/debug/rpcsx-thor-experiment-debug.apk`. Its size is
+  116,153,584 bytes, and its SHA-256 is
+  `5979BEC509A873C1EF387065E327903675AA1AFBCE73A537036F7A84C9B82682`.
+- Native identity: The unstripped and merged core SHA-256 is
+  `BDB05E8097C8505DE77EE1A5290B635B0F59B5AD6828FF7E44159F28C86DDD62`.
+  The stripped and packaged core SHA-256 is
+  `4C86DEBF01C8071B892A0C4E87D17B69435679EA0F8904CC9B745AEA6169FA49`.
+- Verification: The focused HLE route, PPU PC, and load-wait contracts plus
+  `git diff --check` pass.
+  The `Thor TWC AUDIO OWNER WAKE` marker is present in the unstripped, merged,
+  and stripped Android native libraries. The packaged core hash matches the
+  stripped core.
+- Thor result: Not run. Experiment 163 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep this successor for one device decision run. It tests the
+  exact state and timing that experiment 163 proved and retains an explicit
+  rollback.
+- Next: In one later independently cool round, install this exact APK after a
+  fixed-silicon cold sample below 70 C. Arm on an owner transition from `0x224`
+  to `0x304`. Require the FMOD return, mutex handoff, correct moving gameplay,
+  and a sustained 30 FPS result before performance credit.

@@ -245,6 +245,10 @@ public:
   // PPU thread acknowledges suspension. Return the active suspend barrier.
   static u32 complete_deferred_wake(ppu_thread &thread);
 
+  // Complete a proven mutex-owner wake after its waiter leaves the schedule.
+  // The caller must limit this repair to an exact owner and waiter handoff.
+  static bool force_owner_wake_after_waiter_sleep(ppu_thread &thread);
+
   // Returns true on successful context switch, false otherwise
   static bool yield(cpu_thread &thread);
 

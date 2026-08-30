@@ -168,23 +168,16 @@ void thor_transformers_complete_audio_owner_wake(
       idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
   const u32 state_before =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
-  const u32 forced_pending =
-      owner ? lv2_obj::complete_deferred_wake(*owner) : 0;
-  auto state_after_bits = owner ? +owner->state : rx::EnumBitSet<cpu_flag>{};
-  const u32 state_after = static_cast<u32>(state_after_bits.raw());
-  const bool forced_notify =
-      owner && state_after_bits & cpu_flag::wait &&
-      state_after_bits & cpu_flag::signal;
-
-  if (forced_notify) {
-    owner->state.notify_one();
-  }
+  const bool forced_wake =
+      owner ? lv2_obj::force_owner_wake_after_waiter_sleep(*owner) : false;
+  const u32 state_after =
+      owner ? static_cast<u32>((+owner->state).raw()) : 0;
 
   sys_lwmutex.error(
       "Thor TWC AUDIO OWNER WAKE: waiter=0x%x owner=0x%x id=0x%x "
-      "state=0x%x->0x%x pending=%u notify=%u",
+      "state=0x%x->0x%x forced=%u",
       waiting_ppu.id, owner_id, lwmutex_id, state_before, state_after,
-      forced_pending, forced_notify ? 1u : 0u);
+      forced_wake ? 1u : 0u);
 }
 } // namespace
 

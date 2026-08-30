@@ -357,11 +357,29 @@ if (-not $sysSync.Contains('static u32 complete_deferred_wake(ppu_thread &thread
     throw "The deferred PPU wake repair declaration is missing."
 }
 
+$requiredOwnerWakeFragments = @(
+    'bool lv2_obj::force_owner_wake_after_waiter_sleep(ppu_thread &thread)',
+    'if (!g_scheduler_ready)',
+    'std::exchange(thread.ack_suspend, false)',
+    'state += cpu_flag::signal;',
+    'state -= cpu_flag::suspend;',
+    'thread.state.notify_one();'
+)
+
+foreach ($fragment in $requiredOwnerWakeFragments) {
+    if (-not $lv2.Contains($fragment)) {
+        throw "The post-wait owner wake repair is missing: $fragment"
+    }
+}
+
+if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(ppu_thread &thread);')) {
+    throw "The post-wait owner wake repair declaration is missing."
+}
+
 $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
-    'lv2_obj::complete_deferred_wake(*owner)',
-    'owner->state.notify_one();',
+    'lv2_obj::force_owner_wake_after_waiter_sleep(*owner)',
     '"Thor TWC AUDIO OWNER WAKE:'
 )
 

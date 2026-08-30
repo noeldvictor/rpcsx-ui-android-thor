@@ -1827,6 +1827,51 @@ u32 lv2_obj::complete_deferred_wake(ppu_thread &thread) {
   return pending;
 }
 
+bool lv2_obj::force_owner_wake_after_waiter_sleep(ppu_thread &thread) {
+  bool changed = false;
+
+  {
+    std::lock_guard lock(g_mutex);
+
+    if (!g_scheduler_ready) {
+      return false;
+    }
+
+    const rx::EnumBitSet<cpu_flag> remove_yield =
+        thread.start_time == 0 ? +cpu_flag::suspend
+                               : (cpu_flag::yield + cpu_flag::preempt);
+
+    const auto result = thread.state.fetch_op(
+        [&](rx::EnumBitSet<cpu_flag> &state) -> bool {
+          if (cpu_flag::suspend - state || cpu_flag::wait - state ||
+              state & cpu_flag::signal) {
+            return false;
+          }
+
+          state += cpu_flag::signal;
+          state -= cpu_flag::suspend;
+          state -= remove_yield;
+          return true;
+        });
+
+    changed = result.second;
+
+    if (changed) {
+      thread.start_time = 0;
+
+      if (std::exchange(thread.ack_suspend, false)) {
+        ensure(g_pending)--;
+      }
+    }
+  }
+
+  if (changed) {
+    thread.state.notify_one();
+  }
+
+  return changed;
+}
+
 bool lv2_obj::yield(cpu_thread &thread) {
   if (auto ppu = thread.try_get<ppu_thread>()) {
     ppu->raddr = 0; // Clear reservation
