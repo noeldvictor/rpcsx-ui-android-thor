@@ -20,15 +20,18 @@ LOG_CHANNEL(sys_lwmutex);
 
 namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
+constexpr u32 thor_transformers_main_lwmutex_unlock_lr = 0x00e28c18;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
 constexpr u32 thor_transformers_post_audio_lwmutex_id = 0x95008d00;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
+constexpr u32 thor_transformers_post_audio_unlock_trace_limit = 8;
 constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
 constexpr u32 thor_transformers_audio_dependency_log_limit = 16;
 constexpr u32 thor_transformers_audio_dependency_yield_limit = 4096;
 
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_trace_seq{0};
+std::atomic<u32> g_thor_transformers_post_audio_unlock_trace_seq{0};
 std::atomic<u32> g_thor_transformers_audio_owner_candidate_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_lwmutex_id{0};
@@ -47,6 +50,34 @@ bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #else
   return false;
 #endif
+}
+
+bool thor_transformers_post_audio_unlock_trace_target(
+    const ppu_thread &ppu, u32 lwmutex_id) noexcept {
+  return thor_transformers_lv2_lwmutex_trace_enabled() &&
+         ppu.id == 0x0100'0000 &&
+         static_cast<u32>(ppu.lr) == thor_transformers_main_lwmutex_unlock_lr &&
+         lwmutex_id == thor_transformers_post_audio_lwmutex_id;
+}
+
+void thor_transformers_post_audio_unlock_trace(
+    const ppu_thread &ppu, u32 lwmutex_id, u32 call, const char *stage,
+    const lv2_lwmutex *mutex = nullptr, const ppu_thread *wake_ppu = nullptr) {
+  if (call >= thor_transformers_post_audio_unlock_trace_limit) {
+    return;
+  }
+
+  const auto queue = mutex ? mutex->load_sq() : nullptr;
+  const s32 signaled = mutex
+                           ? atomic_storage<s32>::load(
+                                 mutex->lv2_control.raw().signaled)
+                           : 0;
+  sys_lwmutex.error(
+      "Thor TWC POST AUDIO UNLOCK #%u: stage=%s ppu=0x%x cia=0x%x lr=0x%x "
+      "sp=0x%llx id=0x%x signaled=0x%x queue_ppu=0x%x wake_ppu=0x%x",
+      call, stage, ppu.id, ppu.cia, static_cast<u32>(ppu.lr), ppu.gpr[1],
+      lwmutex_id, static_cast<u32>(signaled), queue ? queue->id : 0,
+      wake_ppu ? wake_ppu->id : 0);
 }
 
 bool thor_transformers_audio_wake_fix_enabled() noexcept {
@@ -658,19 +689,49 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
 
   sys_lwmutex.trace("_sys_lwmutex_unlock(lwmutex_id=0x%x)", lwmutex_id);
 
+  const bool trace_post_audio_unlock =
+      thor_transformers_post_audio_unlock_trace_target(ppu, lwmutex_id);
+  const u32 post_audio_unlock_call =
+      trace_post_audio_unlock
+          ? g_thor_transformers_post_audio_unlock_trace_seq.fetch_add(
+                1, std::memory_order_relaxed)
+          : thor_transformers_post_audio_unlock_trace_limit;
+  thor_transformers_post_audio_unlock_trace(
+      ppu, lwmutex_id, post_audio_unlock_call, "PRE-IDM");
+
   const auto mutex = idm::check<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "POST-IDM", &mutex);
         thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                             "UNLOCK-ENTER");
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "PRE-TRY-UNLOCK", &mutex);
         if (mutex.try_unlock(false)) {
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "POST-TRY-SIGNAL",
+              &mutex);
           thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                               "UNLOCK-SIGNAL");
           return;
         }
 
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "POST-TRY-QUEUED",
+            &mutex);
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "PRE-QUEUE-LOCK", &mutex);
         std::lock_guard lock(mutex.mutex);
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "POST-QUEUE-LOCK",
+            &mutex);
 
+        thor_transformers_post_audio_unlock_trace(
+            ppu, lwmutex_id, post_audio_unlock_call, "PRE-REOWN", &mutex);
         if (const auto cpu = mutex.reown<ppu_thread>()) {
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "POST-REOWN", &mutex,
+              cpu);
           if (static_cast<ppu_thread *>(cpu)->state & cpu_flag::again) {
             ppu.state += cpu_flag::again;
             thor_transformers_lv2_lwmutex_trace(
@@ -680,11 +741,31 @@ error_code _sys_lwmutex_unlock(ppu_thread &ppu, u32 lwmutex_id) {
 
           thor_transformers_lv2_lwmutex_trace(
               ppu, lwmutex_id, mutex, "UNLOCK-HANDOFF", 0, cpu->id);
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "PRE-AWAKE", &mutex,
+              cpu);
           mutex.awake(cpu);
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "POST-AWAKE", &mutex,
+              cpu);
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "PRE-CLEANUP", &mutex,
+              cpu);
           notify.cleanup(); // lv2_lwmutex::mutex is not really active 99% of
                             // the time, can be ignored
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "POST-CLEANUP", &mutex,
+              cpu);
+        } else {
+          thor_transformers_post_audio_unlock_trace(
+              ppu, lwmutex_id, post_audio_unlock_call, "POST-REOWN-EMPTY",
+              &mutex);
         }
       });
+
+  thor_transformers_post_audio_unlock_trace(
+      ppu, lwmutex_id, post_audio_unlock_call, "POST-IDM-CHECK",
+      mutex ? &*mutex : nullptr);
 
   if (!mutex) {
     return CELL_ESRCH;
