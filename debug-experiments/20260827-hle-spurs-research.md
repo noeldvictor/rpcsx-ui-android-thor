@@ -9002,7 +9002,7 @@ rendering progress.
   diagnostics and explicit probe builds retain them. Give it no speed credit.
   Trace the loading dependency before the next device experiment.
 
-## 198. HLE reaches a zero-flip transition that input releases
+## 198. HLE reaches an intermittent zero-flip transition
 
 - Status: visual-progress, transition-stall, android-clean, startup-only
 - Scope: BLUS30357, HLE SPURS, six-minute continuous startup route
@@ -9016,13 +9016,13 @@ rendering progress.
 - Visual result: Images through 240 seconds showed the valid animated loading
   screen. The 300-second image showed a wide static band instead of the normal
   loading image. The 360-second image returned to the animated loading screen
-  after CROSS. This is progress through a transition, but it is not a correct
-  menu or gameplay frame.
+  after CROSS. This run alone does not prove that input caused the recovery.
+  This is not a correct menu or gameplay frame.
 - Frame result: The continuous loading interval was usually about 20 to 22 FPS.
   Frame production then stopped completely. Five consecutive ten-second
   samples ending at emulator times 4:47 through 5:27 reported 0 FPS while total
-  CPU stayed between 26.8 and 35.7 percent. CROSS released the transition. The
-  next samples reported 15.2, 20.9, 21.6, and 19.6 FPS.
+  CPU stayed between 26.8 and 35.7 percent. CROSS coincided with the end of the
+  transition. The next samples reported 15.2, 20.9, 21.6, and 19.6 FPS.
 - Stability: The route had no access violation, dead FIFO, GCM heap assertion,
   verification failure, fatal error, `SIGSEGV`, or `SIGBUS`. The conditional
   store counters stopped changing after startup at `stale128=425` and
@@ -9031,7 +9031,39 @@ rendering progress.
   stop limit. The highest junction sample was 79.5 C during the startup spike.
   The device guard did not stop the process. The macro stopped RPCSX and the
   final PID was absent.
-- Decision: HLE is not stuck in the first loading animation. It reaches a
-  later zero-flip transition that accepts input, but correct gameplay and 30
-  FPS are not proved. The next route must send CROSS at this transition and
-  keep running long enough to identify the next correct visual state.
+- Decision: HLE is not stuck in the first loading animation. It reaches an
+  intermittent zero-flip transition, but correct gameplay and 30 FPS are not
+  proved. A longer route must determine whether input causes progress or only
+  coincides with automatic recovery.
+
+## 199. Nine minutes of input do not leave the loading loop
+
+- Status: blocker-confirmed, android-clean, not-gameplay
+- Scope: BLUS30357, HLE SPURS, nine-minute continuous input route
+- Identity: Exact APK
+  `7E73F2D06D13A8CD6BA4F1654647CDCE7E1D234C69B45873A43886558BF7961C`
+  ran in `20260830-042946-thor-input-custom` after the independent strict gate
+  in `20260830-042931-thor-input-strict-cool-gate`.
+- Route: The macro sent START four times before 300 seconds. It then sent
+  CROSS, CROSS, START, and CROSS at one-minute intervals. It saved nine fixed
+  images and stopped after 540 seconds.
+- Visual result: The first image showed the correct Unreal, PhysX, and Hasbro
+  legal frame. All eight later images showed the animated Transformers loading
+  screen. The last image still showed loading at 23.70 FPS. Repeated direct
+  input did not expose a correct menu or gameplay frame.
+- Transition result: Frame rate fell to 8.4 FPS at emulator time 3:23. Four
+  consecutive ten-second samples from 3:33 through 4:03 then reported 0 FPS.
+  The route recovered to 4.8 FPS at 4:13 and 22.0 FPS at 4:23. This recovery
+  happened before the first CROSS after the 300-second image. Input therefore
+  did not prove the recovery in experiment 198.
+- Steady result: Outside the intermittent transition, later complete samples
+  were usually about 20 to 22 FPS. Total CPU was usually about 24 to 33 percent.
+  This is a serial wait limit and not full Thor CPU use.
+- Stability: The route had no access violation, dead FIFO, GCM heap assertion,
+  verification failure, fatal error, `SIGSEGV`, or `SIGBUS`. Fixed silicon
+  peaked at 46.6 C and junction temperature peaked at 49.3 C. The macro stopped
+  RPCSX and the final PID was absent.
+- Decision: Stop blind input runs. The loading loop does not complete after
+  nine minutes. Profile and repair the producer for the known main-thread
+  render barrier. Do not give loading-screen FPS or intermittent recovery any
+  gameplay credit.
