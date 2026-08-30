@@ -108,6 +108,7 @@ foreach ($fragment in @(
     'targetC = 65',
     'stableSamples = 2',
     '-Name "thor_press"',
+    'maxStartC = 68',
     'maxStartC = 70',
     'maxSiliconC = 72',
     '$afterStartArguments.maxSlices = $SliceAfterStartMaxSlices',

@@ -9830,8 +9830,10 @@ rendering progress.
   limit. A workload burst can cross both thresholds between 250 ms samples.
 - Change: Lower only the independent Transformers device-watchdog early hold
   to 68 C. Keep the 72 C hard stop, 250 ms polling, Smart fan enforcement,
-  and the below-70 C cold launch gate. The controller can resume the held
-  process only after its existing paused cooldown.
+  and the below-70 C cold launch gate. Set every guest-slice start ceiling to
+  68 C as well. This includes the repeated one-slice visual gates, which each
+  otherwise treated their first slice as a new 70 C cold start. The controller
+  can resume the held process only after its paused cooldown.
 - Decision: Do not run the Thor again in this thermal round. Verify the route
   and thermal contracts on the host. A later cool device run must prove that
   the 68 C hold occurs before the hard limit before it can test the HLE repair.

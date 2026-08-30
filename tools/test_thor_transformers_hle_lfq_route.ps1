@@ -274,6 +274,7 @@ $requiredRenderProbeFragments = @(
     '$afterStartArguments.armMatch = $effectiveAfterStartStopMatch',
     '$afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices',
     '-OutputName "slice-loop-after-start.json"',
+    'maxStartC = 68',
     'maxStartC = 70',
     'resumeTargetC = 68',
     'resumeStableSamples = $SliceResumeStableSamples',

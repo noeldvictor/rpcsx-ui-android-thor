@@ -475,6 +475,7 @@ try {
             "- Maximum slices: $MaxSlices",
             "- Maximum host seconds: $MaxSliceHostSeconds",
             "- Cool timeout seconds: $SliceCoolTimeoutSeconds",
+            "- Active slice start ceiling C: 68",
             "- Runtime slice resume target C: 68",
             "- Runtime resume stable samples: $SliceResumeStableSamples",
             "- Runtime resume sample interval seconds: $SliceResumeSampleIntervalSeconds",
@@ -505,7 +506,7 @@ try {
             maxSlices = $MaxSlices
             maxHostS = $MaxSliceHostSeconds
             coolTimeoutS = $SliceCoolTimeoutSeconds
-            maxStartC = 70
+            maxStartC = 68
             resumeTargetC = 68
             resumeStableSamples = $SliceResumeStableSamples
             resumeSampleIntervalS = $SliceResumeSampleIntervalSeconds
