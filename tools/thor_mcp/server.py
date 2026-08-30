@@ -306,7 +306,11 @@ def t_press(a):
         return {"refused": True, "fixedSiliconC": start_silicon,
                 "reason": f"fixed silicon is not below {start_ceiling} C"}
 
-    wake_display_for_guest()
+    display = prepare_display_for_guest(p)
+    if not display.get("ready"):
+        stop = t_stop({})
+        return {"error": "the guarded press could not foreground RPCSX",
+                "display": display, "stop": stop}
     resume = None
     if process_held:
         resume = continue_process_for_slice(p)
@@ -373,6 +377,7 @@ def t_press(a):
     return {"press": r, "wasPaused": was_paused,
             "resume": resume, "pause": pause, "processHold": process_hold,
             "rePaused": re_paused, "holdMode": hold_mode,
+            "display": display,
             "maxFixedSiliconC": max_silicon}
 
 
@@ -441,15 +446,55 @@ def continue_process_for_slice(p):
             "deadlineHoldRaced": state in ("T", "t")}
 
 
-def wake_display_for_guest():
-    """Make an Android Surface available before a guarded guest resume.
+def prepare_display_for_guest(p):
+    """Make the existing RPCSX task visible before a guarded guest resume.
 
-    The Thor can destroy its SurfaceView surface during a long start-paused
-    handoff. KEYCODE_WAKEUP is idempotent when the display is already awake.
-    Send it while the guest is held, then let the UI thread redeliver the
-    Surface before RSX needs it.
+    AYN Reblue can take the foreground during a long start-paused handoff.
+    Android then destroys the RPCSX Surface even while the display stays awake.
+    Wake the display, and bring the existing task forward if that happened.
+    Do not launch another activity or another guest.
     """
     sh("input keyevent KEYCODE_WAKEUP")
+    activity_command = "dumpsys activity activities"
+    activities = sh(activity_command, timeout=20)
+    foreground_pattern = (
+        r"(?m)^\s*(?:topResumedActivity=.*|ResumedActivity:.*)"
+        r"net\.rpcsx\.easy/net\.rpcsx\.RPCSXActivity"
+    )
+    if re.search(foreground_pattern, activities):
+        return {"ready": True, "moved": False}
+
+    task_pattern = re.compile(
+        r"(?m)^\s*\* Task\{[^\n]* #(\d+) [^\n]* "
+        r"A=(?:\d+:)?net\.rpcsx\.easy\b"
+    )
+    task_matches = list(task_pattern.finditer(activities))
+    task_id = None
+    process_pattern = re.compile(
+        rf"\b{re.escape(str(p))}:net\.rpcsx\.easy/"
+    )
+    for index, match in enumerate(task_matches):
+        end = (task_matches[index + 1].start()
+               if index + 1 < len(task_matches) else len(activities))
+        task_text = activities[match.start():end]
+        if ("net.rpcsx.easy/net.rpcsx.RPCSXActivity" in task_text and
+                process_pattern.search(task_text)):
+            task_id = match.group(1)
+            break
+
+    if task_id is None:
+        return {"ready": False, "moved": False,
+                "error": "the live RPCSX task could not be identified"}
+
+    # Android 13 has no move-to-front task command. `task lock` brings the task
+    # forward before this retail build rejects lock-task mode. Stop lock mode
+    # immediately as well, so the command stays safe if a later build permits it.
+    sh(f"am task lock {task_id}; am task lock stop", timeout=20)
+    after = sh(activity_command, timeout=20)
+    ready = re.search(foreground_pattern, after) is not None
+    return {"ready": ready, "moved": True, "taskId": int(task_id),
+            "error": None if ready else
+            "the existing RPCSX task did not reach the foreground"}
 
 
 def is_paused():
@@ -512,7 +557,13 @@ def t_slice(a):
                            if start_silicon < 0 else
                            f"fixed silicon is not below {start_ceiling} C")}
 
-    wake_display_for_guest()
+    display = prepare_display_for_guest(p)
+    if not display.get("ready"):
+        stop = t_stop({})
+        return {"error": "the bounded slice could not foreground RPCSX",
+                "display": display, "stop": stop,
+                "initialState": initial_state,
+                "startupHandoff": startup_handoff}
     started = time.monotonic()
     deadline_pause = {}
 
@@ -605,6 +656,7 @@ def t_slice(a):
                 "endFixedSiliconC": silicon,
                 "maxFixedSiliconC": max_silicon,
                 "resume": resume, "pause": pause,
+                "display": display,
                 "processHold": process_hold,
                 "paused": True, "holdMode": "process",
                 "initialState": initial_state,
@@ -673,6 +725,7 @@ def t_slice(a):
               "endFixedSiliconC": silicon,
               "maxFixedSiliconC": max_silicon,
               "resume": resume, "pause": pause,
+              "display": display,
               "paused": paused,
               "holdMode": "emulator",
               "initialState": initial_state,

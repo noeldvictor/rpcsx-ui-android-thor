@@ -26,8 +26,9 @@ foreach ($required in @(
     'run-as {PKG} kill -STOP {p}',
     'def continue_process_for_slice(p):',
     'run-as {PKG} kill -CONT {p}',
-    'def wake_display_for_guest():',
+    'def prepare_display_for_guest(p):',
     'input keyevent KEYCODE_WAKEUP',
+    'am task lock {task_id}; am task lock stop',
     'return emulation_state() in (EMU_STATE_PAUSED, EMU_STATE_READY)',
     'duration = max(0.1, min(float(a.get("seconds", 1.5)), 15.0))',
     'interval = min(0.25, duration - elapsed)',
@@ -96,7 +97,7 @@ if (-not $pressMatch.Success -or
     -not $pressMatch.Value.Contains('start_ceiling = float(a.get("maxStartC", 70))') -or
     -not $pressMatch.Value.Contains('process_held = bool(p) and held_process_pid() == p') -or
     -not $pressMatch.Value.Contains('continue_process_for_slice(p)') -or
-    -not $pressMatch.Value.Contains('wake_display_for_guest()') -or
+    -not $pressMatch.Value.Contains('prepare_display_for_guest(p)') -or
     -not $pressMatch.Value.Contains('stop_process_for_slice(p)') -or
     -not $pressMatch.Value.Contains('silicon >= hard_limit') -or
     -not $pressMatch.Value.Contains('stop = t_stop({})')) {

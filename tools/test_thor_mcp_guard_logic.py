@@ -161,7 +161,46 @@ SERVER.api = original_api
 SERVER._process_hold_pid = None
 SERVER._process_state = lambda process_id: "R"
 shell_commands = []
-SERVER.sh = lambda command, timeout=120: shell_commands.append(command) or ""
+foreground_activities = (
+    "  ResumedActivity: ActivityRecord{abc u0 "
+    "net.rpcsx.easy/net.rpcsx.RPCSXActivity} t3650}\n"
+)
+
+
+def guest_shell(command, timeout=120):
+    shell_commands.append(command)
+    return foreground_activities if command == "dumpsys activity activities" else ""
+
+
+background_activities = """\
+  ResumedActivity: ActivityRecord{def u0 com.reblue/.ReblueActivity} t3653}
+  * Task{68b44f2 #3650 type=standard A=10158:net.rpcsx.easy U=0 visible=false}
+      app=ProcessRecord{2da31b5 123:net.rpcsx.easy/u0a158}
+      mActivityComponent=net.rpcsx.easy/net.rpcsx.RPCSXActivity
+"""
+foreground_queries = iter([background_activities, foreground_activities])
+foreground_commands = []
+
+
+def recovery_shell(command, timeout=120):
+    foreground_commands.append(command)
+    if command == "dumpsys activity activities":
+        return next(foreground_queries)
+    return ""
+
+
+SERVER.sh = recovery_shell
+display_result = SERVER.prepare_display_for_guest("123")
+assert display_result == {
+    "ready": True, "moved": True, "taskId": 3650, "error": None,
+}, "The display recovery did not foreground the live RPCSX task."
+assert foreground_commands == [
+    "input keyevent KEYCODE_WAKEUP",
+    "dumpsys activity activities",
+    "am task lock 3650; am task lock stop",
+    "dumpsys activity activities",
+], "The display recovery did not use the existing task safely."
+SERVER.sh = guest_shell
 
 calls = prepare_paused_guest()
 shell_commands.clear()
@@ -173,7 +212,9 @@ assert result["pauseRequestedAtS"] == 1.0, "The deadline pause did not use the r
 assert result["paused"] is True, "The safe slice did not end paused."
 assert result["maxFixedSiliconC"] == 60.0, "The safe slice lost its maximum temperature."
 assert ("/resume", "POST") in calls and ("/pause", "POST") in calls, "The safe slice did not resume and pause."
-assert shell_commands == ["input keyevent KEYCODE_WAKEUP"], (
+assert shell_commands == [
+    "input keyevent KEYCODE_WAKEUP", "dumpsys activity activities",
+], (
     "The safe slice did not wake the display before it resumed."
 )
 assert calls.index(("/pause", "POST")) < len(calls) - 1 - calls[::-1].index(("pid", None)), (
@@ -656,7 +697,7 @@ assert result["clearedCount"] == 2 and result["remainingCount"] == 0, (
 SERVER.pid = lambda: "123"
 result = SERVER.t_clearprops({})
 assert result["refused"] is True, "Property cleanup changed a running experiment."
-SERVER.sh = lambda command, timeout=120: shell_commands.append(command) or ""
+SERVER.sh = guest_shell
 
 clock.now = 0.0
 prepare_paused_guest()
@@ -696,7 +737,9 @@ use_temperatures([42.0, 45.0, 50.0])
 result = SERVER.t_press({"buttons": "START", "settleS": 0.5})
 assert result["rePaused"] is True, "The guarded press did not restore the paused state."
 assert ("/pad/press?buttons=START&ms=150", "POST") in calls, "The guarded press did not send the input."
-assert shell_commands == ["input keyevent KEYCODE_WAKEUP"], (
+assert shell_commands == [
+    "input keyevent KEYCODE_WAKEUP", "dumpsys activity activities",
+], (
     "The guarded press did not wake the display before it resumed."
 )
 
