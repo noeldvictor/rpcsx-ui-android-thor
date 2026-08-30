@@ -9001,3 +9001,37 @@ rendering progress.
 - Decision: Keep the cleanup because normal builds do not need inactive hot
   diagnostics and explicit probe builds retain them. Give it no speed credit.
   Trace the loading dependency before the next device experiment.
+
+## 198. HLE reaches a zero-flip transition that input releases
+
+- Status: visual-progress, transition-stall, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS, six-minute continuous startup route
+- Identity: Exact APK
+  `7E73F2D06D13A8CD6BA4F1654647CDCE7E1D234C69B45873A43886558BF7961C`
+  ran in `20260830-042122-thor-input-custom` after the independent strict gate
+  in `20260830-042104-thor-input-strict-cool-gate`.
+- Route: The macro saved fixed images at 60-second intervals. It sent START at
+  60, 120, 180, and 240 seconds. It sent CROSS after the 300-second image and
+  stopped after the 360-second image.
+- Visual result: Images through 240 seconds showed the valid animated loading
+  screen. The 300-second image showed a wide static band instead of the normal
+  loading image. The 360-second image returned to the animated loading screen
+  after CROSS. This is progress through a transition, but it is not a correct
+  menu or gameplay frame.
+- Frame result: The continuous loading interval was usually about 20 to 22 FPS.
+  Frame production then stopped completely. Five consecutive ten-second
+  samples ending at emulator times 4:47 through 5:27 reported 0 FPS while total
+  CPU stayed between 26.8 and 35.7 percent. CROSS released the transition. The
+  next samples reported 15.2, 20.9, 21.6, and 19.6 FPS.
+- Stability: The route had no access violation, dead FIFO, GCM heap assertion,
+  verification failure, fatal error, `SIGSEGV`, or `SIGBUS`. The conditional
+  store counters stopped changing after startup at `stale128=425` and
+  `other_fail=705`.
+- Thermal result: Fixed silicon peaked at 69.9 C and did not reach the 72 C
+  stop limit. The highest junction sample was 79.5 C during the startup spike.
+  The device guard did not stop the process. The macro stopped RPCSX and the
+  final PID was absent.
+- Decision: HLE is not stuck in the first loading animation. It reaches a
+  later zero-flip transition that accepts input, but correct gameplay and 30
+  FPS are not proved. The next route must send CROSS at this transition and
+  keep running long enough to identify the next correct visual state.
