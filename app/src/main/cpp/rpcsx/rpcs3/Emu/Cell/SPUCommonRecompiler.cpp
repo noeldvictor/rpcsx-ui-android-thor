@@ -23,6 +23,7 @@
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
 #include "thor_spurs_event_wait_probe.h"
+#include "thor_spu_pc_census.h"
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -334,6 +335,78 @@ static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
 		spu_log.error("Thor FMOD EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
 			count, spu.pc, spu.gpr[3]._u32[3]);
 	}
+
+	spu_runtime::g_escape(&spu);
+}
+
+// Run the one-time Transformers PhysX initializers without waiting for four
+// cold LLVM compiles. The title asks for the first queue reply immediately
+// after task creation. On Thor, the final initializer reached LLVM after 5.73
+// seconds and missed the fixed five-second startup handshake.
+//
+// Match the armed BLUS30357 task, its live taskset, its task ID, its startup
+// age, and captured code bytes. The interpreter stops at 0x06930. Normal PhysX
+// work then returns to LLVM.
+//
+//   debug.rpcsx.thor.transformers_physx_start_interp = 1
+static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.transformers_physx_start_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x06800)
+	{
+		return false;
+	}
+
+	const auto task = thor::get_transformers_physx_task_snapshot();
+	const u64 now = get_system_time();
+
+	if (!task.taskset || task.task_id != 0 || task.elf != 0x018c1000u ||
+		!task.arm_time_us || now < task.arm_time_us || now - task.arm_time_us > 10'000'000 ||
+		static_cast<u32>(+spu._ref<u64>(0x27b8)) != task.taskset ||
+		+spu._ref<u32>(0x27d4) != task.task_id)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_physx_start_signature = {
+		0x40, 0x20, 0x00, 0x7f, 0x12, 0x7c, 0x70, 0x8a,
+		0x40, 0x20, 0x00, 0x7f, 0x24, 0xff, 0xc0, 0xd0,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x06800), s_physx_start_signature.data(),
+		s_physx_start_signature.size()) == 0;
+}
+
+static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+	const u64 started = get_system_time();
+
+	spu.interp_fallback_begin = 0x03128;
+	spu.interp_fallback_end = 0x06930;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	spu_log.error("Thor Transformers PhysX startup interpreter enter #%u pc=0x%05x lr=0x%05x",
+		count, spu.pc, spu.gpr[0]._u32[3]);
+
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+
+	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x elapsed_us=%llu",
+		count, spu.pc, static_cast<unsigned long long>(get_system_time() - started));
 
 	spu_runtime::g_escape(&spu);
 }
@@ -3142,6 +3215,12 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 	if (is_thor_fmod_event_interp_dispatch(spu))
 	{
 		spu_run_thor_fmod_event_interp_dispatch(spu);
+		return;
+	}
+
+	if (is_thor_transformers_physx_start_interp_dispatch(spu))
+	{
+		spu_run_thor_transformers_physx_start_interp_dispatch(spu);
 		return;
 	}
 #endif

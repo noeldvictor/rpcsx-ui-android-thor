@@ -44,6 +44,8 @@ param(
     [ValidateSet("on", "off")]
     [string]$PhysxQueueWait = "on",
     [ValidateSet("on", "off")]
+    [string]$PhysxStartInterp = "on",
+    [ValidateSet("on", "off")]
     [string]$PhysxLsDump = "off",
     [ValidateSet("on", "off")]
     [string]$RsxFifoOrdered = "off",
@@ -336,6 +338,7 @@ $profileProperties = [ordered]@{
     "debug.rpcsx.thor.fmod_event_interp" = if ($Mode -eq "HLE" -and $FmodEventInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_audio_wake_fix" = if ($Mode -eq "HLE" -and $FmodAudioWakeFix -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_physx_queue_wait" = if ($Mode -eq "HLE" -and $PhysxQueueWait -eq "on") { "1" } else { "0" }
+    "debug.rpcsx.thor.transformers_physx_start_interp" = if ($Mode -eq "HLE" -and $PhysxStartInterp -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_fifo_ordered" = if ($Mode -eq "HLE" -and $RsxFifoOrdered -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.transformers_lwmutex_trace" = if ($Mode -eq "HLE" -and $LwmutexTrace -eq "on") { "1" } else { "0" }
     "debug.rpcsx.thor.spu_ls_dump" = if ($Mode -eq "HLE" -and $PhysxLsDump -eq "on") { "@physx" } elseif ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on") { "@fmod" } else { "0" }
@@ -749,6 +752,7 @@ try {
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.fmod_event_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_audio_wake_fix" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_physx_queue_wait" -Value "0"
+    Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_physx_start_interp" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_fifo_ordered" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.transformers_lwmutex_trace" -Value "0"
     Set-ThorRenderProbeProperty -Name "debug.rpcsx.thor.spu_ls_dump" -Value "0"
