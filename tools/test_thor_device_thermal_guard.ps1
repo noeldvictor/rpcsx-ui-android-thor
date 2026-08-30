@@ -112,7 +112,7 @@ foreach ($fragment in @(
     'maxSiliconC = 72',
     '$afterStartArguments.maxSlices = $SliceAfterStartMaxSlices',
     '$afterStartArguments.maxHostS = $SliceAfterStartMaxHostSeconds',
-    '$afterStartArguments.armMatch = $SliceAfterStartStopMatch',
+    '$afterStartArguments.armMatch = $effectiveAfterStartStopMatch',
     '$afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices',
     '-OutputName "slice-loop-after-start.json"',
     'slice-device-thermal-guard-ready.txt',

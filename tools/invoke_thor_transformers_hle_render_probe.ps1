@@ -93,6 +93,8 @@ param(
     [ValidateRange(30, 600)]
     [double]$SliceAfterStartMaxHostSeconds = 240,
     [string]$SliceAfterStartHandoffMatch = 'Thread "PPU PhysX thread" created',
+    [string]$SliceAfterStartDiagnosticMatch = 'stage=PRE-SCHEDULE-SCAN',
+    [string]$SliceAfterStartDiagnosticStopMatch = 'stage=POST-FETCH',
     [ValidateRange(0.0, 300.0)]
     [double]$SliceAfterHandoffSeconds = 30.0,
     [ValidateRange(1, 256)]
@@ -489,6 +491,8 @@ try {
             "- After-START maximum slices: $SliceAfterStartMaxSlices",
             "- After-START maximum host seconds: $SliceAfterStartMaxHostSeconds",
             "- After-START handoff marker: $SliceAfterStartHandoffMatch",
+            "- After-START diagnostic marker: $SliceAfterStartDiagnosticMatch",
+            "- After-START diagnostic result: $SliceAfterStartDiagnosticStopMatch",
             "- After-handoff active slice seconds: $effectiveAfterHandoffSliceSeconds",
             "- After-handoff maximum slices: $SliceAfterHandoffMaxSlices",
             "- After-handoff maximum host seconds: $SliceAfterHandoffMaxHostSeconds",
@@ -621,7 +625,13 @@ try {
             $afterStartArguments.Remove("postArmSlices")
 
             if (-not [string]::IsNullOrWhiteSpace($SliceAfterStartHandoffMatch)) {
-                $afterStartArguments.stopMatch = $SliceAfterStartHandoffMatch
+                $afterStartArguments.Remove("stopMatch")
+                $afterStartArguments.stopMatches = @(
+                    @(
+                        $SliceAfterStartDiagnosticMatch,
+                        $SliceAfterStartHandoffMatch
+                    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                )
                 $handoffControllerTimeout = [int][Math]::Ceiling($SliceAfterStartMaxHostSeconds + 150)
                 $handoffOutput = Invoke-ThorRenderProbeController `
                     -Name "thor_slice_loop" `
@@ -636,22 +646,41 @@ try {
                     throw "The after-START handoff loop did not reach its requested paused marker."
                 }
 
-                $afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds
-                if ($effectiveAfterHandoffSliceSeconds -gt 15.0) {
-                    # Use one continuous window only after the exact handoff.
-                    # Both fixed-silicon guards stay active during this window.
-                    $afterStartArguments.maxDurationS = $effectiveAfterHandoffSliceSeconds
+                $matchedHandoff = [string]$handoffResult.matchedStopMatch
+                $diagnosticHandoff = (
+                    -not [string]::IsNullOrWhiteSpace($SliceAfterStartDiagnosticMatch) -and
+                    $matchedHandoff -ceq $SliceAfterStartDiagnosticMatch
+                )
+                $afterStartArguments.Remove("stopMatches")
+                if ($diagnosticHandoff) {
+                    # Give the exact diagnostic one normal slice. A missing
+                    # POST-FETCH row then bounds the internal atomic suspect.
+                    $afterStartArguments.seconds = $effectiveAfterStartSliceSeconds
+                    $afterStartArguments.Remove("maxDurationS")
+                    $afterStartArguments.maxSlices = 1
+                    $afterStartArguments.maxHostS = 60
+                    $effectiveAfterStartStopMatch = $SliceAfterStartDiagnosticStopMatch
+                } else {
+                    $afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds
+                    if ($effectiveAfterHandoffSliceSeconds -gt 15.0) {
+                        # Use one continuous window only after the exact handoff.
+                        # Both fixed-silicon guards stay active during this window.
+                        $afterStartArguments.maxDurationS = $effectiveAfterHandoffSliceSeconds
+                    }
+                    $afterStartArguments.maxSlices = $SliceAfterHandoffMaxSlices
+                    $afterStartArguments.maxHostS = $SliceAfterHandoffMaxHostSeconds
+                    $effectiveAfterStartStopMatch = $SliceAfterStartStopMatch
                 }
-                $afterStartArguments.maxSlices = $SliceAfterHandoffMaxSlices
-                $afterStartArguments.maxHostS = $SliceAfterHandoffMaxHostSeconds
+            } else {
+                $effectiveAfterStartStopMatch = $SliceAfterStartStopMatch
             }
 
             if ($SliceAfterStartPostMarkerSlices -gt 0) {
                 $afterStartArguments.stopMatch = "__THOR_TRANSFORMERS_AFTER_START_UNREACHED__"
-                $afterStartArguments.armMatch = $SliceAfterStartStopMatch
+                $afterStartArguments.armMatch = $effectiveAfterStartStopMatch
                 $afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices
             } else {
-                $afterStartArguments.stopMatch = $SliceAfterStartStopMatch
+                $afterStartArguments.stopMatch = $effectiveAfterStartStopMatch
             }
 
             $afterStartControllerTimeout = [int][Math]::Ceiling($afterStartArguments.maxHostS + 150)

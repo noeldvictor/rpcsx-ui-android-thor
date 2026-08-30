@@ -9677,3 +9677,55 @@ rendering progress.
 - Decision: Do not change the generic atomic helper yet. Run the bounded exact
   trace first. If the scan reports a finite list and `POST-FETCH` is absent,
   test a `CASPAL` compare-exchange implementation as a separate experiment.
+
+## 229. The diagnostic handoff misses the valid PhysX route
+
+- Status: device-confirmed route error, HLE progress, not-gameplay
+- Identity: Strict gate
+  `20260830-181728-thor-input-strict-cool-gate` passed at 34.1 C fixed
+  silicon. Capture `20260830-181757-thor-input-custom` used the bounded
+  lwmutex trace and the PPU census.
+- Lwmutex result: The exact `0x95008d00` unlock and its
+  `PRE-SCHEDULE-SCAN` row did not occur. The related `0x95008c00` audio
+  handoff completed. This run gives no waiter-list or compare-exchange result.
+- PhysX progress: The title created the PPU PhysX thread at emulator time
+  3:56.693. The SPU entered the exact PhysX startup interpreter at 4:07.771.
+  The guest queue wait reported a five-second timeout, and the interpreter
+  left after 10.389 seconds.
+- Measurement error: The route waited for `PRE-SCHEDULE-SCAN` before it could
+  start a continuous window. It kept using two-second slices after the PPU
+  PhysX thread started. The guest timer continued while RPCSX was paused.
+  Therefore, the queue timeout is invalid for the same reason as experiment
+  222.
+- Later state: The main thread stayed at `0x00b56de0`, and the PPU PhysX
+  thread stayed at `0x00fdcf90`. Frame intervals reached 5.8 FPS during
+  startup and then fell to zero after the invalid queue timeout. These values
+  are not gameplay credit.
+- Thermal and fan result: The controller peak was 63.8 C fixed silicon. The
+  device watchdog recorded 411 valid samples and a 65.4 C fixed-silicon
+  peak. Every sample reported Smart fan mode `4`. Cleanup stopped the package,
+  and a direct check found no RPCSX PID. The final fan mode was Smart.
+- Decision: Do not run a second device route in this cool round. The next
+  controller change must accept either the diagnostic scan or the PPU PhysX
+  thread as the first handoff. It must use a short diagnostic step after the
+  scan and a continuous queue window after the PhysX marker.
+
+## 230. Select the first valid post-START handoff
+
+- Status: controller correction, host-pass, device-pending
+- Change: The guarded slice controller now accepts a bounded list of stop
+  markers and reports the marker that ended the loop. The Transformers route
+  waits for either `PRE-SCHEDULE-SCAN` or the PPU PhysX thread creation row.
+- Diagnostic branch: If the lwmutex scan occurs first, the route runs one
+  normal slice and requires `POST-FETCH`. This branch does not start a long
+  continuous window.
+- PhysX branch: If the PPU PhysX thread occurs first, the route starts the
+  existing 30-second continuous queue window. This keeps the five-second
+  guest timer valid.
+- Safety: Both branches keep the independent device watchdog, Smart fan mode,
+  the 70 C start rule, and the 72 C hard stop.
+- Verification: Python syntax, the guarded slice logic, the Transformers HLE
+  route contract, both Thor thermal contracts, and `git diff --check` pass.
+- Next: In a new cool round, run this route with the lwmutex trace and PPU
+  census enabled. Require either an exact `POST-FETCH` diagnostic result or a
+  queue result from the uninterrupted PhysX window.

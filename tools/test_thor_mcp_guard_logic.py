@@ -629,6 +629,31 @@ assert all(item["sampleIntervalS"] == 1 for item in loop_cool_requests), (
 loop_slices.clear()
 loop_cool_requests.clear()
 SERVER._matching_log_lines = lambda match, count=1: (
+    ["diagnostic marker"]
+    if match == "diagnostic boundary" and len(loop_slices) == 1
+    else []
+)
+result = SERVER.t_slice_loop({
+    "seconds": 1.0,
+    "maxSlices": 4,
+    "stopMatches": ["diagnostic boundary", "PhysX boundary"],
+})
+assert result["markerReached"] is True, (
+    "The slice loop did not accept the first marker from its marker list."
+)
+assert result["matchedStopMatch"] == "diagnostic boundary", (
+    "The slice loop did not report which listed marker ended the loop."
+)
+assert result["stopMatches"] == ["diagnostic boundary", "PhysX boundary"], (
+    "The slice loop lost its requested marker list."
+)
+assert result["completedSlices"] == 1, (
+    "The slice loop ran past the first listed marker."
+)
+
+loop_slices.clear()
+loop_cool_requests.clear()
+SERVER._matching_log_lines = lambda match, count=1: (
     ["arm marker"]
     if match == "arm after boundary" and len(loop_slices) >= 2
     else []
