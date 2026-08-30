@@ -34,7 +34,7 @@ foreach ($fragment in $requiredFragments) {
 
 $requiredPerfFragments = @(
     'static std::atomic<u32> s_main_fence_dumps{0};',
-    'pc == 0x00102b98u',
+    'const bool main_fence_wait = pc == 0x00102b98u || static_cast<u32>(ppu.lr) == 0x00102b98u;',
     'const u32 counter_addr = static_cast<u32>(ppu.gpr[28]);',
     'const u32 target = static_cast<u32>(ppu.gpr[29]);',
     'const u32 wait_arg = static_cast<u32>(ppu.gpr[30]);',
@@ -42,6 +42,14 @@ $requiredPerfFragments = @(
     'Thor MAIN FENCE: sample=%u',
     'Thor PPU TASK RING 00: sample=%u',
     'Thor PPU TASK RING 20: sample=%u',
+    'static std::atomic<u32> s_render_command_wait_dumps{0};',
+    'pc == 0x0152efc0u',
+    'const u32 command_base = static_cast<u32>(ppu.gpr[25]);',
+    'const u32 lane = static_cast<u32>(ppu.gpr[26]);',
+    'const s32 timeout = static_cast<s32>(ppu.gpr[27]);',
+    'Thor RENDER COMMAND WAIT: sample=%u',
+    'Thor RENDER COMMAND STACK BEGIN: count=%u',
+    'Thor RENDER COMMAND STACK END',
     'static std::atomic<u64> s_last_main_stack_key{0};',
     'static std::atomic<u32> s_main_stack_dumps{0};',
     's_main_stack_dumps.load() < 8',

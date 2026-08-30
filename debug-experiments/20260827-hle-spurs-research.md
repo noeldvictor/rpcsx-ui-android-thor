@@ -9068,9 +9068,9 @@ rendering progress.
   render barrier. Do not give loading-screen FPS or intermittent recovery any
   gameplay credit.
 
-## 200. A bounded probe exposes the main task-fence state
+## 200. The first main task-fence route stops at the thermal limit
 
-- Status: host-verified, diagnostic-only, device-pending
+- Status: device-inconclusive, diagnostic-only, thermal-stop
 - Scope: BLUS30357, main PPU task fence at guest address `0x00102b98`
 - Ghidra basis: The wait at `0x00102b00` loops while the value at the address
   in register 28 is greater than the target in register 29. Address
@@ -9085,6 +9085,37 @@ rendering progress.
   The optimized ARM64 Debug build completed in 2 minutes 3 seconds. The exact
   APK is `E6C8DB6A1FE95162C08EEC2281022EB9435D7B9348555916796D1C8622C28FFE`,
   is 116,154,664 bytes, and passes the ARM64-only APK contract.
-- Next: Install this exact APK without a launch. If fixed silicon is below
-  70 C, run one short property-gated capture. Use the counter and ring state
-  to select the producer or consumer for the next repair.
+- Device result: The no-launch install in
+  `20260830-045039-transformers-main-fence-probe-install` proved the same
+  device hash and left no PID. The independent start gate measured 39.7 C.
+  Capture `20260830-045122-thor-input-custom` stopped when fixed silicon
+  reached 72.3 C. The post-stop sample measured 40.5 C and the PID was absent.
+- Probe result: The route stopped before the title reached the main fence. It
+  saved no image and emitted no main-fence row. It has no visual or speed
+  credit. Do not repeat this long route without a new build and a new gate.
+
+## 201. Ghidra maps a two-ring render wait
+
+- Status: host-verified, diagnostic-expanded, device-pending
+- Scope: BLUS30357, main task fence and RenderingThread command wait
+- Outer ring: The main caller at `0x00102e44` increments a stack counter,
+  publishes an 8-byte record to the task ring at `0x01d2ffb0`, and waits for
+  the counter to reach zero. The record method at `0x010f7ff0` decrements the
+  counter. The RenderingThread must consume the record before the main thread
+  can continue.
+- Inner ring: Saved PPU census data puts the RenderingThread at
+  `0x0152efc0`. Ghidra shows that this address is the wait loop in a separate
+  title command-ring reader. A timeout of -1 waits until the published and
+  consumed sequence values differ. This wait can prevent the RenderingThread
+  from returning to the outer task-ring consumer.
+- Change: The main-fence probe now also accepts the helper link register
+  `0x00102b98`. This matches the saved live samples. A second bounded probe
+  records the command-ring base, lane, timeout, mask, sequence values, and one
+  RenderingThread call stack at `0x0152efc0`. Both probes require the manual
+  PPU census property. Each probe records at most 16 samples.
+- Verification: The focused PPU probe contract and `git diff --check` pass.
+  The optimized ARM64 Debug build completed in 1 minute 16 seconds. The exact
+  APK is `AAA38EA51EACD7E018C34B5C66513E2B74EE563B344CEF02A1C01DFE6AE4CAD3`,
+  is 116,154,675 bytes, and passes the ARM64-only APK contract.
+- Next: Install this exact APK without a launch. Run one short capture after
+  an independent temperature gate. Confirm both ring states before a repair.

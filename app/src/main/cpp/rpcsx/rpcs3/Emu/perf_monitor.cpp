@@ -244,7 +244,8 @@ void perf_monitor::operator()()
 							// Record the related task-ring words to identify whether the
 							// producer does not publish work or the worker does not consume it.
 							static std::atomic<u32> s_main_fence_dumps{0};
-							if (id == 0x1000000u && pc == 0x00102b98u &&
+							const bool main_fence_wait = pc == 0x00102b98u || static_cast<u32>(ppu.lr) == 0x00102b98u;
+							if (id == 0x1000000u && main_fence_wait &&
 								s_main_fence_dumps.load(std::memory_order_relaxed) < 16)
 							{
 								const u32 counter_addr = static_cast<u32>(ppu.gpr[28]);
@@ -258,8 +259,8 @@ void perf_monitor::operator()()
 
 								if (sample < 16)
 								{
-									perf_log.error("Thor MAIN FENCE: sample=%u counter_addr=%s:0x%08x counter=%u target=%u delta=%d wait_arg=0x%08x",
-										sample + 1, counter_ok ? "mapped" : "unmapped", counter_addr,
+									perf_log.error("Thor MAIN FENCE: sample=%u cia=0x%08x lr=0x%08x counter_addr=%s:0x%08x counter=%u target=%u delta=%d wait_arg=0x%08x",
+										sample + 1, pc, static_cast<u32>(ppu.lr), counter_ok ? "mapped" : "unmapped", counter_addr,
 										counter, target, static_cast<s32>(counter - target), wait_arg);
 
 									if (ring_ok)
@@ -275,6 +276,48 @@ void perf_monitor::operator()()
 											+vm::_ref<be_t<u32>>(task_ring + 0x20), +vm::_ref<be_t<u32>>(task_ring + 0x24),
 											+vm::_ref<be_t<u32>>(task_ring + 0x28), +vm::_ref<be_t<u32>>(task_ring + 0x2c),
 											+vm::_ref<be_t<u32>>(task_ring + 0x30), +vm::_ref<be_t<u32>>(task_ring + 0x34));
+									}
+								}
+							}
+
+							// The RenderingThread can wait forever in the title command-ring
+							// reader at 0x0152efc0. Ghidra identifies register 25 as the
+							// command-ring base, register 26 as the lane, and register 27 as
+							// the timeout. A timeout of -1 blocks the outer task-ring consumer.
+							static std::atomic<u32> s_render_command_wait_dumps{0};
+							if (pc == 0x0152efc0u &&
+								s_render_command_wait_dumps.load(std::memory_order_relaxed) < 16)
+							{
+								const u32 command_base = static_cast<u32>(ppu.gpr[25]);
+								const u32 lane = static_cast<u32>(ppu.gpr[26]);
+								const s32 timeout = static_cast<s32>(ppu.gpr[27]);
+								const u32 published_addr = command_base + lane * 0x100u + 0x100u;
+								const u32 consumed_addr = command_base + lane * 4u + 0x680u;
+								const bool command_ok = vm::check_addr(command_base, 0, 4) &&
+									vm::check_addr(published_addr, 0, 4) && vm::check_addr(consumed_addr, 0, 4);
+								const u32 published = command_ok ? +vm::_ref<be_t<u32>>(published_addr) : 0;
+								const u32 consumed = command_ok ? +vm::_ref<be_t<u32>>(consumed_addr) : 0;
+								const u32 enabled_mask = command_ok ? +vm::_ref<be_t<u32>>(command_base) : 0;
+								const u32 sample = s_render_command_wait_dumps.fetch_add(1, std::memory_order_relaxed);
+
+								if (sample < 16)
+								{
+									perf_log.error("Thor RENDER COMMAND WAIT: sample=%u base=%s:0x%08x lane=%u timeout=%d mask=0x%08x published=%u consumed=%u delta=%d",
+										sample + 1, command_ok ? "mapped" : "unmapped", command_base, lane, timeout,
+										enabled_mask, published, consumed, static_cast<s32>(published - consumed));
+
+									if (sample == 0)
+									{
+										const auto call_stack = ppu.dump_callstack_list();
+										const usz count = std::min<usz>(call_stack.size(), 12);
+										perf_log.error("Thor RENDER COMMAND STACK BEGIN: count=%u total=%u",
+											static_cast<u32>(count), static_cast<u32>(call_stack.size()));
+										for (usz frame = 0; frame < count; frame++)
+										{
+											perf_log.error("Thor RENDER COMMAND STACK: frame=%u from=0x%08x sp=0x%08x",
+												static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+										}
+										perf_log.error("Thor RENDER COMMAND STACK END");
 									}
 								}
 							}
