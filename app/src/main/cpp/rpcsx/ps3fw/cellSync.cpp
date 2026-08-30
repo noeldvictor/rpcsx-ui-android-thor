@@ -6,6 +6,7 @@
 #include "Emu/Cell/PPUModule.h"
 #include "cellos/sys_event.h"
 #include "cellos/sys_process.h"
+#include "../kernel/cellos/src/thor_spurs_probe.h"
 #include "cellSync.h"
 
 LOG_CHANNEL(cellSync);
@@ -1031,6 +1032,7 @@ error_code _cellSyncLFQueueGetPushPointer2(ppu_thread& ppu, vm::ptr<CellSyncLFQu
 	// on each push: if m_h1 moves after a wake, the layout is right and the
 	// producer stops for some other reason; if a different halfword moves, the
 	// ring layout is what needs correcting.
+	if (thor_spurs_probe_enabled())
 	{
 		static std::atomic<u32> s_r{0};
 
@@ -1315,11 +1317,14 @@ error_code _cellSyncLFQueueCompletePushPointer2(ppu_thread& ppu, vm::ptr<CellSyn
 			}
 		}
 
-		static std::atomic<u32> s_notify{0};
-		if (const u32 n = s_notify++; n < 16)
+		if (thor_spurs_probe_enabled())
 		{
-			cellSync.error("Thor LFQNOTIFY #%u: queue=0x%x eaSignal=0x%x token=0x%04x",
-				n, queue.addr(), queue->m_eaSignal.addr(), token);
+			static std::atomic<u32> s_notify{0};
+			if (const u32 n = s_notify++; n < 16)
+			{
+				cellSync.error("Thor LFQNOTIFY #%u: queue=0x%x eaSignal=0x%x token=0x%04x",
+					n, queue.addr(), queue->m_eaSignal.addr(), token);
+			}
 		}
 
 		if ((token & 0xff00) == 0xff00)

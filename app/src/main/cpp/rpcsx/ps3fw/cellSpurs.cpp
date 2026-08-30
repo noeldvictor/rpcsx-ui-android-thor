@@ -29,6 +29,7 @@
 #include "cellos/sys_process.h"
 #include "cellos/sys_semaphore.h"
 #include "cellos/sys_event.h"
+#include "../kernel/cellos/src/thor_spurs_probe.h"
 #include "Crypto/unself.h"
 #include "Emu/VFS.h"
 #include "sysPrxForUser.h"
@@ -3863,6 +3864,7 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 	}
 
 	// Does the title wake its parked task through an event flag?
+	if (thor_spurs_probe_enabled())
 	{
 		static std::atomic<u32> s_efs{0};
 
@@ -3983,7 +3985,7 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 
 				// Sony libsre at 0x16010 sends other results to its diagnostic helper.
 				// It then returns CELL_OK. Do not stop the PPU thread for SRCH.
-				if (rc != CELL_OK)
+				if (rc != CELL_OK && thor_spurs_probe_enabled())
 				{
 					static std::atomic<u32> s_signal_errors{0};
 

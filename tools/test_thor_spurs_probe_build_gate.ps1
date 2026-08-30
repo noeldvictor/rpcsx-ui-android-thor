@@ -10,6 +10,8 @@ $hleSpursSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cp
 $eventSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_event.cpp") -Raw
 $semaphoreSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_semaphore.cpp") -Raw
 $timerSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/kernel/cellos/src/sys_timer.cpp") -Raw
+$cellSyncSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/ps3fw/cellSync.cpp") -Raw
+$cellSpursSource = Get-Content -LiteralPath (Join-Path $repoRoot "app/src/main/cpp/rpcsx/ps3fw/cellSpurs.cpp") -Raw
 
 $requiredGradleFragments = @(
     'providers.gradleProperty("rpcsxThorSpursProbe")',
@@ -53,6 +55,18 @@ if ($hleSpursSource -notmatch '#if defined\(ANDROID\) && !defined\(RPCSX_THOR_SP
 $hleDiagnosticGateCount = [regex]::Matches($hleSpursSource, 'thor_hle_spurs_diagnostics\(\)').Count - 2
 if ($hleDiagnosticGateCount -ne 11) {
     throw "Expected 11 HLE SPURS hot-loop diagnostic gates, found $hleDiagnosticGateCount."
+}
+
+if ($cellSyncSource -notmatch 'if \(thor_spurs_probe_enabled\(\)\)[\s\S]*?Thor LFQRING #[\s\S]*?if \(thor_spurs_probe_enabled\(\)\)[\s\S]*?Thor LFQNOTIFY #') {
+    throw "CellSync LFQueue diagnostics must stay behind the SPURS-probe build gate."
+}
+
+if ($cellSpursSource -notmatch 'if \(thor_spurs_probe_enabled\(\)\)[\s\S]*?Thor EFSET #[\s\S]*?rc != CELL_OK && thor_spurs_probe_enabled\(\)[\s\S]*?Thor EFSET signal #') {
+    throw "CellSpurs event diagnostics must stay behind the SPURS-probe build gate."
+}
+
+if ($timerSource -notmatch 'if \(thor_spurs_probe_enabled\(\)\) \{[\s\S]*?s_hits\.fetch_add[\s\S]*?Thor Transformers render poll:') {
+    throw "The Transformers render-poll counter must stay behind the SPURS-probe build gate."
 }
 
 $ppuSources = @($eventSource, $semaphoreSource, $timerSource)

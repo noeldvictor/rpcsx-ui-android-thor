@@ -78,13 +78,15 @@ void apply_thor_transformers_render_poll(ppu_thread &ppu,
   }
 
   const u64 effective_us = get_thor_transformers_render_poll_us();
-  static std::atomic<u64> s_hits{0};
-  const u64 hit = s_hits.fetch_add(1, std::memory_order_relaxed) + 1;
-  if (hit == 1 || (hit & 0x3fffu) == 0) {
-    sys_timer.notice(
-        "Thor Transformers render poll: hit=%llu ppu=0x%x requested_us=%llu "
-        "effective_us=%llu cia=0x%08x",
-        hit, ppu.id, sleep_time, effective_us, +ppu.cia);
+  if (thor_spurs_probe_enabled()) {
+    static std::atomic<u64> s_hits{0};
+    const u64 hit = s_hits.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (hit == 1 || (hit & 0x3fffu) == 0) {
+      sys_timer.notice(
+          "Thor Transformers render poll: hit=%llu ppu=0x%x requested_us=%llu "
+          "effective_us=%llu cia=0x%08x",
+          hit, ppu.id, sleep_time, effective_us, +ppu.cia);
+    }
   }
   sleep_time = effective_us;
 #else
