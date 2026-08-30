@@ -472,6 +472,11 @@ foreach ($fragment in $requiredPcCensusFragments) {
     }
 }
 
+$spuMapReadyGuard = 'g_fxo->try_get<id_manager::id_map<named_thread<spu_thread>>>()'
+if ([regex]::Matches($pcCensus, [regex]::Escape($spuMapReadyGuard)).Count -lt 2) {
+    throw "Each SPU PC census path must wait for the SPU ID map."
+}
+
 if ($pcCensus.IndexOf('s_sample++') -lt $pcCensus.IndexOf('matched = true;')) {
     throw "The edgeZlib SPU PC census must not use its quota before a task matches."
 }

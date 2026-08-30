@@ -53,6 +53,14 @@ namespace thor
 			return;
 		}
 
+		// The performance monitor starts before the SPU ID map. Do not call
+		// idm::select until the map exists. An early select can read the fixed-
+		// object poison pattern as an SPU pointer during guest startup.
+		if (!g_fxo->try_get<id_manager::id_map<named_thread<spu_thread>>>())
+		{
+			return;
+		}
+
 		static constexpr u32 max_samples = 64;
 		static u32 s_sample = 0;
 
@@ -130,6 +138,11 @@ namespace thor
 	inline void spu_fmod_event_wait_census_tick()
 	{
 		if (!fmod_event_wait_census_enabled())
+		{
+			return;
+		}
+
+		if (!g_fxo->try_get<id_manager::id_map<named_thread<spu_thread>>>())
 		{
 			return;
 		}
