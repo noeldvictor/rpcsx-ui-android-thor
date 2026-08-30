@@ -8573,3 +8573,26 @@ rendering progress.
   after a separate new strict gate, keep Atomic and run through at least the
   first confirmed zero-frame interval. Use the final PC and stack for the next
   HLE change.
+
+## 181. Install the bounded PPU stack census without a launch
+
+- Status: installed-exact-no-launch, route-tooling, unmeasured
+- Scope: BLUS30357 diagnostic APK, exact identity, thermal gate
+- Cold gate: A new strict gate passed at 36.1 C across 14 fixed-temperature
+  sensors. The battery was 24.0 C, and the skin sensor was 30.0 C.
+- Install result: The no-launch installer proved expected, host, and device APK
+  SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  The package PID was absent before and after installation. The emulator did
+  not launch.
+- Thermal result: The post-install fixed-silicon value was 36.9 C. Installation
+  did not spend a runtime thermal window.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-014023-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-014037-transformers-multistack-ppu-install`.
+- Next: Do not launch in this install round. After a separate new strict gate,
+  run Atomic with the PPU PC census through the first confirmed zero-frame
+  interval. Map the final main-thread PC and stack before changing HLE code.
