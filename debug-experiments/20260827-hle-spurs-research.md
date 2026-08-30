@@ -8418,3 +8418,44 @@ rendering progress.
 - FPS/frame-time: No performance credit.
 - Next: Run all focused thermal contracts. Then take a new strict sample and
   run the exact experiment 173 APK with the diagnostic probes disabled.
+
+## 178. The clean ordered route reaches a guest GCM heap assertion
+
+- Status: new-blocker, android-guest-exit, not-comparable
+- Scope: BLUS30357, HLE SPURS, ordered RSX FIFO, low-instrumentation route
+- Cold gate and install: The corrected strict gate passed at 35.7 C across 14
+  real fixed-temperature sensors. It recorded `socd=72` only in the `other`
+  domain. The no-launch installer proved the exact experiment 173 APK and left
+  no PID.
+- Route configuration: Ordered FIFO was on. FMOD event trace, lightweight-
+  mutex trace, SPU local-store dump, SPU PC census, runtime census, and PPU PC
+  census were off. Both property readbacks and the effective FIFO configuration
+  were correct.
+- Route result: The controller completed 21 slices and 15.156 seconds of active
+  time. At emulated time 3:01.515, the title's FlipPump thread reported
+  `gcmx_cmd.h:55 GCMXIsHeapBlockAllocated(Block) -- assertion failed`. The
+  guest abort stack started at `0x01022ea4`, then included `0x00fde064`,
+  `0x00fe48d8`, `0x00fdd968`, `0x00fde384`, `0x009e05b0`, and `0x009f265c`.
+  The guest requested process exit with status 1.
+- Fatal classification: The later `Verification failed (object: 0x0)` at
+  `cellSpurs.cpp:910` occurred while the HLE SPURS handler was unwinding the
+  stopped process. It is shutdown fallout. The title's GCM heap assertion is
+  the initiating fault.
+- Visual correctness: Not measured. The audio-owner arm marker did not occur.
+- FPS/frame-time: No performance credit.
+- Thermal result: The slice-controller maximum was 61.4 C fixed silicon. The
+  device guard recorded 317 normal samples, no holds, a 64.6 C fixed-silicon
+  maximum, and an 81.1 C CPU-junction maximum. No fixed-silicon sample reached
+  70 C.
+- Rollback: The title exited on its own. The verified stop found no PID, zero
+  RPCSX rows in `top`, and `quiet=true`. Cleanup found zero remaining
+  `debug.rpcsx.thor.*` values.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-005425-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260830-005439-transformers-ordered-fifo-clean-install`,
+  and
+  `debug-captures/android-speed-sprint/20260830-005458-thor-input-custom`.
+- Decision: Do not keep ordered FIFO as an HLE default yet. Run the same clean
+  route with `-RsxFifoOrdered off`. If Atomic survives this exact boundary,
+  ordered FIFO causes the guest heap-lifetime assertion. If Atomic also fails,
+  the new blocker is independent of FIFO mode.
