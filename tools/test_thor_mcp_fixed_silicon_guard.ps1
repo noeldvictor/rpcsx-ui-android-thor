@@ -36,6 +36,7 @@ foreach ($required in @(
     '"pauseSettledAtS"',
     '"paused": process_held or is_paused()',
     'def t_wait_cool_paused(a):',
+    'silicon <= target',
     '"cooledAtFixedSiliconC": silicon',
     '"the emulator must stay paused while it cools"',
     'def t_slice_loop(a):',

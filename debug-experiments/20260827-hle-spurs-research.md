@@ -8118,3 +8118,56 @@ rendering progress.
 - Next: After a new strict cold-start sample below 70 C, install this exact
   APK. Arm on `Thor TWC AUDIO OWNER CANDIDATE` and stop after a short bounded
   window. Do not wake the candidate until its identity and state are proved.
+
+## 168. The exact 60 C resume boundary blocks the candidate run
+
+- Status: controller-counterproof, android-no-result, not-comparable
+- Scope: paused slice controller, thermal safety, HLE candidate trace
+- Installed artifact: The strict cold-start gate passed at 60.0 C. The
+  no-launch installer proved that the host and device APK SHA-256 values were
+  both
+  `DFD93D983230EFE48057DCFAC37193C6B33639EE6157C57BBD702F4811F40505`.
+  The PID was absent after installation.
+- Route result: The route completed only its first 0.657-second slice. It then
+  waited 120 seconds for three readings that were strictly below 60 C. Fixed
+  silicon stayed at 60.0 or 61.0 C, so the cooldown timed out. The route did
+  not reach the first owner wake or the candidate marker.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Stability: The log contains no fatal error, access violation, out-of-memory
+  error, or assertion failure.
+- Rollback: The verified stop found no PID, zero RPCSX rows in `top`, and
+  `quiet=true`. Cleanup cleared all 62 properties and found zero remaining
+  `debug.rpcsx.thor.*` values. The final fixed-silicon sample was 61.0 C.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260829-235032-thor-input-strict-cool-gate`,
+  `debug-captures/android-speed-sprint/20260829-235040-transformers-next-audio-owner-candidate-install`,
+  and
+  `debug-captures/android-speed-sprint/20260829-235101-thor-input-custom`.
+- Decision: Do not interpret this run as an HLE result. Correct the exact
+  resume-target comparison and keep all runtime upper limits.
+
+## 169. Permit the exact paused-slice resume target
+
+- Status: controller-fix, host-pass, unmeasured
+- Scope: local Thor controller, thermal documentation, host contracts
+- Problem: `t_wait_cool_paused` required `silicon < target`. The route and its
+  report call 60 C the resume target, but a stable value of exactly 60.0 C
+  could never satisfy that target. This caused experiment 168 to stop after
+  one safe slice.
+- Change: A paused process can now resume after the required number of
+  consecutive fixed-silicon readings at or below the configured resume
+  target. The default remains three samples at 60 C with one second between
+  samples. The 66 C device-watchdog hold and the 72 C hard stop do not change.
+- Verification: The guarded slice test now proves that three exact 60.0 C
+  samples pass in two seconds. The fixed-silicon, strict cold-gate, and
+  multi-sensor thermal contracts pass. `git diff --check` passes.
+- Thor result: Not run. Experiment 168 used the one allowed launch for this
+  independently cool hardware round.
+- Visual correctness: Not measured.
+- FPS/frame-time: No performance credit.
+- Decision: Keep the inclusive target. A target is an allowed boundary, not a
+  forbidden value.
+- Next: In a new independently cool round, reuse the exact experiment 167 APK.
+  Arm on the first owner-candidate row and keep the eight-slice post-marker
+  limit.

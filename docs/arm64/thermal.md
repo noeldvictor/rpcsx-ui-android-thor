@@ -20,10 +20,10 @@ silicon limit. The CPU-junction hard limit remains 95 C.
 The paused startup-slice route has a smaller safety margin. Its independent
 device watchdog polls every 0.25 seconds and holds the app process at 66 C. The
 controller adopts that process hold. Before a later slice, it requires three
-fixed-silicon samples below 60 C at one-second intervals. A value of 72 C still
-force-stops the app. This margin absorbs a fast subsystem-sensor rise while the
-host is busy. It does not change the cold-start rule: a value below 70 C can
-start immediately.
+fixed-silicon samples at or below 60 C at one-second intervals. A value of 72 C
+still force-stops the app. This margin absorbs a fast subsystem-sensor rise
+while the host is busy. It does not change the cold-start rule: a value below
+70 C can start immediately.
 
 ## The guard measures junction maxima against a package-shaped limit
 

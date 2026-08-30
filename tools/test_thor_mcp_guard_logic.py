@@ -339,6 +339,20 @@ assert result["stableSamples"] == 3, (
 )
 
 clock.now = 0.0
+prepare_paused_guest()
+use_temperatures([60.0, 60.0, 60.0])
+result = SERVER.t_wait_cool_paused({
+    "targetC": 60, "timeoutS": 10,
+    "stableSamples": 3, "sampleIntervalS": 1,
+})
+assert result["cooled"] is True, (
+    "The stable cool wait rejected the exact resume target."
+)
+assert result["waitedS"] == 2.0, (
+    "The exact resume target did not satisfy three stable samples."
+)
+
+clock.now = 0.0
 startup_process_state = {"value": "R"}
 slice_loop_forward_calls = []
 SERVER.ensure_forward = lambda: slice_loop_forward_calls.append("forward")
