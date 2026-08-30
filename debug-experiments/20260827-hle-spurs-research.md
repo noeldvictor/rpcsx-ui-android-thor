@@ -8834,3 +8834,145 @@ rendering progress.
 - Next: Keep `yield_redispatch_fix=1`. Run one independently cool, unpaused
   loading capture with the PPU profiler on. Use the profiler report to select
   a named wait path before another code change.
+
+## 189. The PPU profile names a render barrier, not a compute limit
+
+- Status: diagnostic-result, host-mapped, startup-only
+- Scope: BLUS30357, HLE SPURS, PPU profiler and bounded PPU call trace
+- Profiler result: The main PPU thread spends most of its sampled time at
+  guest address `0x00102b98`. A focused Ghidra import maps this address to a
+  render barrier. The barrier is a valid game wait and not an unknown HLE
+  function.
+- Render-thread result: The RenderingThread calls `sys_timer_usleep(400)` at
+  guest CIA `0x0152efc0`. This is the matching producer poll. It is the only
+  short wait on this path that has a safe title and address gate.
+- Decision: Do not remove the main-thread wait. Test the 400 microsecond render
+  poll with one bounded property. Keep all other HLE controls unchanged.
+
+## 190. A 50 microsecond render poll is slower
+
+- Status: rejected, startup-only, android-clean
+- Scope: BLUS30357, HLE SPURS, RenderingThread poll interval
+- Change: Exact APK
+  `D6CCE13A7076497A5C541245CA085B98960723EFDC9742413BE336B87EC6C72B`
+  added
+  `debug.rpcsx.thor.tf_render_poll_us`. The control keeps 400 microseconds. The
+  candidate uses 50 microseconds only at CIA `0x0152efc0` for BLUS30357.
+- Result: The 50 microsecond arm did more host wake work and did not advance
+  the loading sequence faster. Its matching continuous frame samples were
+  lower than the 400 microsecond control.
+- Decision: Reject 50 microseconds. Keep 400 microseconds. A shorter sleep does
+  not remove the serial handoff that limits this startup sequence.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-031111-thor-input-custom` and
+  `debug-captures/android-speed-sprint/20260830-031326-thor-input-custom`.
+
+## 191. Ghidra maps the intermittent fault to the render consumer DMA
+
+- Status: static-analysis, fault-path-mapped
+- Scope: BLUS30357, exact SPU local-store image, HLE SPURS resume fault
+- Fault: Some HLE boots stop in `CellSpursKernel0` at SPU PC `0x048e0` while
+  reading `0xfff00000` or `0xfff10000`.
+- Ghidra result: The exact render consumer is taskset `0x10364100`, with ELF
+  address `0x0177ec80`. The call path is `0x0c9b0` to `0x0b348` to `0x099a8`.
+  It remaps a page and then issues a 4 KiB GET. An unmapped page sentinel makes
+  the final `0xfffxxxxx` address.
+- Artifact: The exact local-store image is
+  `_research/spurs/task_ls_10364100.bin`. The focused Ghidra report is
+  `debug-captures/ghidra-transformers-spu-callers/spu-hot-window-ghidra.txt`.
+- Decision: Do not hide the access violation. Preserve queue publication order
+  so the consumer cannot read a slot before the producer fills it.
+
+## 192. Queue publication must happen after slot ownership
+
+- Status: correctness-fix, host-verified
+- Scope: BLUS30357, HLE SPURS queue push
+- Old defect: The first queue-order experiment copied data to a guessed slot
+  before it owned that slot. Two producers could guess the same slot. The path
+  could also copy one entry two times.
+- Change: The corrected path claims `tail % depth` inside the reservation. It
+  copies the entry while it owns the reservation. It publishes the new tail
+  only after the copy. BLUS30357 uses this path by default. An explicit zero is
+  the rollback.
+- Verification: The queue contract rejects a copy to a guessed slot. It
+  requires the reservation, copy, and tail update in that order.
+- Commit: `82709c139 Publish Transformers queue entries safely`.
+
+## 193. The safe queue path is stable but is not a loading speed win
+
+- Status: correctness-pass, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS, safe queue publication
+- Identity: Exact APK
+  `575535293823D0D27E9D08A7042FA2E86EB08E5D46B07BA3FACBC76CC372ACEF`
+  ran in `20260830-034608-thor-input-custom`.
+- Stability: The route had no SPU access violation, dead FIFO, GCM assertion,
+  verification failure, or process restart. The queue and SPURS hot diagnostic
+  rows were absent.
+- Frame result: Complete loading samples stayed near 20 to 22 FPS. The images
+  showed the animated Transformers loading sequence. This is not a speed win
+  and is not gameplay credit.
+- Decision: Keep the safe publication order because it removes an invalid
+  producer action and keeps the HLE route stable.
+
+## 194. Coalesced task context copies reach the legal screen
+
+- Status: visual-progress, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS task yield and resume
+- Cause: The hot task uses local-store pattern
+  `03ffffffffffffffffffffffffffffff`. The old save and restore loops issued up
+  to 122 separate 2 KiB copies in each direction on every yield.
+- Change: Consecutive selected local-store blocks now use one copy for each
+  run. Sparse patterns keep the same compact context layout. The context layout
+  contract checks both directions.
+- Identity: Exact APK
+  `E8F92B228DDC8FE88F4412B42AF535C23F8A2315CC0507C26309F776EB62F2F7`
+  ran in `20260830-035239-thor-input-custom`.
+- Visual result: The route reached the correct Unreal, PhysX, and Hasbro legal
+  frame. It had no SPU access violation, dead FIFO, GCM assertion, or
+  verification failure. Fixed silicon stayed below 43 C.
+- Performance: Legal-screen images reported about 13 to 15 FPS. This scene is
+  an intro movie and is not a gameplay speed result.
+- Commit: `86415f69e Coalesce SPURS task context copies`.
+
+## 195. START advances HLE into the Transformers loading sequence
+
+- Status: input-progress, android-clean, startup-only
+- Scope: BLUS30357, HLE SPURS, direct pad input
+- Route: Capture `20260830-035730-thor-input-custom` saved the legal frame at
+  60 seconds. One direct START press moved the title into the Transformers
+  loading sequence. Later images changed from a Decepticon symbol to an
+  Autobot symbol. Direct input and normal title progress therefore work.
+- Frame result: The last complete ten-second sample reported 21.1 FPS. The
+  image overlays ranged from about 12 to 17 FPS during the changing startup
+  phases. These values are not gameplay credit.
+- Stability: The route had no access violation, dead FIFO, GCM assertion,
+  verification failure, process restart, or thermal stop. Fixed silicon peaked
+  at 43.3 C. The macro stopped RPCSX and the final PID was absent.
+- Decision: HLE now reaches normal startup after legal screens. The next valid
+  speed target is the first title menu or moving 3D gameplay, not the intro
+  movie.
+
+## 196. Normal Android now omits inactive SPURS diagnostics
+
+- Status: host-verified, installed-exact, device-speed-pending
+- Scope: LFQueue, event flag, and Transformers render-poll hot paths
+- Change: Normal Android builds now fold out the inactive LFQueue ring counter,
+  LFQueue notify counter, SPURS event-set counter, event-set error dump, and
+  render-poll hit counter. Explicit SPURS-probe builds keep all diagnostics.
+- Verification: Five focused contracts pass. The normal ARM64 APK build passes
+  and contains only `arm64-v8a` native libraries.
+- Identity: Exact APK
+  `7E73F2D06D13A8CD6BA4F1654647CDCE7E1D234C69B45873A43886558BF7961C`
+  is 116,152,780 bytes. The no-launch install in
+  `20260830-040923-transformers-no-diagnostics-install` proved the same device
+  hash and left no PID.
+- First-run result: Capture `20260830-040950-thor-input-custom` was not a speed
+  test. The log reused 225 validated PPU cache objects and reported 20.2 FPS in
+  its only complete ten-second frame sample. Total CPU was 81.5 percent during
+  that startup burst. The hard guard stopped RPCSX when fixed silicon reached
+  72.7 C. The route saved no game image and has no speed credit. Do not infer
+  the cause of the different startup timing from this one stopped run.
+- Commit: `a537d9e21 Remove inactive SPURS diagnostics`.
+- Next: Wait for the device to cool below 70 C. Then repeat the exact legal,
+  START, and loading macro with the warm cache. Reject this change as a speed
+  lever if matching frame windows do not improve.
