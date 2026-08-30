@@ -168,8 +168,27 @@ if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?C
 if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?\[switch\]\$SkipGuestLog[\s\S]*?if\s*\(-not\s+\$SkipGuestLog\)[\s\S]*?Copy-ThorAdbFile') {
     throw "Standard Thor snapshots cannot suppress stale guest logs before a boot request."
 }
-if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
+if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?fan_speed[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
     throw "Thor launch evidence does not preserve the AYN performance/fan mode and CPU policy state."
+}
+if ($debugCommonSource -notmatch 'function\s+Set-ThorSmartFanMode[\s\S]*?settings put system fan_mode 4[\s\S]*?\[ "\$effective" = "4" \]') {
+    throw "The Thor route does not set and verify Smart fan mode."
+}
+if ($inputMacroSource -notmatch 'Set-ThorSmartFanMode\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir\s+-EvidencePrefix\s+"prelaunch-smart"[\s\S]*?Write-ThorLaunchPowerState') {
+    throw "The input route does not set Smart fan mode before it records launch power state."
+}
+if ($inputMacroSource -notmatch '"\$batteryHardMilliC",\s+"\$MaxSkinTemperatureC",\s+"",\s+"2",\s+"stop",\s+"4"') {
+    throw "The input route does not require Smart fan mode in the device guard."
+}
+$deviceGuardSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_device_thermal_guard.sh") -Raw
+if ($deviceGuardSource -notmatch 'expected_fan_mode="\$\{10:-\}"' -or
+    $deviceGuardSource -notmatch 'settings put system fan_mode "\$expected_fan_mode"' -or
+    $deviceGuardSource -notmatch 'code=fan-mode') {
+    throw "The device guard does not repair or reject an unexpected fan mode."
+}
+$renderProbeSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "invoke_thor_transformers_hle_render_probe.ps1") -Raw
+if ($renderProbeSource -notmatch '\$script:ThorSliceDeviceGuardReady,\s+"0\.25",\s+"hold",\s+"4"') {
+    throw "The Transformers slice guard does not require Smart fan mode."
 }
 if ($inputMacroSource -notmatch 'Write-ThorLaunchPowerState\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir[\s\S]*?Assert-ThorThermalPreflight\s+"pre-run"') {
     throw "The input route does not record power state before its launch thermal preflight."

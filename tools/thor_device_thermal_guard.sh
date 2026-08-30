@@ -14,6 +14,7 @@ skin_hard_c="${6:?skin hard limit}"
 ready_path="${7:-}"
 poll_interval="${8:-2}"
 early_action="${9:-stop}"
+expected_fan_mode="${10:-}"
 
 silicon_zones="31 32 33 34 55 63 64 65 66 67 68 69 70 90"
 junction_zones="35 36 37 38 39 40 41 42 43 44 45 47 48 49"
@@ -39,6 +40,20 @@ while :; do
     fi
     seen_process=1
     sample=$((sample + 1))
+
+    fan_mode="$(settings get system fan_mode 2>/dev/null || true)"
+    fan_speed="$(settings get system fan_speed 2>/dev/null || true)"
+    if [ -n "$expected_fan_mode" ] && [ "$fan_mode" != "$expected_fan_mode" ]; then
+        settings put system fan_mode "$expected_fan_mode" >/dev/null 2>&1 || true
+        effective_fan_mode="$(settings get system fan_mode 2>/dev/null || true)"
+        if [ "$effective_fan_mode" != "$expected_fan_mode" ]; then
+            echo "sample=$sample status=failed code=fan-mode value=${fan_mode:-unknown} speed=${fan_speed:-unknown} expected=$expected_fan_mode effective=${effective_fan_mode:-unknown}"
+            stop_package
+            exit 49
+        fi
+        echo "sample=$sample status=repaired code=fan-mode value=${fan_mode:-unknown} speed=${fan_speed:-unknown} effective=$effective_fan_mode"
+        fan_mode="$effective_fan_mode"
+    fi
 
     if [ "$early_hold_active" -eq 1 ]; then
         process_state="$(run-as "$package" cat "/proc/$pid/status" 2>/dev/null |
@@ -109,7 +124,7 @@ while :; do
         fi
     fi
 
-    echo "sample=$sample status=ok pid=$pid silicon_milli_c=$silicon_max silicon_source=$silicon_source junction_milli_c=$junction_max junction_source=$junction_source battery_milli_c=$battery_value skin_c=$last_skin"
+    echo "sample=$sample status=ok pid=$pid fan_mode=${fan_mode:-unknown} fan_speed=${fan_speed:-unknown} silicon_milli_c=$silicon_max silicon_source=$silicon_source junction_milli_c=$junction_max junction_source=$junction_source battery_milli_c=$battery_value skin_c=$last_skin"
 
     if [ "$silicon_max" -ge "$silicon_hard_milli_c" ]; then
         echo "sample=$sample status=failed code=silicon-hard-limit value=$silicon_max limit=$silicon_hard_milli_c"

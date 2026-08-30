@@ -717,7 +717,7 @@ function Start-ThorDeviceThermalGuard {
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, $Package,
         "$siliconStopMilliC", "$siliconHardMilliC", "$junctionHardMilliC",
-        "$batteryHardMilliC", "$MaxSkinTemperatureC"
+        "$batteryHardMilliC", "$MaxSkinTemperatureC", "", "2", "stop", "4"
     )
 
     # Use an in-process runspace because this workspace can expose both Path
@@ -1389,6 +1389,7 @@ if ($ForceStop -or $BootGame) {
 }
 
 if ($BootGame) {
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "prelaunch-smart"
     Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
 }
 
@@ -1595,8 +1596,10 @@ if ($BootGame) {
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
     $script:ThorDebugBootRequested = $true
     Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile $requireManagedProfileValue --ez thorReplaceCustomProfile $replaceCustomProfileValue --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "debug-boot-smart"
     Initialize-ThorProcessIdentity
     Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "debug-boot-accepted-smart"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {

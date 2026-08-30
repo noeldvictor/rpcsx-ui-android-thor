@@ -1140,6 +1140,18 @@ function Write-ThorStandardSnapshot {
     }
 }
 
+function Set-ThorSmartFanMode {
+    param(
+        [Parameter(Mandatory = $true)][string]$Adb,
+        [Parameter(Mandatory = $true)][string]$CaptureDir,
+        [string]$EvidencePrefix = "fan-smart"
+    )
+
+    $safePrefix = New-ThorSafeLabel $EvidencePrefix
+    $fanModeCommand = 'before="$(settings get system fan_mode)"; speed="$(settings get system fan_speed)"; settings put system fan_mode 4; effective="$(settings get system fan_mode)"; printf "before=%s\nfan_speed=%s\neffective=%s\n" "$before" "$speed" "$effective"; [ "$effective" = "4" ]'
+    Invoke-ThorAdbText $Adb $CaptureDir "$safePrefix-fan-mode.txt" @("shell", $fanModeCommand) | Out-Null
+}
+
 function Write-ThorLaunchPowerState {
     param(
         [string]$Adb,
@@ -1148,6 +1160,6 @@ function Write-ThorLaunchPowerState {
     )
 
     $safePrefix = New-ThorSafeLabel $Prefix
-    $powerStateCommand = 'printf "performance_mode="; settings get system performance_mode; printf "fan_mode="; settings get system fan_mode; printf "quick_performance_fan="; settings get system is_quick_set_performance_and_fan_enable; printf "low_power="; settings get global low_power; for p in /sys/devices/system/cpu/cpufreq/policy*; do n=${p##*/}; IFS= read -r g < "$p/scaling_governor" 2>/dev/null || g=unreadable; IFS= read -r hi < "$p/scaling_max_freq" 2>/dev/null || hi=unreadable; printf "%s governor=%s max=%s\n" "$n" "$g" "$hi"; done; printf "gpu_governor="; cat /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || echo unreadable; printf "gpu_max="; cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null || echo unreadable'
+    $powerStateCommand = 'printf "performance_mode="; settings get system performance_mode; printf "fan_mode="; settings get system fan_mode; printf "fan_speed="; settings get system fan_speed; printf "quick_performance_fan="; settings get system is_quick_set_performance_and_fan_enable; printf "low_power="; settings get global low_power; for p in /sys/devices/system/cpu/cpufreq/policy*; do n=${p##*/}; IFS= read -r g < "$p/scaling_governor" 2>/dev/null || g=unreadable; IFS= read -r hi < "$p/scaling_max_freq" 2>/dev/null || hi=unreadable; printf "%s governor=%s max=%s\n" "$n" "$g" "$hi"; done; printf "gpu_governor="; cat /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || echo unreadable; printf "gpu_max="; cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null || echo unreadable'
     Invoke-ThorAdbText $Adb $CaptureDir "$safePrefix-power-state.txt" @("shell", $powerStateCommand) -AllowFailure | Out-Null
 }

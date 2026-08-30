@@ -275,7 +275,7 @@ function Start-ThorSliceDeviceGuard {
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
         "70000", "72000", "95000", "34000", "40",
-        $script:ThorSliceDeviceGuardReady, "0.25", "hold"
+        $script:ThorSliceDeviceGuardReady, "0.25", "hold", "4"
     )
 
     $script:ThorSliceDeviceGuardPowerShell = [PowerShell]::Create()
