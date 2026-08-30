@@ -8646,3 +8646,39 @@ rendering progress.
   as an HLE deadlock. The next round must use a guarded continuous route with a
   screenshot. It must first identify the visible scene, then measure continuous
   frame presentation. A paused route cannot answer the speed question.
+
+## 183. The continuous Atomic route reaches active title initialization
+
+- Status: visual-boundary, android-clean, not-comparable
+- Scope: BLUS30357, HLE SPURS, Atomic RSX FIFO, continuous unpaused boot
+- Cold gate and identity: A separate strict gate passed at 36.9 C. The route
+  proved the installed APK SHA-256 as
+  `C23A8DD9E9B0EAC054F91C23CD382542FA80A4A9D2B9521AF0B46A35F6E0670F`.
+  Atomic FIFO was on. PPU PC census, runtime census, SPU PC census, FMOD event
+  trace, and lightweight-mutex trace were off.
+- Route result: The title ran continuously. The first image at 15 seconds
+  showed `Analyzing PPU Executable`. The second image at 30 seconds showed
+  `Applying PPU Code` at module 225 of 225. The log then showed normal title
+  initialization, file access, module loads, and FlipPump work. This is not an
+  HLE stall.
+- PPU cache result: The log reported `Reusing 225 validated warm-cache
+  objects`. The remaining visible delay is analysis and link or apply work. It
+  is not a cold PPU compile miss.
+- Frame result: Later ten-second log samples reported 3.9, 2.2, 10.2, 10.3,
+  and 8.1 FPS. These values do not have performance credit because both saved
+  images still showed the PPU compilation overlay. The correct game scene was
+  not visible.
+- Stability: No dead FIFO, GCM heap assertion, fatal error, verification
+  failure, or process restart occurred.
+- Thermal result: The device watchdog recorded 27 normal samples. Fixed
+  silicon reached 42.9 C, and CPU junction reached 45.3 C. It recorded no hold
+  or thermal stop action.
+- Rollback: The macro stopped the package. The verified post-run state had no
+  PID and no RPCSX thread row. The package stop completed normally.
+- Capture paths:
+  `debug-captures/android-speed-sprint/20260830-015736-thor-input-strict-cool-gate`
+  and
+  `debug-captures/android-speed-sprint/20260830-015755-thor-input-custom`.
+- Decision: Keep Atomic HLE. In the next independently cool round, use
+  `gate:ppu-ready` before the first image. Do not measure speed until an image
+  proves that the compilation overlay is absent.
