@@ -23,10 +23,14 @@ constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_audio_owner_candidate_limit = 64;
+constexpr u32 thor_transformers_audio_dependency_log_limit = 16;
 
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_lv2_lwmutex_trace_seq{0};
 std::atomic<u32> g_thor_transformers_audio_owner_candidate_seq{0};
+std::atomic<u32> g_thor_transformers_audio_dependency_seq{0};
+std::atomic<u32> g_thor_transformers_audio_dependency_lwmutex_id{0};
+std::atomic<u32> g_thor_transformers_audio_dependency_owner_id{0};
 std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
 
 bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
@@ -156,7 +160,6 @@ void thor_transformers_complete_audio_owner_wake(
     const ppu_thread &waiting_ppu, u32 lwmutex_id,
     const lv2_lwmutex &mutex) {
   if (!thor_transformers_audio_wake_fix_enabled() ||
-      waiting_ppu.id != 0x0100'0000 ||
       static_cast<u32>(waiting_ppu.lr) !=
           thor_transformers_main_lwmutex_lock_lr) {
     return;
@@ -170,6 +173,79 @@ void thor_transformers_complete_audio_owner_wake(
       idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
   const u32 state_before =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
+
+  const bool fmod_event_receiver =
+      static_cast<std::string>(waiting_ppu.thread_name) ==
+      "FMOD libAudio event receive thread";
+  if (fmod_event_receiver) {
+    g_thor_transformers_audio_dependency_lwmutex_id.store(
+        lwmutex_id, std::memory_order_relaxed);
+    g_thor_transformers_audio_dependency_owner_id.store(
+        owner_id, std::memory_order_release);
+
+    const bool dependency_forced =
+        owner && owner_id != waiting_ppu.id && owner_id != 0x0100'0000
+            ? lv2_obj::force_owner_wake_after_waiter_sleep(*owner)
+            : false;
+    const u32 state_after =
+        owner ? static_cast<u32>((+owner->state).raw()) : 0;
+    const u32 sequence =
+        g_thor_transformers_audio_dependency_seq.fetch_add(
+            1, std::memory_order_relaxed);
+    if (sequence < thor_transformers_audio_dependency_log_limit) {
+      sys_lwmutex.error(
+          "Thor TWC AUDIO OWNER DEPENDENCY #%u: waiter=0x%x id=0x%x "
+          "owner=0x%x state=0x%x->0x%x forced=%u",
+          sequence, waiting_ppu.id, lwmutex_id, owner_id, state_before,
+          state_after, dependency_forced ? 1u : 0u);
+    }
+    return;
+  }
+
+  if (waiting_ppu.id != 0x0100'0000) {
+    return;
+  }
+
+  const auto retry_dependency_wake = [&](const char *action) {
+    const u32 dependency_lwmutex_id =
+        g_thor_transformers_audio_dependency_lwmutex_id.load(
+            std::memory_order_relaxed);
+    const u32 dependency_owner_id =
+        g_thor_transformers_audio_dependency_owner_id.load(
+            std::memory_order_acquire);
+    const u32 dependency_lookup_id =
+        dependency_owner_id != waiting_ppu.id &&
+                dependency_owner_id != owner_id
+            ? dependency_owner_id
+            : 0;
+    const auto dependency_owner =
+        idm::get_unlocked<named_thread<ppu_thread>>(dependency_lookup_id);
+    const u32 dependency_state_before =
+        dependency_owner
+            ? static_cast<u32>((+dependency_owner->state).raw())
+            : 0;
+    const bool dependency_forced =
+        dependency_owner
+            ? lv2_obj::force_owner_wake_after_waiter_sleep(*dependency_owner)
+            : false;
+    const u32 dependency_state_after =
+        dependency_owner
+            ? static_cast<u32>((+dependency_owner->state).raw())
+            : 0;
+    const u32 sequence =
+        g_thor_transformers_audio_dependency_seq.fetch_add(
+            1, std::memory_order_relaxed);
+    if (sequence < thor_transformers_audio_dependency_log_limit) {
+      sys_lwmutex.error(
+          "Thor TWC AUDIO OWNER CHAIN WAKE #%u: %s waiter=0x%x "
+          "owner=0x%x dependency_id=0x%x dependency_owner=0x%x "
+          "state=0x%x->0x%x forced=%u",
+          sequence, action, waiting_ppu.id, owner_id,
+          dependency_lwmutex_id, dependency_owner_id,
+          dependency_state_before, dependency_state_after,
+          dependency_forced ? 1u : 0u);
+    }
+  };
 
   if (caller != thor_transformers_main_lwmutex_caller) {
     if (!g_thor_transformers_audio_owner_wake_completed.load(
@@ -187,6 +263,7 @@ void thor_transformers_complete_audio_owner_wake(
           sequence, waiting_ppu.id, caller, lwmutex_id, owner_id, state_before,
           control);
     }
+    retry_dependency_wake("candidate");
     return;
   }
 
@@ -205,6 +282,7 @@ void thor_transformers_complete_audio_owner_wake(
       "state=0x%x->0x%x forced=%u",
       waiting_ppu.id, owner_id, lwmutex_id, state_before, state_after,
       forced_wake ? 1u : 0u);
+  retry_dependency_wake("initial");
 }
 } // namespace
 

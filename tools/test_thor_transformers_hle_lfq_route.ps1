@@ -438,7 +438,14 @@ $requiredAudioOwnerWakeFragments = @(
     'g_thor_transformers_audio_owner_wake_completed.store(',
     'g_thor_transformers_audio_owner_wake_completed.load(',
     'thor_transformers_audio_owner_candidate_limit = 64',
-    '"Thor TWC AUDIO OWNER CANDIDATE #%u:'
+    '"Thor TWC AUDIO OWNER CANDIDATE #%u:',
+    '"FMOD libAudio event receive thread"',
+    'g_thor_transformers_audio_dependency_lwmutex_id.store(',
+    'g_thor_transformers_audio_dependency_owner_id.store(',
+    'dependency_owner_id != waiting_ppu.id',
+    'dependency_owner_id != owner_id',
+    '"Thor TWC AUDIO OWNER DEPENDENCY #%u:',
+    '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:'
 )
 
 foreach ($fragment in $requiredAudioOwnerWakeFragments) {
