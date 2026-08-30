@@ -440,12 +440,17 @@ $requiredAudioOwnerWakeFragments = @(
     'thor_transformers_audio_owner_candidate_limit = 64',
     '"Thor TWC AUDIO OWNER CANDIDATE #%u:',
     '"FMOD libAudio event receive thread"',
-    'thor_transformers_record_audio_dependency(ppu, lwmutex_id, mutex);',
+    'thor_transformers_discover_audio_dependency(lwmutex_id);',
+    'idm::select<lv2_obj, lv2_lwmutex>(',
+    'for (auto cpu = candidate.load_sq(); cpu; cpu = cpu->next_cpu)',
+    'cpu->id == 0x0100''000c',
+    'idm::unlocked',
     'g_thor_transformers_audio_dependency_lwmutex_id.store(',
     'g_thor_transformers_audio_dependency_owner_id.store(',
     'dependency_owner_id != waiting_ppu.id',
     'dependency_owner_id != owner_id',
-    '"Thor TWC AUDIO OWNER DEPENDENCY #%u:',
+    'phase=queue-scan',
+    'phase=queue-scan-miss',
     '"Thor TWC AUDIO OWNER CHAIN WAKE #%u:'
 )
 
@@ -453,19 +458,6 @@ foreach ($fragment in $requiredAudioOwnerWakeFragments) {
     if (-not $lv2Lwmutex.Contains($fragment)) {
         throw "The deferred audio-owner wake repair is missing: $fragment"
     }
-}
-
-$audioDependencyRecordCall = $lv2Lwmutex.IndexOf(
-    'thor_transformers_record_audio_dependency(ppu, lwmutex_id, mutex);',
-    [StringComparison]::Ordinal
-)
-$lwmutexSleepCall = $lv2Lwmutex.IndexOf(
-    'const bool finished = !mutex.sleep(ppu, timeout);',
-    [StringComparison]::Ordinal
-)
-if ($audioDependencyRecordCall -lt 0 -or $lwmutexSleepCall -lt 0 -or
-        $audioDependencyRecordCall -ge $lwmutexSleepCall) {
-    throw "The FMOD dependency must be recorded before the PPU enters lwmutex sleep."
 }
 
 $requiredPcCensusFragments = @(

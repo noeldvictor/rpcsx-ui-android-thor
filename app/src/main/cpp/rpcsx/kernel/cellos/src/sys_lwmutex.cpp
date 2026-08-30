@@ -156,38 +156,63 @@ void thor_transformers_lv2_lwmutex_trace(const ppu_thread &ppu,
       wake_ppu, result);
 }
 
-void thor_transformers_record_audio_dependency(
-    const ppu_thread &waiting_ppu, u32 lwmutex_id,
-    const lv2_lwmutex &mutex) {
-  if (!thor_transformers_audio_wake_fix_enabled() ||
-      static_cast<u32>(waiting_ppu.lr) !=
-          thor_transformers_main_lwmutex_lock_lr ||
-      static_cast<std::string>(waiting_ppu.thread_name) !=
-          "FMOD libAudio event receive thread") {
-    return;
-  }
+void thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id) {
+  const auto found = idm::select<lv2_obj, lv2_lwmutex>(
+      [&](u32 candidate_lwmutex_id, lv2_lwmutex &candidate) -> bool {
+        bool contains_fmod_receiver = false;
+        for (auto cpu = candidate.load_sq(); cpu; cpu = cpu->next_cpu) {
+          if (cpu->id == 0x0100'000c &&
+              static_cast<std::string>(cpu->thread_name) ==
+                  "FMOD libAudio event receive thread") {
+            contains_fmod_receiver = true;
+            break;
+          }
+        }
 
-  const u32 control = mutex.control.addr();
-  const u32 owner_id =
-      control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
-  const auto owner =
-      idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
-  const u32 owner_state =
-      owner ? static_cast<u32>((+owner->state).raw()) : 0;
+        if (!contains_fmod_receiver) {
+          return false;
+        }
 
-  g_thor_transformers_audio_dependency_lwmutex_id.store(
-      lwmutex_id, std::memory_order_relaxed);
-  g_thor_transformers_audio_dependency_owner_id.store(
-      owner_id, std::memory_order_release);
+        const u32 control = candidate.control.addr();
+        const u32 owner_id =
+            control
+                ? static_cast<u32>(candidate.control->vars.owner.load())
+                : 0;
+        const auto owner =
+            idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
+        const u32 owner_state =
+            owner ? static_cast<u32>((+owner->state).raw()) : 0;
 
-  const u32 sequence =
-      g_thor_transformers_audio_dependency_seq.fetch_add(
-          1, std::memory_order_relaxed);
-  if (sequence < thor_transformers_audio_dependency_log_limit) {
-    sys_lwmutex.error(
-        "Thor TWC AUDIO OWNER DEPENDENCY #%u: waiter=0x%x id=0x%x "
-        "control=0x%x owner=0x%x owner_state=0x%x phase=enter",
-        sequence, waiting_ppu.id, lwmutex_id, control, owner_id, owner_state);
+        g_thor_transformers_audio_dependency_lwmutex_id.store(
+            candidate_lwmutex_id, std::memory_order_relaxed);
+        g_thor_transformers_audio_dependency_owner_id.store(
+            owner_id, std::memory_order_release);
+
+        const u32 sequence =
+            g_thor_transformers_audio_dependency_seq.fetch_add(
+                1, std::memory_order_relaxed);
+        if (sequence < thor_transformers_audio_dependency_log_limit) {
+          sys_lwmutex.error(
+              "Thor TWC AUDIO OWNER DEPENDENCY #%u: primary=0x%x "
+              "waiter=0x100000c id=0x%x control=0x%x owner=0x%x "
+              "owner_state=0x%x phase=queue-scan",
+              sequence, primary_lwmutex_id, candidate_lwmutex_id, control,
+              owner_id, owner_state);
+        }
+        return true;
+      },
+      idm::unlocked);
+
+  if (!found) {
+    const u32 sequence =
+        g_thor_transformers_audio_dependency_seq.fetch_add(
+            1, std::memory_order_relaxed);
+    if (sequence < thor_transformers_audio_dependency_log_limit) {
+      sys_lwmutex.error(
+          "Thor TWC AUDIO OWNER DEPENDENCY #%u: primary=0x%x "
+          "waiter=0x100000c phase=queue-scan-miss",
+          sequence, primary_lwmutex_id);
+    }
   }
 }
 
@@ -200,6 +225,8 @@ void thor_transformers_complete_audio_owner_wake(
           thor_transformers_main_lwmutex_lock_lr) {
     return;
   }
+
+  thor_transformers_discover_audio_dependency(lwmutex_id);
 
   const u32 caller = thor_transformers_lv2_lwmutex_caller_lr(waiting_ppu);
   const u32 control = mutex.control.addr();
@@ -411,7 +438,6 @@ error_code _sys_lwmutex_lock(ppu_thread &ppu, u32 lwmutex_id, u64 timeout) {
 
   const auto mutex = idm::get<lv2_obj, lv2_lwmutex>(
       lwmutex_id, [&, notify = lv2_obj::notify_all_t()](lv2_lwmutex &mutex) {
-        thor_transformers_record_audio_dependency(ppu, lwmutex_id, mutex);
         thor_transformers_lv2_lwmutex_trace(ppu, lwmutex_id, mutex,
                                             "LOCK-ENTER", timeout);
         if (s32 signal = mutex.lv2_control
