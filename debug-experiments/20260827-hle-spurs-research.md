@@ -9805,3 +9805,33 @@ rendering progress.
   new strict cool gate, run one guarded Transformers route. Require the
   `REPAIR-SELF-CYCLE` row, a normal waiter handoff, and either a continuous
   PhysX queue result or a later bounded stop marker.
+
+## 234. The 70 C early hold leaves too little burst margin
+
+- Status: device-confirmed thermal stop, HLE repair not reached
+- Identity: No-launch gate
+  `20260830-185451-thor-input-strict-cool-gate` passed at 34.5 C fixed
+  silicon. The exact dev core SHA-256
+  `25E0696D25E1D2A1E63E5C05DB373F7DAAB19FD4EB24861E0800C9D061326755`
+  matched after the push. Runtime gate
+  `20260830-185540-thor-input-strict-cool-gate` also passed. Capture
+  `20260830-185551-thor-input-custom` used that core.
+- Route result: Four bounded pre-START slices completed at controlled pauses.
+  The fifth slice found that the watchdog had stopped the package. The title
+  did not reach the legal START frame, the repair marker, or the PPU PhysX
+  marker. This run gives no HLE result.
+- Thermal result: Every one of 86 watchdog samples reported Smart fan mode
+  `4`. Fixed silicon was 69.5 C on sample 85, below the 70 C early-hold
+  threshold. It reached 75.1 C on sample 86, above the 72 C hard limit, and
+  the watchdog force-stopped the package. The process table was empty after
+  cleanup. Later stopped-state reads were hotter because sensor cooling lags
+  process termination.
+- Cause: A 70 C early-hold threshold has no useful margin below the 72 C hard
+  limit. A workload burst can cross both thresholds between 250 ms samples.
+- Change: Lower only the independent Transformers device-watchdog early hold
+  to 68 C. Keep the 72 C hard stop, 250 ms polling, Smart fan enforcement,
+  and the below-70 C cold launch gate. The controller can resume the held
+  process only after its existing paused cooldown.
+- Decision: Do not run the Thor again in this thermal round. Verify the route
+  and thermal contracts on the host. A later cool device run must prove that
+  the 68 C hold occurs before the hard limit before it can test the HLE repair.

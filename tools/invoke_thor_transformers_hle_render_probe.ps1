@@ -276,7 +276,7 @@ function Start-ThorSliceDeviceGuard {
     $script:ThorSliceDeviceGuardError = Join-Path $CaptureDir "slice-device-thermal-guard.stderr.log"
     $guardArguments = @(
         "-s", $Serial, "shell", "sh", $remoteGuard, "net.rpcsx.easy",
-        "70000", "72000", "95000", "34000", "40",
+        "68000", "72000", "95000", "34000", "40",
         $script:ThorSliceDeviceGuardReady, "0.25", "hold", "4"
     )
 
@@ -479,7 +479,7 @@ try {
             "- Runtime resume stable samples: $SliceResumeStableSamples",
             "- Runtime resume sample interval seconds: $SliceResumeSampleIntervalSeconds",
             "- Slice-loop property readback: slice-loop-profile-effective.txt",
-            "- Device watchdog hold C: 70",
+            "- Device watchdog hold C: 68",
             "- Device watchdog poll interval seconds: 0.25",
             "- Stop match: $SliceStopMatch",
             "- Arm match: $SliceArmMatch",
