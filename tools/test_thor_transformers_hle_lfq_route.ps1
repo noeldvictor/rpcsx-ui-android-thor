@@ -496,6 +496,12 @@ $requiredAudioOwnerWakeFragments = @(
     'g_thor_transformers_audio_owner_wake_completed.load(',
     'thor_transformers_audio_owner_candidate_limit = 64',
     '"Thor TWC AUDIO OWNER CANDIDATE #%u:',
+    'thor_transformers_select_live_ppu(u32 ppu_id)',
+    'idm::select<named_thread<ppu_thread>>(',
+    'return candidate_id == ppu_id;',
+    'const auto owner = thor_transformers_select_live_ppu(owner_id);',
+    'thor_transformers_select_live_ppu(dependency_lookup_id);',
+    'owner_live=%u owner_state=0x%x',
     '"FMOD libAudio event receive thread"',
     'thor_transformers_discover_audio_dependency(lwmutex_id);',
     'idm::select<lv2_obj, lv2_lwmutex>(',
@@ -523,6 +529,11 @@ foreach ($fragment in $requiredAudioOwnerWakeFragments) {
     if (-not $lv2Lwmutex.Contains($fragment)) {
         throw "The deferred audio-owner wake repair is missing: $fragment"
     }
+}
+
+if ($lv2Lwmutex.Contains('idm::get_unlocked<named_thread<ppu_thread>>(owner_id)') -or
+    $lv2Lwmutex.Contains('idm::get_unlocked<named_thread<ppu_thread>>(dependency_lookup_id)')) {
+    throw "The Transformers audio-owner repair still uses a direct PPU ID lookup."
 }
 
 $requiredDeferredPpuCensusFragments = @(

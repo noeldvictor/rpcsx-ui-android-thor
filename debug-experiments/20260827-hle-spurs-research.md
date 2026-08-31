@@ -10401,3 +10401,55 @@ rendering progress.
   a launch. Require `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after`
   row, no queue-failure row, no fatal error, and progress beyond PhysX startup.
   Do not claim HLE, gameplay, FPS, speed, or stability before these gates pass.
+
+## 253. The exact-stop run stops in the earlier FMOD owner route
+
+- Status: device-confirmed earlier blocker, host successor passes, not-PhysX,
+  not-gameplay, not-comparable for FPS.
+- Identity: Capture `20260830-225248-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `6C54F49715A4A18180BD6CF7722A32E1B7FE8C64C08393D812467A3F24F514AC`.
+  The legal START frame passed on slice 6.
+- Route result: The after-START handoff completed 30 two-second slices in
+  359.968 host seconds. It did not create the PPU PhysX thread. Therefore, the
+  exact PhysX stop PC did not run and this capture gives no PhysX queue result.
+- Shutdown result: At emulator time 3:19.455, workload 7 reported
+  `known=0x3f`, status `0x3b->0x10`, and active mask `0x10`. The SPURS handler
+  emitted the completion event at 3:19.468. The rendering thread returned from
+  the join and recreated taskset `0x1f73f00` as workload 7 at 3:19.525. This
+  result reconfirms shutdown, join return, workload removal, and safe reuse.
+- Audio result: The audio queue woke PPU `0x0100000c`. The main thread returned
+  from mutex `0x95008b00`, then waited on mutex `0x95008d00` with the same PPU
+  as owner. The candidate row reported owner state zero. It did not emit a
+  `DEFERRED SCAN` row and fell through to a dependency wake with no saved
+  dependency. Later census rows still contained the FMOD PPU. The main thread
+  and the FMOD receiver stayed at HLE PC `0x022254ec` with link register
+  `0x00e28c5c`. The capture had no targeted fatal error.
+- Cause: The direct PPU ID lookup and name predicate did not give the deferred
+  candidate route a usable owner at the exact second-lock boundary. The live
+  PPU census still found this thread. The host successor now selects the PPU
+  by ID from the live PPU table. It uses this path for the primary owner, a
+  discovered dependency owner, and a dependency retry. The existing title,
+  thread, link-register, and mutex gates remain. The change does not modify a
+  guest mutex word or queue.
+- Verification: The Transformers route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. `git diff --check`, the
+  Android ARM64 RelWithDebInfo build, the Thortest strip task, the binary marker
+  check, and the export-surface check pass. The new stripped core is 63,253,448
+  bytes with SHA-256
+  `3023A5C5EB24EDA5D32E6F94B643FDE791E8E1D641AC3194BF88C53D0BD8F5B9`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+- Thermal and fan result: The watchdog recorded 409 valid samples. Fixed
+  silicon ranged from 34.1 to 67.8 C, and junction temperature ranged from
+  35.1 to 77.5 C. Every sample reported Smart fan mode `4`. Final cleanup found
+  no PID or RPCSX `top` row at 40.1 C fixed silicon. The saved Custom slider
+  value is not an active fan speed.
+- Next: In a later independently cool route, require `owner_live=1` for mutex
+  `0x95008d00`, a `DEFERRED SCAN` row, and progress beyond the FMOD lock chain.
+  If the route reaches PhysX, also require
+  `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no
+  queue-failure row, and no fatal error. Do not claim HLE, gameplay, FPS, speed,
+  or stability before these gates pass.

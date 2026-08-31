@@ -205,6 +205,23 @@ bool thor_transformers_audio_wake_fix_enabled() noexcept {
 #endif
 }
 
+stx::shared_ptr<named_thread<ppu_thread>>
+thor_transformers_select_live_ppu(u32 ppu_id) {
+  if (!ppu_id) {
+    return {};
+  }
+
+  // Use the live PPU table. A direct ID lookup returned no owner for the
+  // second Transformers FMOD lock while the PPU census still contained that
+  // thread. This scan uses the same ID-manager lock that the caller holds.
+  const auto selected = idm::select<named_thread<ppu_thread>>(
+      [ppu_id](u32 candidate_id, named_thread<ppu_thread> &) {
+        return candidate_id == ppu_id;
+      },
+      idm::unlocked);
+  return selected.ptr;
+}
+
 void thor_transformers_discard_stale_audio_owner_signal(
     ppu_thread &ppu, u32 lwmutex_id) {
   if (!thor_transformers_audio_wake_fix_enabled() ||
@@ -343,8 +360,7 @@ bool thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id,
             control
                 ? static_cast<u32>(candidate.control->vars.owner.load())
                 : 0;
-        const auto owner =
-            idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
+        const auto owner = thor_transformers_select_live_ppu(owner_id);
         const u32 owner_state =
             owner ? static_cast<u32>((+owner->state).raw()) : 0;
 
@@ -399,8 +415,7 @@ void thor_transformers_complete_audio_owner_wake(
   const u32 control = mutex.control.addr();
   const u32 owner_id =
       control ? static_cast<u32>(mutex.control->vars.owner.load()) : 0;
-  const auto owner =
-      idm::get_unlocked<named_thread<ppu_thread>>(owner_id);
+  const auto owner = thor_transformers_select_live_ppu(owner_id);
   const u32 state_before =
       owner ? static_cast<u32>((+owner->state).raw()) : 0;
 
@@ -417,7 +432,7 @@ void thor_transformers_complete_audio_owner_wake(
             ? dependency_owner_id
             : 0;
     const auto dependency_owner =
-        idm::get_unlocked<named_thread<ppu_thread>>(dependency_lookup_id);
+        thor_transformers_select_live_ppu(dependency_lookup_id);
     const u32 dependency_state_before =
         dependency_owner
             ? static_cast<u32>((+dependency_owner->state).raw())
@@ -457,9 +472,9 @@ void thor_transformers_complete_audio_owner_wake(
     if (sequence < thor_transformers_audio_owner_candidate_limit) {
       sys_lwmutex.error(
           "Thor TWC AUDIO OWNER CANDIDATE #%u: waiter=0x%x caller=0x%x "
-          "id=0x%x owner=0x%x owner_state=0x%x control=0x%x",
-          sequence, waiting_ppu.id, caller, lwmutex_id, owner_id, state_before,
-          control);
+          "id=0x%x owner=0x%x owner_live=%u owner_state=0x%x control=0x%x",
+          sequence, waiting_ppu.id, caller, lwmutex_id, owner_id,
+          owner ? 1u : 0u, state_before, control);
     }
 
     const bool is_deferred_dependency_candidate =

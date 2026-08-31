@@ -15794,60 +15794,62 @@ there to Bink playback. Diff the two runs' main_thread call sequences from boot 
 That is a bounded comparison of two logs over thirteen seconds, and both sides are
 reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.
 
-## Current HLE handoff: exact PhysX queue boundary is next
+## Current HLE handoff: make the FMOD live-owner route repeatable
 
 This section replaces the old next-step notes above. HLE has reached the PhysX
-startup task, but it has not reached gameplay or a valid 30 FPS result.
+startup task in an earlier run. It has not reached gameplay or a valid 30 FPS
+result.
 
-Capture `20260830-223448-thor-input-custom` used exact stripped core SHA-256
-`BCEBB365BC0CEE564FCA7EC3B5BF61F6FCFEE49D93FD05E387B1323D23100C68`.
-The installed APK hash matched. The legal START frame passed on slice 7.
+Capture `20260830-225248-thor-input-custom` used installed APK SHA-256
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+and exact stripped core SHA-256
+`6C54F49715A4A18180BD6CF7722A32E1B7FE8C64C08393D812467A3F24F514AC`.
+The legal START frame passed on slice 6. The route then completed 30 two-second
+slices and reached its 360-second host limit before the PPU PhysX thread
+appeared. The exact PhysX stop PC did not run.
 
-The live SPU shutdown scan worked. The first reconciliation row reported
-`known=0x3f` and reduced workload-7 status from `0x1f` to the real active mask
-`0x10`. The retry kept this active owner. The SPURS handler emitted the
-shutdown-completion event, the rendering thread returned from the join, and the
-title safely recreated taskset `0x1f73f00` with workload ID 7. This device run
-proves the live-object shutdown repair.
+The workload-7 repair worked again. At emulator time 3:19.455, the live scan
+reported `known=0x3f`, reduced status `0x3b` to the active mask `0x10`, and
+kept SPU 4 as the real owner. The SPURS handler emitted the completion event at
+3:19.468. The rendering thread returned from the join and recreated taskset
+`0x1f73f00` with workload ID 7 at 3:19.525. This result reconfirms shutdown,
+join return, workload removal, and safe taskset reuse.
 
-The title then created the PPU PhysX thread and its six queues. It created task
-zero from ELF `0x018c1000` in taskset `0x1ec4700`. The interpreter entered at
-PC `0x06800`, but it left at PC `0x06960` after 190 microseconds. The PPU queue
-remained empty and timed out after six seconds with `0x8041090A`. The logged
-`queue_rc=0` is invalid because PC `0x06960` is the queue-function entry, not
-the caller result boundary. The failure path later produced one RSX dead-FIFO
-fatal. Classify this run as `failed`, not gameplay and not comparable for FPS.
+The next blocker is the intermittent FMOD lock chain. The audio event send woke
+PPU `0x0100000c`. The main thread then returned from mutex `0x95008b00`. It
+immediately entered mutex `0x95008d00`, which named the same FMOD PPU as owner.
+The candidate row reported owner state zero, but the direct lookup and name
+predicate did not give the deferred route a usable owner. There was no
+`DEFERRED SCAN` row. The code fell through to a dependency wake with no saved
+dependency. Later census rows still contained PPU `0x0100000c`. Both the main
+thread and the FMOD receiver stayed at HLE PC `0x022254ec` with link register
+`0x00e28c5c`. The run had no PhysX queue row and no targeted fatal error.
 
-Ghidra shows that caller PC `0x068f4` calls the queue function at `0x06960`.
-The previous interpreter end was `0x06920`, so the interpreter stopped when it
-branched to the higher-address callee. It did not execute the queue function.
-A single address range cannot include that callee and also stop at the lower-
-address caller continuation.
-
-The host successor adds an exact stop PC to the per-SPU interpreter fallback.
-The PhysX path now interprets range `0x030a8..0x06e54` and stops only when the
-queue function returns to PC `0x06920`. Register `r3` still contains the
-terminal queue result there. The exact stop PC resets on normal interpreter
-exit and on JIT-gateway escape.
+The host successor now selects PPU owners from the live PPU table by ID. It
+uses this path for the primary owner, a discovered dependency owner, and a
+dependency retry. The change is title-gated by the existing Transformers audio
+repair. It does not change a guest mutex word or queue. The candidate log now
+reports `owner_live` so the next result is unambiguous.
 
 The Transformers route, shutdown-reconciliation, shutdown-completion, and
 taskset-join contracts pass. `git diff --check`, the Android ARM64
 RelWithDebInfo build, the Thortest strip task, the binary marker check, and the
-export-surface check pass. The next stripped core is 63,253,192 bytes with
+export-surface check pass. The next stripped core is 63,253,448 bytes with
 SHA-256
-`6C54F49715A4A18180BD6CF7722A32E1B7FE8C64C08393D812467A3F24F514AC`.
+`3023A5C5EB24EDA5D32E6F94B643FDE791E8E1D641AC3194BF88C53D0BD8F5B9`.
 Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
 392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
 
-In the next independently cool route, require
-`pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue-failure
-row, and no fatal error. Then require progress beyond PhysX startup before any
-HLE or gameplay claim. Do not claim 30 FPS until a matched gameplay route runs
-correctly.
+In the next independently cool route, first require `owner_live=1` for mutex
+`0x95008d00`, a `DEFERRED SCAN` row, and progress beyond the FMOD lock chain.
+If the route reaches PhysX, require `pc=0x06920 queue_rc=0x00000000`, a real PPU
+`ready after` row, no queue-failure row, and no fatal error. Then require
+progress beyond PhysX startup before an HLE or gameplay claim. Do not claim
+30 FPS until a matched gameplay route runs correctly.
 
-The last watchdog recorded 268 valid samples. Fixed silicon was 34.5 to 68.2 C,
-and junction temperature was 35.1 to 84.3 C. Every sample reported Smart fan
-mode `4`. Final cleanup found no RPCSX PID or `top` row at 37.7 C fixed silicon.
+The last watchdog recorded 409 valid samples. Fixed silicon was 34.1 to 67.8 C,
+and junction temperature was 35.1 to 77.5 C. Every sample reported Smart fan
+mode `4`. Final cleanup found no RPCSX PID or `top` row at 40.1 C fixed silicon.
 A saved Custom slider value of `100` is not an active fan speed or an RPM
 measurement. Keep Smart fan mode enabled. Do not repeat the same route in one
 cool round.
