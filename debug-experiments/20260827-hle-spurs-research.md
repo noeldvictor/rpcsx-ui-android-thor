@@ -10085,3 +10085,28 @@ rendering progress.
   `D194EA9B101C1A7C2690D935999B87CA37392399AE7F8E35C979889383E58BE5`.
   The export-surface check passed with 40 defined dynamic symbols, 596 explicit
   relocations, 392 jump slots, and 44,445 encoded relocation bytes.
+
+## 245. The first six-second validation stopped before the reply boundary
+
+- Status: route-budget-insufficient, device result unknown
+- Identity: Capture `20260830-205111-thor-input-custom` used stripped core
+  SHA-256
+  `D194EA9B101C1A7C2690D935999B87CA37392399AE7F8E35C979889383E58BE5`.
+  The installed APK matched expected SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+- Progress: The PPU PhysX thread appeared at emulator time 4:05.691455. The
+  exact task from ELF `0x018c1000` called the queue pop at 4:24.826654, and the
+  exact SPU interpreter entered at 4:24.851096.
+- Route limit: The one 30-second host slice ended after the log reached about
+  emulator time 4:26.735. The prior run needed about 4.91 seconds inside the
+  interpreter. This run therefore stopped about three emulator seconds before
+  the expected reply. It produced no `r3`, `ready after`, timeout, or title
+  queue-failure row. It does not accept or reject the six-second change.
+- Thermal and fan result: The independent watchdog recorded 233 valid samples
+  and completed because the package stopped. Fixed silicon ranged from 34.1 C
+  to 68.7 C. Junction peaked at 83.1 C. Every sample reported Smart fan mode
+  `4`. The launch sample was 33.3 C. The route and a direct cleanup check both
+  found no remaining RPCSX process.
+- Next: Keep the same exact core. In a later cool round, allow two cooled
+  30-second after-handoff slices. Require `r3=0`, a real `ready after` queue
+  row, no queue-failure row, and progress after PhysX startup.
