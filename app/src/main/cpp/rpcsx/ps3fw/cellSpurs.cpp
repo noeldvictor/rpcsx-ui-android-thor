@@ -164,11 +164,11 @@ static bool thor_transformers_fmod_event_interp() noexcept
 // Give the first Transformers PhysX SPU-to-PPU reply time to reach its queue.
 //
 // The title starts a cold SPU task and calls the nonblocking queue pop about
-// 45 microseconds later. It treats BUSY as fatal. On Thor, the exact SPU
-// program can still compile native blocks for more than 500 milliseconds.
-// This switch adds one bounded scheduling window for that exact startup
-// handshake. It does not fabricate queue data and it does not change later
-// nonblocking pops.
+// 45 microseconds later. It treats BUSY as fatal. A guarded Thor run showed
+// that the exact interpreted initialization and queue push can finish just
+// after the title's five-second deadline. This switch adds one bounded
+// scheduling window for that exact startup handshake. It does not fabricate
+// queue data and it does not change later nonblocking pops.
 //
 //   debug.rpcsx.thor.transformers_physx_queue_wait = 1
 static bool thor_transformers_physx_queue_wait() noexcept
@@ -5866,7 +5866,7 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					expected_queue, queue.addr(), std::memory_order_acq_rel))
 			{
 				static constexpr u32 c_poll_us = 100;
-				static constexpr u64 c_max_wait_us = 5'000'000;
+				static constexpr u64 c_max_wait_us = 6'000'000;
 				const u64 started = get_system_time();
 
 				while (get_system_time() - started < c_max_wait_us)

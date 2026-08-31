@@ -10025,3 +10025,63 @@ rendering progress.
 - Next: In a later cool round, push the exact stripped core without a launch.
   Run one guarded Transformers route. Require the shutdown-reconcile row,
   taskset join return, workload removal, and later FMOD or PhysX progress.
+
+## 243. The valid continuous PhysX window misses the reply boundary
+
+- Status: device-confirmed HLE progress, exact startup blocker, not-gameplay
+- Identity: Capture `20260830-202650-thor-input-custom` used stripped core
+  SHA-256
+  `4CE3E002F67CD59CB8CCAF651C1F02062CA36FE161E77F98340C6276E5A591F8`
+  and installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+- Shutdown result: Workload 7 completed its shutdown event about 15
+  milliseconds after `cellSpursJoinTaskset` started. The rendering thread then
+  continued, and the title created the same taskset again. The new shutdown
+  reconciliation row did not appear, so this run did not exercise that repair.
+- HLE progress: The title created the FMOD threads and then created the PPU
+  PhysX thread at emulator time 3:58.526. It created PhysX task 0 from ELF
+  `0x018c1000` and started the uninterrupted queue window at 4:19.457.
+- Queue result: The PPU started its bounded pop at 4:19.457818 and reported
+  `BUSY` at 4:24.457951. The exact SPU interpreter entered at 4:19.549768 and
+  reached helper `0x06e58` at 4:24.458110. The SPU boundary was therefore 159
+  microseconds after the PPU timeout. The uninterrupted 30-second slice peaked
+  at 67.0 C fixed silicon.
+- Ghidra result: A fresh headless import of the retained legal PhysX local
+  store used `SPU:BE:128:default`. Function `0x06878` repeats queue function
+  `0x06960` only while it returns `BUSY` or `AGAIN`. It calls helper `0x06e58`
+  only after the queue function returns another result. Function `0x06960`
+  contains the queue reservation and the MFC payload write. This proves a
+  terminal queue-push result at the measured boundary. The old log did not
+  record the result register, so it does not yet prove that the result was
+  success.
+- Frame result: The boundary screenshot is a valid Transformers loading screen
+  with a 30.00 FPS overlay. Ten-second emulator samples during startup ranged
+  from 0 to 6.70 FPS and ended at 3.20 FPS. This is not a gameplay or 30 FPS
+  result.
+- Thermal and fan result: The independent watchdog recorded 233 valid thermal
+  samples and completed after the package stopped. Fixed silicon peaked at
+  68.2 C, below the 72 C hard stop. Every watchdog sample reported Smart fan
+  mode `4`. A direct cleanup check found no RPCSX PID and confirmed Smart fan
+  mode `4`.
+- Decision: Keep the broad interpreter boundary for this control. A narrow
+  `0x06960` hook would restore the four cold LLVM compiles that previously took
+  5.73 seconds. Extend only this exact startup wait by one second and record
+  the SPU return value before a larger HLE change.
+
+## 244. Give the exact PhysX startup push one more second
+
+- Status: host-pass, device-pending
+- Change: The title, call-site, queue-shape, taskset, and ELF-gated PPU wait is
+  now six seconds instead of five seconds. No other nonblocking queue pop
+  changes. The wait still consumes only real queue data.
+- Diagnostic: The exact SPU interpreter leave row now records `r3`. A later
+  run must show `r3=0`, a `ready after` queue row, and progress after the PPU
+  PhysX startup function. A nonzero result or another timeout rejects this
+  change.
+- Scope: This does not HLE the PhysX workload, fabricate its response, or give
+  gameplay credit. It only prevents the measured 159-microsecond startup race.
+- Host result: The ARM64 RelWithDebInfo build and the Thortest symbol-strip task
+  passed. The stripped core is 63,252,552 bytes and has SHA-256
+  `D194EA9B101C1A7C2690D935999B87CA37392399AE7F8E35C979889383E58BE5`.
+  The export-surface check passed with 40 defined dynamic symbols, 596 explicit
+  relocations, 392 jump slots, and 44,445 encoded relocation bytes.

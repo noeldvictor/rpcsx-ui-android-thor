@@ -408,8 +408,9 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 
 	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
 
-	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x elapsed_us=%llu",
-		count, spu.pc, static_cast<unsigned long long>(get_system_time() - started));
+	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x r3=0x%08x elapsed_us=%llu",
+		count, spu.pc, spu.gpr[3]._u32[3],
+		static_cast<unsigned long long>(get_system_time() - started));
 
 	spu_runtime::g_escape(&spu);
 }

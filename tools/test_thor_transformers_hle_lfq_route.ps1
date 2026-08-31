@@ -688,7 +688,7 @@ $requiredPhysxQueueWaitFragments = @(
     '"debug.rpcsx.thor.transformers_physx_queue_wait"',
     'static_cast<u32>(ppu.lr) == 0x00a94678u',
     'first_task_elf == 0x018c1000u',
-    'static constexpr u64 c_max_wait_us = 5''000''000;',
+    'static constexpr u64 c_max_wait_us = 6''000''000;',
     'while (get_system_time() - started < c_max_wait_us)',
     'thread_ctrl::wait_for(c_poll_us, false);',
     'Thor Transformers PhysX queue startup wait:'
@@ -709,7 +709,7 @@ $requiredPhysxStartInterpFragments = @(
     '+spu._ref<u32>(0x27d4) != task.task_id',
     'spu.interp_fallback_begin = 0x030a8;',
     'spu.interp_fallback_end = 0x06e54;',
-    'Thor Transformers PhysX startup interpreter leave'
+    'Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x r3=0x%08x elapsed_us=%llu'
 )
 
 foreach ($fragment in $requiredPhysxStartInterpFragments) {
