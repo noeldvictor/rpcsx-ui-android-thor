@@ -912,6 +912,8 @@ def t_slice_loop(a):
         0.1, min(float(a.get("seconds", 1.0)), duration_limit))
     max_slices = max(1, min(int(a.get("maxSlices", 64)), 256))
     max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 600.0))
+    max_active_s = max(
+        0.0, min(float(a.get("maxActiveS", 0.0)), 300.0))
     start_ceiling = float(a.get("maxStartC", 70))
     resume_target = float(a.get("resumeTargetC", start_ceiling))
     resume_stable_samples = max(
@@ -1017,6 +1019,7 @@ def t_slice_loop(a):
 
     records = []
     max_silicon = -1.0
+    active_elapsed = 0.0
     loop_started = time.monotonic()
     armed_at_slice = None
     arm_lines = []
@@ -1034,8 +1037,11 @@ def t_slice_loop(a):
         fields["completedSlices"] = len(records)
         fields["slices"] = records
         fields["maxFixedSiliconC"] = max_silicon
+        fields["activeElapsedS"] = round(active_elapsed, 3)
         fields["hostElapsedS"] = round(time.monotonic() - loop_started, 3)
         fields["maxHostS"] = max_host_s
+        if max_active_s > 0.0:
+            fields["maxActiveS"] = max_active_s
         if armed_at_slice is not None:
             fields["armMatch"] = arm_match
             fields["armLines"] = arm_lines
@@ -1105,6 +1111,9 @@ def t_slice_loop(a):
                             part.get("triggerFixedSiliconC", -1))
         if isinstance(part_max, (int, float)):
             max_silicon = max(max_silicon, float(part_max))
+        part_active = part.get("activeElapsedS", part.get("elapsedS", 0.0))
+        if isinstance(part_active, (int, float)):
+            active_elapsed += max(0.0, float(part_active))
         record = {
             "index": index,
             "coolTargetC": cool_target,
@@ -1173,6 +1182,11 @@ def t_slice_loop(a):
                 return finish({"markerReached": True,
                                "markerKind": "post-arm",
                                "stopMatch": stop_match})
+
+        if max_active_s > 0.0 and active_elapsed >= max_active_s:
+            return finish({"markerReached": False,
+                           "activeBudgetReached": True,
+                           "stopMatch": stop_match})
 
     return finish({"markerReached": False, "limitReached": True,
                    "stopMatch": stop_match})
@@ -1346,7 +1360,7 @@ TOOLS = [
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
     ("thor_slice", "Run a paused guest for 0.1 to 15 seconds by default. An explicit maxDurationS can extend an exact handoff window to 300 seconds. Monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
-    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool to or below the runtime resume target between slices. Return within the host deadline and keep log-boundary checks and hard stops in one controller. An explicit maxDurationS can extend an exact handoff window to 300 seconds.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "stopMatches": {"type": "array", "items": {"type": "string"}}, "armMatch": {"type": "string"}, "postArmSlices": {"type": "integer"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
+    ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool to or below the runtime resume target between slices. Return within the host and active-time limits, and keep log-boundary checks and hard stops in one controller. An explicit maxDurationS can extend an exact handoff window to 300 seconds.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "maxActiveS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "stopMatches": {"type": "array", "items": {"type": "string"}}, "armMatch": {"type": "string"}, "postArmSlices": {"type": "integer"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays at or below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),

@@ -686,6 +686,22 @@ assert all(item["sampleIntervalS"] == 1 for item in loop_cool_requests), (
 
 loop_slices.clear()
 loop_cool_requests.clear()
+SERVER._matching_log_lines = lambda match, count=1: []
+result = SERVER.t_slice_loop({
+    "seconds": 1.0, "maxSlices": 4, "maxActiveS": 2.5,
+})
+assert result["activeBudgetReached"] is True, (
+    "The slice loop did not stop at its actual active-time budget."
+)
+assert result["completedSlices"] == 3 and result["activeElapsedS"] == 3.0, (
+    "The slice loop used requested wall time instead of completed active time."
+)
+assert result["maxActiveS"] == 2.5, (
+    "The active-time result lost its configured proof budget."
+)
+
+loop_slices.clear()
+loop_cool_requests.clear()
 SERVER._matching_log_lines = lambda match, count=1: (
     ["diagnostic marker"]
     if match == "diagnostic boundary" and len(loop_slices) == 1

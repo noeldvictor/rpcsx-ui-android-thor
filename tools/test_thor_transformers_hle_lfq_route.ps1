@@ -338,6 +338,26 @@ if (-not $underBudgetRejected) {
     throw 'The Transformers route accepted an under-budget PhysX handoff window.'
 }
 
+$threeSliceRouteRejected = $false
+try {
+    & $renderProbePath `
+        -ExpectedInstalledApkSha256 ('0' * 64) `
+        -SliceLoop `
+        -SliceStopMatch '__THOR_CONTRACT_UNREACHED__' `
+        -SliceAfterHandoffSeconds 30 `
+        -SliceAfterHandoffMaxSlices 3 2>&1 | Out-Null
+} catch {
+    if ($_.Exception.Message -like '*needs at least 32 slices because a thermal process hold can end a slice early*') {
+        $threeSliceRouteRejected = $true
+    } else {
+        throw
+    }
+}
+
+if (-not $threeSliceRouteRejected) {
+    throw 'The Transformers route accepted the watchdog-truncated three-slice window.'
+}
+
 $requiredTransformersFifoFragments = @(
     'm_title_id == "BLUS30357"',
     '"debug.rpcsx.thor.transformers_fifo_ordered"',

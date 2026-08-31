@@ -162,6 +162,7 @@ if ($SlicePressStartAfterFirstLoop -and -not $SliceLoop) {
 }
 
 $physxHandoffWindowMinimumSeconds = 90.0
+$physxHandoffMinimumSlices = 32
 $targetsPhysxQueueBoundary = (
     $Mode -eq "HLE" -and
     $SliceLoop -and
@@ -175,6 +176,9 @@ if ($targetsPhysxQueueBoundary) {
         $effectiveAfterHandoffSliceSeconds * $SliceAfterHandoffMaxSlices
     if ($physxHandoffWindowSeconds -lt $physxHandoffWindowMinimumSeconds) {
         throw "The PhysX handoff route needs at least $physxHandoffWindowMinimumSeconds active seconds. The configured window is $physxHandoffWindowSeconds seconds."
+    }
+    if ($SliceAfterHandoffMaxSlices -lt $physxHandoffMinimumSlices) {
+        throw "The PhysX handoff route needs at least $physxHandoffMinimumSlices slices because a thermal process hold can end a slice early."
     }
 }
 
@@ -711,6 +715,9 @@ try {
                     }
                     $afterStartArguments.maxSlices = $SliceAfterHandoffMaxSlices
                     $afterStartArguments.maxHostS = $SliceAfterHandoffMaxHostSeconds
+                    if ($targetsPhysxQueueBoundary) {
+                        $afterStartArguments.maxActiveS = $physxHandoffWindowMinimumSeconds
+                    }
                     $effectiveAfterStartStopMatch = $SliceAfterStartStopMatch
                 }
             } else {
