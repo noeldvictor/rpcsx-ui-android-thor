@@ -347,9 +347,11 @@ static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
 // Match the armed BLUS30357 task, its live taskset, its task ID, its startup
 // age, and captured code bytes. The last initializer tail-calls 0x030a8. The
 // caller then enters the first PhysX queue operation at 0x06960. Interpret
-// that exact reservation function through its return at 0x06e50. Leave the
-// next queue helper at 0x06e58 on LLVM. This boundary tests the captured
-// GETLLAR and PUTLLC path without interpreting later PhysX work.
+// that exact reservation function through the retry test at 0x0691c. Leave
+// at 0x06920, while r3 still holds the terminal queue result. The instruction
+// at 0x06924 replaces r3 with the queue pointer before the next helper. This
+// boundary tests the captured GETLLAR and PUTLLC path without interpreting
+// later PhysX work.
 //
 //   debug.rpcsx.thor.transformers_physx_start_interp = 1
 static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept
@@ -399,7 +401,7 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 	const u64 started = get_system_time();
 
 	spu.interp_fallback_begin = 0x030a8;
-	spu.interp_fallback_end = 0x06e54;
+	spu.interp_fallback_end = 0x06920;
 	spu.interp_fallback = true;
 	spu.allow_interrupts_in_cpu_work = true;
 
@@ -408,7 +410,7 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 
 	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
 
-	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x r3=0x%08x elapsed_us=%llu",
+	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu",
 		count, spu.pc, spu.gpr[3]._u32[3],
 		static_cast<unsigned long long>(get_system_time() - started));
 

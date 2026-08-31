@@ -10070,14 +10070,14 @@ rendering progress.
 
 ## 244. Give the exact PhysX startup push one more second
 
-- Status: host-pass, device-pending
+- Status: wait host-pass, old diagnostic superseded, device-pending
 - Change: The title, call-site, queue-shape, taskset, and ELF-gated PPU wait is
   now six seconds instead of five seconds. No other nonblocking queue pop
   changes. The wait still consumes only real queue data.
-- Diagnostic: The exact SPU interpreter leave row now records `r3`. A later
-  run must show `r3=0`, a `ready after` queue row, and progress after the PPU
-  PhysX startup function. A nonzero result or another timeout rejects this
-  change.
+- Diagnostic: The first leave row tried to record `r3` at `0x06e58`. Later
+  focused disassembly proved that `0x06924` replaces the queue result in `r3`
+  with the queue pointer before that boundary. Section 246 supersedes this
+  diagnostic. The six-second wait itself is unchanged.
 - Scope: This does not HLE the PhysX workload, fabricate its response, or give
   gameplay credit. It only prevents the measured 159-microsecond startup race.
 - Host result: The ARM64 RelWithDebInfo build and the Thortest symbol-strip task
@@ -10107,6 +10107,29 @@ rendering progress.
   to 68.7 C. Junction peaked at 83.1 C. Every sample reported Smart fan mode
   `4`. The launch sample was 33.3 C. The route and a direct cleanup check both
   found no remaining RPCSX process.
-- Next: Keep the same exact core. In a later cool round, allow two cooled
-  30-second after-handoff slices. Require `r3=0`, a real `ready after` queue
-  row, no queue-failure row, and progress after PhysX startup.
+- Next: Do not reuse the same core because its leave row cannot report the
+  queue result. Build the corrected Section 246 diagnostic. In a later cool
+  round, allow two cooled 30-second after-handoff slices. Require queue result
+  `0`, a real `ready after` queue row, no queue-failure row, and progress after
+  PhysX startup.
+
+## 246. Stop before the queue result register is overwritten
+
+- Status: host-pass, device-pending
+- Ghidra result: Focused SPU disassembly of `0x06874..0x06974` shows that
+  `0x068f4` calls the queue reservation function. Instructions
+  `0x068fc..0x0691c` retry only for `AGAIN` or `BUSY`. On a terminal result,
+  execution reaches `0x06920` with the queue result still in `r3`. Instruction
+  `0x06924` then replaces `r3` with the local queue pointer before it calls
+  helper `0x06e58`.
+- Change: The exact interpreter range now ends at `0x06920`, before the
+  overwrite. The leave row names the value `queue_rc`. All four cold
+  initialization helpers and the complete queue reservation operation remain
+  inside the interpreted range.
+- Acceptance: The next run must report `pc=0x06920 queue_rc=0x00000000` and a
+  real PPU `ready after` row. `AGAIN` and `BUSY` cannot reach this boundary.
+  Any other queue result rejects the startup path.
+- Host result: The focused route contract, ARM64 RelWithDebInfo build, Thortest
+  symbol-strip task, binary marker check, and export-surface check passed. The
+  stripped core is 63,252,552 bytes and has SHA-256
+  `AD86E50B6AA30818997683C4743CCFFFB40B28C5F42C478160AE99130CD4D749`.
