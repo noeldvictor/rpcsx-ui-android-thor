@@ -10350,3 +10350,54 @@ rendering progress.
   taskset join return, workload removal, and safe taskset reuse. If it reaches
   PhysX, also require `pc=0x06920 queue_rc=0x00000000` and a real PPU
   `ready after` row. Do not claim HLE, gameplay, FPS, speed, or stability yet.
+
+## 252. The live scan clears shutdown and exposes a false PhysX boundary
+
+- Status: shutdown repair device-confirmed, PhysX boundary successor host-pass,
+  failed, not-gameplay, not-comparable for FPS.
+- Identity: Capture `20260830-223448-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `BCEBB365BC0CEE564FCA7EC3B5BF61F6FCFEE49D93FD05E387B1323D23100C68`.
+  The legal START frame passed on slice 7.
+- Shutdown result: The rendering thread entered the workload-7 taskset join at
+  emulator time 4:13.361594. The live scan reported `known=0x3f` and reduced
+  status `0x1f` to the real active mask `0x10`. The 20-millisecond retry kept
+  SPU 4 as the active owner. The SPURS handler emitted the shutdown-completion
+  event at 4:13.430050. The rendering thread returned and recreated the same
+  taskset address with a new workload ID 7 at 4:13.517326. This proves join,
+  workload removal, and safe taskset reuse.
+- PhysX result: The title created the PPU PhysX thread, initialized six queues,
+  and created task zero from ELF `0x018c1000` in taskset `0x1ec4700`. The
+  interpreter entered at PC `0x06800` and left at PC `0x06960` after 190
+  microseconds. The PPU queue pop timed out after 6,000,012 microseconds and
+  returned `0x8041090A`. It had no `ready after` row. The error path later
+  produced one RSX dead-FIFO fatal.
+- Static result: Ghidra shows that PC `0x068f4` calls the queue function at
+  `0x06960`. The configured fallback end was `0x06920`. The interpreter
+  therefore stopped at the callee entry before it executed the queue function.
+  The logged `queue_rc=0` was not a queue result. A simple range cannot include
+  the higher-address callee and stop at the lower-address caller continuation.
+- Host successor: The SPU fallback now has an exact stop PC. The PhysX route
+  interprets through `0x06e50` with range `0x030a8..0x06e54`, then stops when
+  control returns to PC `0x06920`. Register `r3` still contains the terminal
+  queue result at this point. The field resets on normal interpreter exit and
+  on JIT-gateway escape.
+- Verification: The Transformers route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. `git diff --check`, the
+  Android ARM64 RelWithDebInfo build, the Thortest strip task, the binary marker
+  check, and the export-surface check pass. The new stripped core is 63,253,192
+  bytes with SHA-256
+  `6C54F49715A4A18180BD6CF7722A32E1B7FE8C64C08393D812467A3F24F514AC`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+- Thermal and fan result: The watchdog recorded 268 valid samples. Fixed
+  silicon ranged from 34.5 to 68.2 C, and junction temperature ranged from
+  35.1 to 84.3 C. Every sample reported Smart fan mode `4`. Final cleanup found
+  no PID or RPCSX `top` row at 37.7 C fixed silicon. The saved Custom slider
+  value is not an active fan speed.
+- Next: In a later independently cool route, push the exact successor without
+  a launch. Require `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after`
+  row, no queue-failure row, no fatal error, and progress beyond PhysX startup.
+  Do not claim HLE, gameplay, FPS, speed, or stability before these gates pass.

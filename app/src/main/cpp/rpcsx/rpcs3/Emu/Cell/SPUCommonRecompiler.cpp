@@ -201,6 +201,7 @@ static void spu_run_interp_fallback(spu_thread& spu, u32 lower_bound = 0, u32 si
 {
 	std::tie(spu.interp_fallback_begin, spu.interp_fallback_end) =
 		spu_arm_interp_fallback(spu.pc, lower_bound, size_bytes);
+	spu.interp_fallback_stop_pc = umax;
 
 	ensure(spu.interp_fallback_end > spu.interp_fallback_begin);
 
@@ -346,12 +347,13 @@ static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
 //
 // Match the armed BLUS30357 task, its live taskset, its task ID, its startup
 // age, and captured code bytes. The last initializer tail-calls 0x030a8. The
-// caller then enters the first PhysX queue operation at 0x06960. Interpret
-// that exact reservation function through the retry test at 0x0691c. Leave
-// at 0x06920, while r3 still holds the terminal queue result. The instruction
-// at 0x06924 replaces r3 with the queue pointer before the next helper. This
-// boundary tests the captured GETLLAR and PUTLLC path without interpreting
-// later PhysX work.
+// caller then enters the first PhysX queue operation at 0x06960. The queue
+// function is above its caller, so a single address range cannot include the
+// function and stop at the caller continuation. Interpret through the queue
+// return at 0x06e50, then use the exact stop PC at 0x06920. At that PC, r3
+// still holds the terminal queue result. The instruction at 0x06924 replaces
+// r3 with the queue pointer before the next helper. This boundary tests the
+// captured GETLLAR and PUTLLC path without interpreting later PhysX work.
 //
 //   debug.rpcsx.thor.transformers_physx_start_interp = 1
 static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept
@@ -401,7 +403,8 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 	const u64 started = get_system_time();
 
 	spu.interp_fallback_begin = 0x030a8;
-	spu.interp_fallback_end = 0x06920;
+	spu.interp_fallback_end = 0x06e54;
+	spu.interp_fallback_stop_pc = 0x06920;
 	spu.interp_fallback = true;
 	spu.allow_interrupts_in_cpu_work = true;
 
@@ -3432,9 +3435,11 @@ void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/
 		}
 
 		if (spu.interp_fallback &&
-			(spu.pc < spu.interp_fallback_begin || spu.pc >= spu.interp_fallback_end)) [[unlikely]]
+			(spu.pc == spu.interp_fallback_stop_pc ||
+				spu.pc < spu.interp_fallback_begin || spu.pc >= spu.interp_fallback_end)) [[unlikely]]
 		{
 			spu.interp_fallback = false;
+			spu.interp_fallback_stop_pc = umax;
 			break;
 		}
 

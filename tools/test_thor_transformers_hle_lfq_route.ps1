@@ -14,6 +14,8 @@ $perfMonitorPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\
 $perfMonitor = Get-Content -LiteralPath $perfMonitorPath -Raw
 $spuThreadPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.cpp"
 $spuThread = Get-Content -LiteralPath $spuThreadPath -Raw
+$spuThreadHeaderPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUThread.h"
+$spuThreadHeader = Get-Content -LiteralPath $spuThreadHeaderPath -Raw
 $spuLlvmPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPULLVMRecompiler.cpp"
 $spuLlvm = Get-Content -LiteralPath $spuLlvmPath -Raw
 $spuCommonPath = Join-Path $PSScriptRoot "..\app\src\main\cpp\rpcsx\rpcs3\Emu\Cell\SPUCommonRecompiler.cpp"
@@ -706,16 +708,26 @@ $requiredPhysxStartInterpFragments = @(
     'const auto task = thor::get_transformers_physx_task_snapshot();',
     'task.elf != 0x018c1000u',
     'static_cast<u32>(+spu._ref<u64>(0x27b8)) != task.taskset',
-    '+spu._ref<u32>(0x27d4) != task.task_id',
-    'spu.interp_fallback_begin = 0x030a8;',
-    'spu.interp_fallback_end = 0x06920;',
-    'Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu'
+	'+spu._ref<u32>(0x27d4) != task.task_id',
+	'spu.interp_fallback_begin = 0x030a8;',
+	'spu.interp_fallback_end = 0x06e54;',
+	'spu.interp_fallback_stop_pc = 0x06920;',
+	'spu.pc == spu.interp_fallback_stop_pc',
+	'Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu'
 )
 
 foreach ($fragment in $requiredPhysxStartInterpFragments) {
     if (-not $spuCommon.Contains($fragment)) {
         throw "The Transformers PhysX startup interpreter is missing: $fragment"
     }
+}
+
+if (-not $spuThreadHeader.Contains('u32 interp_fallback_stop_pc = umax;')) {
+    throw 'The exact interpreter fallback stop PC field is missing.'
+}
+
+if (-not $spuThread.Contains('interp_fallback_stop_pc = umax;')) {
+    throw 'The SPU gateway does not clear the exact interpreter fallback stop PC.'
 }
 
 $requiredPhysxDumpFragments = @(

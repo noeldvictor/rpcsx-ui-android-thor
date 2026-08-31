@@ -15794,61 +15794,60 @@ there to Bink playback. Diff the two runs' main_thread call sequences from boot 
 That is a bounded comparison of two logs over thirteen seconds, and both sides are
 reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.
 
-## Current HLE handoff: live SPU shutdown scan is next
+## Current HLE handoff: exact PhysX queue boundary is next
 
-This section replaces the old next-step notes above. HLE has not reached PhysX,
-gameplay, or a valid 30 FPS result.
+This section replaces the old next-step notes above. HLE has reached the PhysX
+startup task, but it has not reached gameplay or a valid 30 FPS result.
 
-Capture `20260830-221350-thor-input-custom` used exact stripped core SHA-256
-`9877BAB6392043E53110D5E0E1486866A159D45BCAD94843EB546B3F49CDA8B9`.
-The legal START frame passed on slice 7. The route reached the bounded
-`PRE-SCHEDULE-SCAN` and `POST-FETCH result=0x0` rows. It did not create the PPU
-PhysX thread or reach the PhysX queue.
-
-The new shutdown snapshot ran at workload-7 join. It reported workload state
-`3`, status `0x24`, event `0x10`, update and message masks `0xe4`, ready count
-`1`, and contention `1`. Task zero had running, ready, and enabled mask
-`0x80000000`. This mask combination is valid for a selected task. It is not
-proof of a stale task.
-
-The important failure is `known=0x00`: the direct lookup through the guest
-`CellSpurs::spus` ID array found no SPU objects. All current IDs and PCs were
-therefore unknown. The Android status path later enumerated all six live SPU
-objects for the same SPURS address. The shutdown helper could not clear any
-status bit because it correctly preserves every unknown owner.
-
-Ghidra analysis of the real kernel does not support a forced PPU-side removal.
-The real selector records pending contention during a policy-module poll. The
-normal kernel dispatch then commits system-service workload 32. The kernel does
-not write `sysSrvPreemptWklId`. The current RPCSX and RPCS3 system-service HLE
-code also leaves the direct preempted-entry path as a TODO. Existing LLE local-
-store captures contain a taskset or job-chain policy module at `0xA00`; they do
-not contain the real system-service image.
-
-The host successor enumerates the live SPU objects, as the working Android
-status path does. It accepts an SPU only when both its host SPURS address and
-its local-store context match. It reads the current workload ID twice. It keeps
-the status bit for an active, changing, or unknown owner. The 20-millisecond
-retry can clear a stable non-owner bit after the task moves away. It does not
-clear a task or force preemption.
-
-The shutdown-reconciliation, shutdown-completion, taskset-join, and Transformers
-route contracts pass. `git diff --check`, the Android ARM64 RelWithDebInfo
-build, and the Thortest strip task pass. The next stripped core is 63,254,248
-bytes with SHA-256
+Capture `20260830-223448-thor-input-custom` used exact stripped core SHA-256
 `BCEBB365BC0CEE564FCA7EC3B5BF61F6FCFEE49D93FD05E387B1323D23100C68`.
+The installed APK hash matched. The legal START frame passed on slice 7.
+
+The live SPU shutdown scan worked. The first reconciliation row reported
+`known=0x3f` and reduced workload-7 status from `0x1f` to the real active mask
+`0x10`. The retry kept this active owner. The SPURS handler emitted the
+shutdown-completion event, the rendering thread returned from the join, and the
+title safely recreated taskset `0x1f73f00` with workload ID 7. This device run
+proves the live-object shutdown repair.
+
+The title then created the PPU PhysX thread and its six queues. It created task
+zero from ELF `0x018c1000` in taskset `0x1ec4700`. The interpreter entered at
+PC `0x06800`, but it left at PC `0x06960` after 190 microseconds. The PPU queue
+remained empty and timed out after six seconds with `0x8041090A`. The logged
+`queue_rc=0` is invalid because PC `0x06960` is the queue-function entry, not
+the caller result boundary. The failure path later produced one RSX dead-FIFO
+fatal. Classify this run as `failed`, not gameplay and not comparable for FPS.
+
+Ghidra shows that caller PC `0x068f4` calls the queue function at `0x06960`.
+The previous interpreter end was `0x06920`, so the interpreter stopped when it
+branched to the higher-address callee. It did not execute the queue function.
+A single address range cannot include that callee and also stop at the lower-
+address caller continuation.
+
+The host successor adds an exact stop PC to the per-SPU interpreter fallback.
+The PhysX path now interprets range `0x030a8..0x06e54` and stops only when the
+queue function returns to PC `0x06920`. Register `r3` still contains the
+terminal queue result there. The exact stop PC resets on normal interpreter
+exit and on JIT-gateway escape.
+
+The Transformers route, shutdown-reconciliation, shutdown-completion, and
+taskset-join contracts pass. `git diff --check`, the Android ARM64
+RelWithDebInfo build, the Thortest strip task, the binary marker check, and the
+export-surface check pass. The next stripped core is 63,253,192 bytes with
+SHA-256
+`6C54F49715A4A18180BD6CF7722A32E1B7FE8C64C08393D812467A3F24F514AC`.
 Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
 392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
 
-In the next independently cool route, require a nonzero known-SPU mask. Require
-a full reconciliation row, taskset join return, workload removal, and safe
-taskset reuse. If the route reaches PhysX, also require
-`pc=0x06920 queue_rc=0x00000000` and a real PPU `ready after` row. Do not give
-HLE, gameplay, FPS, speed, or stability credit before these events occur.
+In the next independently cool route, require
+`pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue-failure
+row, and no fatal error. Then require progress beyond PhysX startup before any
+HLE or gameplay claim. Do not claim 30 FPS until a matched gameplay route runs
+correctly.
 
-The last watchdog recorded 207 valid samples. Fixed silicon was 34.1 to 67.8 C,
-and junction temperature was 35.5 to 87.1 C. Every sample reported Smart fan
-mode `4`. Final cleanup found no RPCSX PID or `top` row at 40.5 C fixed silicon.
-All Thor debug properties are empty. A saved Custom slider value of `100` is not
-an active fan speed or an RPM measurement. Keep Smart fan mode enabled. Do not
-repeat the same route in one cool round.
+The last watchdog recorded 268 valid samples. Fixed silicon was 34.5 to 68.2 C,
+and junction temperature was 35.1 to 84.3 C. Every sample reported Smart fan
+mode `4`. Final cleanup found no RPCSX PID or `top` row at 37.7 C fixed silicon.
+A saved Custom slider value of `100` is not an active fan speed or an RPM
+measurement. Keep Smart fan mode enabled. Do not repeat the same route in one
+cool round.
