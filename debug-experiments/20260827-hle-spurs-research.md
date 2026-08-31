@@ -11079,11 +11079,13 @@ rendering progress.
   same queue keep the normal BUSY result. The repair does not fabricate queue
   data. Commit `a8605c924` also makes the proof reject a captured startup
   timeout, `0x8041090A`, or fatal thread termination after a ready marker.
-- Verification: The focused Transformers HLE route, shutdown reconciliation,
-  shutdown completion, and taskset-join contracts pass. `git diff --check`,
-  the ARM64 RelWithDebInfo build, the Thortest strip task, three binary marker
-  checks, and the export-surface check pass. The host-only stripped successor
-  core is 63,254,232 bytes with SHA-256
+  Commit `2a9e39f43` accepts post-marker completion only when the controller
+  reports the matching arm marker and the full requested slice count.
+- Verification: The focused Transformers HLE route, guarded slice, device
+  thermal guard, shutdown reconciliation, shutdown completion, and taskset
+  join contracts pass. `git diff --check`, the ARM64 RelWithDebInfo build, the
+  Thortest strip task, three binary marker checks, and the export-surface check
+  pass. The host-only stripped successor core is 63,254,232 bytes with SHA-256
   `8756DE497FDFAAF65A3D6567E00719F876F5CD3FD4BAB4EB851990312AF55CAF`.
   Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
   392 jump slots, and 44,453 encoded relocation bytes. It is not installed.
