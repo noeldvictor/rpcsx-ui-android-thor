@@ -16230,3 +16230,31 @@ Keep the 240-second after-handoff host limit. Require `startup ready`, exact
 `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal error,
 and progress beyond PhysX startup. Require correct gameplay before an HLE claim.
 Require a matched sustained gameplay result before a 30 FPS claim.
+
+## Current HLE handoff: measure the runnable PhysX budget
+
+Commit `4ce150e0a` completes the host correction from commit `3a08a9c89`. The
+slice loop now adds the measured active time from each completed slice. The
+exact PhysX route stops after 90 seconds of measured runnable time if the queue
+marker does not arrive. It does not count watchdog-held cooldown time toward
+that budget. The result records both the active and host elapsed totals.
+
+The exact route now requires at least 32 after-handoff slices before it contacts
+ADB. This rejects the old three-slice override. A watchdog hold can end one
+nominal 30-second slice early, so the larger slice count lets the controller
+cool and resume until it reaches the marker or the measured active-time limit.
+The host limit stays 240 seconds.
+
+The guarded-slice state-machine test, Python compilation, the fixed-silicon
+guard contract, the focused Transformers HLE route contract, and
+`git diff --check` pass. This is a host-only controller change. The installed
+core remains exact SHA-256
+`6DBD8E8F1975A95842E9C30D408CADCF043F8CDB4F52F7F249B458CC434189B6`.
+It needs no rebuild or push.
+
+Do not launch again in the previous cool round. In the next independently cool
+round, verify the installed APK and core identities. Use the corrected route
+without `-SliceAfterHandoffMaxSlices 3`; the default is 32. Require `startup
+ready`, exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no
+fatal error, and progress beyond PhysX startup. Require correct gameplay before
+an HLE claim. Require a matched sustained gameplay result before a 30 FPS claim.
