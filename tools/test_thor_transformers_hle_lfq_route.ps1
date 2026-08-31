@@ -760,6 +760,14 @@ foreach ($fragment in $requiredFmodEventWaitTraceFragments) {
 $requiredPhysxQueueWaitFragments = @(
     'static bool thor_transformers_physx_queue_wait() noexcept',
     '"debug.rpcsx.thor.transformers_physx_queue_wait"',
+	'static std::mutex s_thor_transformers_physx_queue_wait_mutex;',
+	'static std::unordered_set<u32> s_thor_transformers_physx_queues_waited;',
+	'static void thor_transformers_physx_queue_wait_rearm(u32 queue) noexcept',
+	's_thor_transformers_physx_queues_waited.erase(queue);',
+	'static bool thor_transformers_physx_queue_wait_claim(u32 queue) noexcept',
+	'return s_thor_transformers_physx_queues_waited.emplace(queue).second;',
+	'thor_transformers_physx_queue_wait_rearm(queue.addr());',
+	'thor_transformers_physx_queue_wait_claim(queue.addr())',
     'static_cast<u32>(ppu.lr) == 0x00a94678u',
     'first_task_elf == 0x018c1000u',
     'static constexpr u64 c_max_wait_us = 6''000''000;',
@@ -779,6 +787,10 @@ foreach ($fragment in $requiredPhysxQueueWaitFragments) {
     if (-not $cellSpurs.Contains($fragment)) {
         throw "The Transformers PhysX queue startup wait is missing: $fragment"
     }
+}
+
+if ($cellSpurs.Contains('static std::atomic<u32> s_thor_transformers_physx_queue_waited{0};')) {
+    throw 'The Transformers PhysX startup wait still tracks only one global queue.'
 }
 
 $physxWaitStart = $cellSpurs.IndexOf('static constexpr u32 c_poll_us = 100;')

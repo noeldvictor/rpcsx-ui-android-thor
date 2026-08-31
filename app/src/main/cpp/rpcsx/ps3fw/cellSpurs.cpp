@@ -14,6 +14,8 @@
 // always-active change in it was this include placement.
 #include <sys/system_properties.h>
 #endif
+#include <mutex>
+#include <unordered_set>
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Memory/vm_reservation.h"
@@ -161,17 +163,18 @@ static bool thor_transformers_fmod_event_interp() noexcept
 #endif
 }
 
-// Give the first Transformers PhysX SPU-to-PPU reply time to reach its queue.
+// Give each cold Transformers PhysX SPU-to-PPU reply time to reach its queue.
 //
 // The title starts a cold SPU task and calls the nonblocking queue pop about
 // 45 microseconds later. It treats BUSY as fatal. A guarded Thor run showed
 // that the exact interpreted initialization and queue push can finish after
-// the title's normal deadline. Keep the wait active only while that exact
-// producer is running, with a bounded count of completed poll waits. Do not
-// use a second wall-clock limit here. A process-held thermal pause advances
-// the host clock while neither side can run, and can make the consumer reject
-// the real result immediately after resume. This switch does not fabricate
-// queue data and it does not change later nonblocking pops.
+// the title's normal deadline. PhysX then creates more cold tasks with distinct
+// reply queues. Track the first pop per initialized queue, not one global queue.
+// Keep the extended wait active only while the exact first producer is running,
+// with a bounded count of completed poll waits. A process-held thermal pause can
+// advance the host clock while neither side can run. This switch does not
+// fabricate queue data. Later nonblocking pops on the same queue keep the normal
+// BUSY result.
 //
 //   debug.rpcsx.thor.transformers_physx_queue_wait = 1
 static bool thor_transformers_physx_queue_wait() noexcept
@@ -188,7 +191,20 @@ static bool thor_transformers_physx_queue_wait() noexcept
 #endif
 }
 
-static std::atomic<u32> s_thor_transformers_physx_queue_waited{0};
+static std::mutex s_thor_transformers_physx_queue_wait_mutex;
+static std::unordered_set<u32> s_thor_transformers_physx_queues_waited;
+
+static void thor_transformers_physx_queue_wait_rearm(u32 queue) noexcept
+{
+	std::lock_guard lock(s_thor_transformers_physx_queue_wait_mutex);
+	s_thor_transformers_physx_queues_waited.erase(queue);
+}
+
+static bool thor_transformers_physx_queue_wait_claim(u32 queue) noexcept
+{
+	std::lock_guard lock(s_thor_transformers_physx_queue_wait_mutex);
+	return s_thor_transformers_physx_queues_waited.emplace(queue).second;
+}
 
 static bool thor_taskset_enabled_fix() noexcept
 {
@@ -5069,12 +5085,12 @@ s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset
 		queue->spurs.set(spurs.addr());
 	}
 
-	// Rearm one startup wait when the title creates its PhysX reply queue. The
-	// task ELF is not published until cellSpursCreateTask, which follows this
-	// initializer. The pop path checks that ELF before it waits.
+	// Rearm this queue's first startup wait when the title creates a PhysX reply
+	// queue. The task ELF is not published until cellSpursCreateTask, which
+	// follows this initializer. The pop path checks that ELF before it waits.
 	if (thor_transformers_physx_queue_wait() && direction == 1 && depth == 128 && size == 16)
 	{
-		s_thor_transformers_physx_queue_waited.store(0, std::memory_order_release);
+		thor_transformers_physx_queue_wait_rearm(queue.addr());
 	}
 
 	return CELL_OK;
@@ -5952,10 +5968,8 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 
 		if (head == tail)
 		{
-			u32 expected_queue = 0;
 			if (thor_physx_start_candidate &&
-				s_thor_transformers_physx_queue_waited.compare_exchange_strong(
-					expected_queue, queue.addr(), std::memory_order_acq_rel))
+				thor_transformers_physx_queue_wait_claim(queue.addr()))
 			{
 				static constexpr u32 c_poll_us = 100;
 				static constexpr u64 c_max_wait_us = 6'000'000;
