@@ -10669,3 +10669,53 @@ rendering progress.
   `0x8041090A`, no fatal error, and progress beyond PhysX startup. Require
   correct gameplay before an HLE claim and matched sustained gameplay before a
   30 FPS claim.
+
+## 258. A late process hold caused a false route failure
+
+- Status: route-controller cause fixed, exact core still under test,
+  not-gameplay, not-comparable for FPS.
+- Cold gate: No-boot capture
+  `20260831-004104-thor-input-strict-cool-gate` passed at 34.5 C fixed silicon.
+  It verified installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`,
+  force-stopped the package, and did not launch it. A direct app-internal hash
+  then matched exact stripped core SHA-256
+  `08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+  RPCSX had no PID, and fan mode was Smart `4`.
+- Route identity: Capture `20260831-004150-thor-input-custom` used that APK and
+  core. The legal START frame passed on slice 6. Visual inspection shows the
+  correct Unreal and PhysX legal screen with no visible corruption. Its 28.34
+  FPS overlay is startup data, not a gameplay measurement.
+- Emulator result: Shutdown reconciliation changed work item 7 from status
+  `0x24` to `0x04`, and the shutdown completion event fired. The FMOD receiver
+  signaled runtime mutex `0x95008e00`. The main PPU then waited on the related
+  FMOD lock path. The title did not create the PPU PhysX thread. Therefore, the
+  three-slice PhysX proof window did not start, and this run does not test the
+  producer-aware core. No targeted core fatal error occurred.
+- Controller failure: The first six after-START slices ended in a controlled
+  pause. On slice 7, the emulator accepted pause mark 7. Its control response
+  took about 11.3 seconds. The one-second request timed out and started the
+  process-hold fallback. The main controller read the fallback result before
+  the deadline thread published it. It then sent a duplicate pause, which
+  produced mark 8, and waited on the in-process API while the fallback owned
+  the process. The route stopped the package after 56.844 host seconds. This is
+  a controller race, not a proven core failure.
+- Host repair: Commit `df99a3f4d` reads the shared process-hold result again at
+  each control boundary. A completed late hold now ends the slice as a valid
+  process-held pause. The controller also does not send a second pause while
+  the deadline request or its process fallback is pending. The Python
+  state-machine test models a hold that completes after the first join.
+- Verification: The Python guarded-slice state-machine test, the PowerShell
+  fixed-silicon contract, Python compilation, and `git diff --check` pass.
+- Thermal and fan result: The controller maximum was 67.4 C fixed silicon. The
+  independent watchdog recorded 248 valid samples. Fixed silicon ranged from
+  34.5 to 69.5 C, and junction temperature ranged from 36.3 to 82.7 C. Every
+  watchdog sample reported Smart fan mode `4`. Cleanup found no PID or RPCSX
+  `top` row at 38.1 C fixed silicon, and all debug properties were cleared. The
+  saved Custom slider value `100` is not a current fan-speed measurement.
+- Next: Do not launch again in this cool round. In the next independently cool
+  round, verify the same APK and core identities. Run the corrected route with
+  three 30-second after-handoff slices. Require the interpreter-leave row, a
+  real queue `ready after` row, no `0x8041090A`, no fatal error, and progress
+  beyond PhysX startup. Require correct gameplay before an HLE claim and a
+  matched sustained gameplay result before a 30 FPS claim.
