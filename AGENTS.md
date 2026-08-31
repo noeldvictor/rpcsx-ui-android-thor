@@ -16088,3 +16088,64 @@ three 30-second after-handoff slices. Require the interpreter-leave row, a real
 queue `ready after` row, no `0x8041090A`, no fatal error, and progress beyond
 PhysX startup. Require correct gameplay before an HLE claim. Require a matched
 sustained gameplay result before a 30 FPS claim.
+
+## Current HLE handoff: do not charge thermal holds to the PhysX producer
+
+No-boot gate `20260831-005739-thor-input-strict-cool-gate` passed at 33.3 C
+fixed silicon. It verified installed APK SHA-256
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`,
+force-stopped the package, and did not launch it. A direct app-internal hash
+verified exact stripped core SHA-256
+`08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+RPCSX had no PID, and fan mode was Smart `4`.
+
+Capture `20260831-005831-thor-input-custom` used that APK and core. The legal
+START frame passed on slice 7. Visual inspection shows the correct Unreal and
+PhysX legal screen at 27.52 FPS. This is startup data, not a gameplay
+measurement. The on-device late-hold controller repair passed: the old false
+slice-7 stop did not return.
+
+The title created the PPU PhysX thread, all six queues, and task 0 from ELF
+`0x018c1000`. SPU 5 entered the exact interpreter at PC `0x06800`. The PPU
+reported a timeout after 81,357,814 us while the exact producer flag was still
+active. The SPU reached PC `0x06920` only 9,654 us later, with real queue result
+`0x00000000`. Its logged wall time was 81,317,394 us. The title then reported
+queue failure `0x8041090A`. The boundary screenshot shows the loading screen,
+but the queue failure rejects this run. It is not correct gameplay or HLE.
+
+The three long slices used process holds. The 60-second producer safety limit
+used the host wall clock, so the thermal hold and cooldown intervals consumed
+the limit while neither the PPU nor SPU could run. On resume, the PPU saw the
+expired wall-clock limit before the SPU got its next host time. The 9.654 ms
+gap proves the same final scheduling race at a pause-inflated wall time.
+
+Commit `ce7138c89` keeps the normal 6-second wall-clock wait. While the exact,
+title-gated producer remains active, it now applies a limit of 600,000
+completed 100 us poll waits. A stopped process cannot consume this budget. The
+wait still ends when the exact producer becomes inactive, and it does not
+fabricate queue data. The route now uses separate `startup ready` and `startup
+timeout` markers. It rejects the timeout marker and `0x8041090A`; the prior
+broad marker cannot accept a failure as success.
+
+The focused HLE route, shutdown-reconciliation, shutdown-completion, and
+taskset-join contracts pass. PowerShell parsing, `git diff --check`, the ARM64
+RelWithDebInfo build, the Thortest strip task, the binary marker check, and the
+export-surface check pass. The next stripped core is 63,254,088 bytes with
+SHA-256
+`2A9CB8AB9EE09F6C9DBA91E66680976220287A1D1A2DB62FA54AFF3F66FE47B1`.
+Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+
+The controller maximum was 68.7 C fixed silicon. The independent watchdog
+recorded 325 valid samples. Fixed silicon ranged from 34.5 to 69.1 C, and
+junction temperature ranged from 35.5 to 85.5 C. Every watchdog sample
+reported Smart fan mode `4`. Cleanup found no PID or RPCSX `top` row at 38.9 C
+fixed silicon, and all debug properties were cleared. The saved Custom slider
+value `100` is not a current fan-speed measurement.
+
+Do not launch again in this cool round. In the next independently cool round,
+push exact core `2A9CB8AB...FE47B1` without a launch, verify its app-internal
+hash, and run one guarded route. Require the new `startup ready` row, exact
+`pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal error,
+and progress beyond PhysX startup. Require correct gameplay before an HLE
+claim. Require a matched sustained gameplay result before a 30 FPS claim.

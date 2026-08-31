@@ -10719,3 +10719,70 @@ rendering progress.
   real queue `ready after` row, no `0x8041090A`, no fatal error, and progress
   beyond PhysX startup. Require correct gameplay before an HLE claim and a
   matched sustained gameplay result before a 30 FPS claim.
+
+## 259. The PhysX safety clock included process holds
+
+- Status: device-confirmed timeout cause, host successor passed, not-HLE,
+  not-gameplay, not-comparable for FPS.
+- Cold gate: No-boot capture
+  `20260831-005739-thor-input-strict-cool-gate` passed at 33.3 C fixed silicon.
+  It verified installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`,
+  force-stopped the package, and did not launch it. A direct app-internal hash
+  matched exact stripped core SHA-256
+  `08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+  RPCSX had no PID, and fan mode was Smart `4`.
+- Route identity: Capture `20260831-005831-thor-input-custom` used that APK and
+  core. The legal START frame passed on slice 7. Visual inspection shows the
+  correct Unreal and PhysX legal screen at 27.52 FPS. This is startup data, not
+  a gameplay measurement. The on-device late-hold controller repair passed:
+  the old false slice-7 stop did not return.
+- PhysX result: The title created the PPU PhysX thread, all six queues, and task
+  0 from ELF `0x018c1000`. SPU 5 entered the exact interpreter at PC `0x06800`
+  at emulator time 4:55.062066. The PPU reported a timeout at 6:16.369805 after
+  81,357,814 us while the exact producer flag was still active. The SPU reached
+  PC `0x06920` at 6:16.379459, only 9,654 us later, with real queue result
+  `0x00000000`. Its logged wall time was 81,317,394 us. The title then reported
+  queue failure `0x8041090A` and entered teardown.
+- Visual boundary: The saved boundary frame shows the Transformers loading
+  screen. Its 0.10 FPS overlay includes the long paused interval and is not a
+  gameplay measurement. The queue failure rejects this route despite the
+  later visual. It is not correct gameplay or HLE.
+- Cause: All three long slices ended in a controlled process hold. The
+  60-second producer safety limit used the host wall clock, so process-held
+  thermal and cooldown intervals consumed it while neither the PPU nor SPU
+  could run. On resume, the PPU saw the expired wall-clock limit before the SPU
+  got its next host time. The 9.654 ms gap proves the same final scheduling race
+  at a pause-inflated wall time.
+- Route evidence bug: The old route matched the shared
+  `Thor Transformers PhysX queue startup wait:` prefix. It accepted the timeout
+  row as its requested marker before it classified `0x8041090A`. This was a
+  false route success, not an emulator success.
+- Host successor: Commit `ce7138c89` keeps the normal 6-second wall-clock wait.
+  While the exact, title-gated producer remains active, it applies a limit of
+  600,000 completed 100 us poll waits. A stopped process cannot consume this
+  budget. The wait still ends when the exact producer becomes inactive, and it
+  does not fabricate queue data. The route now has separate `startup ready`
+  and `startup timeout` markers. It rejects the timeout marker and
+  `0x8041090A`.
+- Verification: The focused HLE route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. PowerShell parsing,
+  `git diff --check`, the ARM64 RelWithDebInfo build, the Thortest strip task,
+  the binary marker check, and the export-surface check pass. The next stripped
+  core is 63,254,088 bytes with SHA-256
+  `2A9CB8AB9EE09F6C9DBA91E66680976220287A1D1A2DB62FA54AFF3F66FE47B1`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+- Thermal and fan result: The controller maximum was 68.7 C fixed silicon. The
+  independent watchdog recorded 325 valid samples. Fixed silicon ranged from
+  34.5 to 69.1 C, and junction temperature ranged from 35.5 to 85.5 C. Every
+  watchdog sample reported Smart fan mode `4`. Cleanup found no PID or RPCSX
+  `top` row at 38.9 C fixed silicon, and all debug properties were cleared. The
+  saved Custom slider value `100` is not a current fan-speed measurement.
+- Next: Do not launch again in this cool round. In the next independently cool
+  round, push exact core `2A9CB8AB...FE47B1` without a launch and verify its
+  app-internal hash. Run one guarded route. Require the new `startup ready`
+  row, exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no
+  fatal error, and progress beyond PhysX startup. Require correct gameplay
+  before an HLE claim and a matched sustained gameplay result before a 30 FPS
+  claim.
