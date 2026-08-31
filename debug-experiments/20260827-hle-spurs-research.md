@@ -10903,3 +10903,64 @@ rendering progress.
   timeout, no `0x8041090A`, no fatal error, and progress beyond PhysX startup.
   Require correct gameplay before an HLE claim and matched sustained gameplay
   before a 30 FPS claim.
+
+## 263. Measured active time proves a PhysX SPU producer stall
+
+- Status: device-confirmed producer stall, host diagnostic successor passed,
+  not-HLE, not-gameplay, not-comparable for FPS.
+- Cold gate: No-boot capture
+  `20260831-014518-thor-input-strict-cool-gate` passed at 33.3 C fixed silicon.
+  Battery temperature was 22.0 C, and skin temperature was 30.0 C. The gate
+  force-stopped RPCSX and did not launch it. A direct check then verified
+  installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and app-internal core SHA-256
+  `6DBD8E8F1975A95842E9C30D408CADCF043F8CDB4F52F7F249B458CC434189B6`.
+  RPCSX had no PID, and fan mode was Smart `4`.
+- Route identity: Capture `20260831-014653-thor-input-custom` used those exact
+  artifacts. The legal START frame passed on slice 7. Visual inspection shows
+  the correct Unreal and PhysX legal screen without visible corruption. Its
+  29.15 FPS overlay is startup data, not a gameplay measurement.
+- PhysX result: The PPU PhysX thread was created at emulator time 4:13.142665.
+  The title created all six queues and task 0 from ELF `0x018c1000`. SPU 0
+  entered the exact startup interpreter at PC `0x06800` at 4:31.814552. The PPU
+  then remained in `cellSpursQueuePopBody` on queue `0x1eccb80` through the
+  final sample at 7:44.239728.
+- Active-time result: Fourteen after-handoff slices supplied 91.533 seconds of
+  measured active time over 208.547 seconds of host time. The result stopped
+  on the 90-second active budget. It did not stop on the 240-second host limit
+  or the 32-slice limit. The log has no interpreter-leave row, no `startup
+  ready` row, no `startup timeout` row, no `0x8041090A` queue failure, and no
+  targeted fatal error. This proves a real SPU producer stall. It is not a
+  route-accounting failure.
+- Diagnostic gap: This route enabled the PPU PC census, but it did not enable
+  the SPU PC census. The retained Ghidra result defines the interpreted startup
+  chain and queue reservation path, but it cannot identify the live loop
+  without the missing PC. Do not change queue semantics from this run.
+- Host successor: Commit `c6af30864` makes the exact title-gated startup
+  interpreter activate its existing SPU PC census without a second property.
+  The census records up to 192 half-second samples, including the opcode,
+  registers, MFC state, and an exact-interpreter flag. It observes state only.
+  It does not change the queue, reservation, task, or scheduler.
+- Verification: The focused Transformers HLE route, shutdown reconciliation,
+  shutdown completion, and taskset-join contracts pass. `git diff --check`,
+  the ARM64 RelWithDebInfo build, the Thortest strip task, the binary marker
+  check, and the export-surface check pass. The host-only stripped core is
+  63,254,024 bytes with SHA-256
+  `F51241CDF9EF6841F529540B35811AD38436810742CD027E8306068512D799FA`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It is not installed.
+- Thermal and fan result: The slice controller recorded a 71.5 C maximum. The
+  independent watchdog recorded 387 valid samples, 14 holds, 13 releases, a
+  70.3 C sampled maximum, and no hard stop. Every sample reported Smart fan
+  mode `4`. Cleanup found no PID or RPCSX `top` row at 40.1 C fixed silicon,
+  and all 69 debug properties were cleared at 40.5 C. The saved Custom slider
+  value `100` is not a current fan-speed measurement.
+- Next: Do not launch again in this cool round. In a later independently cool
+  round, push exact core `F51241CD...799FA` without a launch and verify its
+  app-internal hash. Run the same guarded route once. If the queue does not
+  become ready, use its persistent `Thor PHYSX PC` rows to select the exact
+  Ghidra function and make one semantic repair. If it becomes ready, require
+  exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal
+  error, and progress beyond PhysX startup. Require correct gameplay before an
+  HLE claim and a matched sustained gameplay result before a 30 FPS claim.
