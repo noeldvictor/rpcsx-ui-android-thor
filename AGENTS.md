@@ -16323,3 +16323,73 @@ make one semantic repair. If it becomes ready, require exact
 `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal error,
 and progress beyond PhysX startup. Require correct gameplay before an HLE
 claim. Require a matched sustained gameplay result before a 30 FPS claim.
+
+## Current HLE handoff: release the PPU memory lock before the PhysX wait
+
+No-boot gate `20260831-020900-thor-input-strict-cool-gate` passed at 33.3 C
+fixed silicon. Battery temperature was 22.0 C, and skin temperature was 30.0 C.
+The gate force-stopped RPCSX and did not launch it. Push capture
+`20260831-020940-transformers-physx-pc-census-dev-core-push` then installed the
+63,254,024-byte diagnostic core without a launch. Its app-internal SHA-256 was
+`F51241CDF9EF6841F529540B35811AD38436810742CD027E8306068512D799FA`.
+Installed APK SHA-256 was
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+RPCSX had no PID, and fan mode was Smart `4`.
+
+Capture `20260831-021045-thor-input-custom` used those exact artifacts. The
+legal START frame passed on slice 7. The PPU PhysX thread was created at
+emulator time 4:36.440282. At 4:57.289506, it initialized queue `0x01eccb80`.
+It created task 0 from ELF `0x018c1000` at 4:57.289553. SPU 2 entered the exact
+startup interpreter at PC `0x06800` at 4:57.312965.
+
+The automatic SPU census recorded 131 samples from 4:57.737111 through
+8:47.238054. Every sample was at PC `0x06cf0`, opcode `0x21a00abe`, with MFC
+command `0xb4` and EA `0x01eccb80`. The register state, mailboxes, task, and
+interpreter state did not change. The PPU stayed in `cellSpursQueuePopBody` on
+the same queue. The controller supplied 85.499 active seconds over 243.844 host
+seconds and stopped on the 240-second host limit. The log has no `startup
+ready`, no `startup timeout`, no `0x8041090A`, no interpreter leave, and no
+targeted fatal error. This is not HLE, gameplay, or a 30 FPS result.
+
+Ghidra imported the retained 262,144-byte local store with language
+`SPU:BE:128:default`. Its SHA-256 is
+`13C78B97D2E975FE7533579B058F34BBCE4D589A0A60AF4E2858119DCA4EC726`.
+The result in
+`debug-captures/ghidra-physx-putllc-20260831-0221/physx-putllc-window.txt`
+proves that PC `0x06cf0` is `wrch r62,ch21`. PC `0x06cd0` loads `r62` with
+`0xb4`, and PC `0x06cf4` reads the atomic status. The guest never reached that
+read.
+
+The title-gated HLE startup wait caused a lock cycle. The PPU used a raw
+`thread_ctrl::wait_for` loop while it waited for this SPU to change the queue.
+It did not first release its PPU memory lock. Accurate SPU reservations were
+enabled. The SPU `PUTLLC` therefore waited in the VM writer-lock path for the
+PPU, while the PPU waited for the SPU.
+
+Commit `8678fb220` calls `lv2_obj::prepare_for_sleep(ppu)` before the startup
+poll loop. This is the existing emulator path for a PPU that waits. It releases
+the PPU memory lock and removes the inactive CPU from the counter. The repair
+does not fabricate queue data, change `PUTLLC`, or bypass the guest retry.
+
+The focused Transformers HLE route, shutdown reconciliation, shutdown
+completion, and taskset-join contracts pass. `git diff --check`, the ARM64
+RelWithDebInfo build, the Thortest strip task, three binary marker checks, and
+the export-surface check pass. The host-only stripped repair core is 63,254,056
+bytes with SHA-256
+`1326F83D79578B62CDDA530B05BCD2997558CACB3564128E38416DD1BE388BF9`.
+Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+392 jump slots, and 44,453 encoded relocation bytes. It is not installed.
+
+The controller maximum was 70.7 C. The independent watchdog recorded 429 valid
+samples, 15 holds, 14 releases, a 69.9 C sampled maximum, and no hard stop.
+Every sample reported Smart fan mode `4`. Cleanup found no PID or RPCSX `top`
+row at 40.5 C fixed silicon, and all debug properties were cleared at 40.9 C.
+The saved Custom slider value `100` is not a current fan-speed measurement.
+
+Do not launch again in the previous cool round. In the next independently cool
+round, push exact core `1326F83D...388BF9` without a launch and verify its
+app-internal hash. Run one guarded route. Require the SPU to leave PC `0x06cf0`,
+exact `pc=0x06920 queue_rc=0x00000000`, `startup ready`, no timeout, no
+`0x8041090A`, no fatal error, and progress beyond PhysX startup. Require correct
+gameplay before an HLE claim. Require a matched sustained gameplay result before
+a 30 FPS claim.
