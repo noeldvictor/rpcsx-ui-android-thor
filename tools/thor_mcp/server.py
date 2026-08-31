@@ -639,6 +639,39 @@ def t_slice(a):
                     "triggerFixedSiliconC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume, "stop": stop}
 
+        # The independent device guard can stop the process at 68 C before
+        # this slice reaches its deadline. Once the same sensor domain has
+        # approached the slice ceiling, adopt that hold and end the slice.
+        # Do not count the stopped interval as active guest time, and cancel
+        # the old deadline so it cannot stop a later slice.
+        if (max_silicon >= start_ceiling - 2.0 and
+                "requestedAtS" not in deadline_pause and
+                held_process_pid() == p):
+            deadline_timer.cancel()
+            held_at = time.monotonic() - started
+            process_hold = {
+                "ok": True, "pid": p, "processState": "T",
+                "source": "device-thermal-guard",
+            }
+            return {
+                "completed": True, "requestedS": duration,
+                "elapsedS": round(held_at, 3),
+                "hostElapsedS": round(held_at, 3),
+                "activeElapsedS": round(held_at, 3),
+                "pauseRequestedAtS": None,
+                "pauseSettledAtS": round(held_at, 3),
+                "startFixedSiliconC": start_silicon,
+                "endFixedSiliconC": silicon,
+                "maxFixedSiliconC": max_silicon,
+                "resume": resume, "display": display,
+                "processHold": process_hold,
+                "externalProcessHold": True,
+                "paused": True, "holdMode": "process",
+                "initialState": initial_state,
+                "finalState": None,
+                "startupHandoff": startup_handoff,
+            }
+
     # Wait for the deadline request, not for another telemetry or liveness
     # command. If the timer did not run, send the pause here as a fail-safe.
     deadline_timer.join(timeout=8.0)
@@ -769,6 +802,8 @@ def t_slice(a):
     active_elapsed = time.monotonic() - started
     result = {"completed": True, "requestedS": duration,
               "elapsedS": round(active_elapsed, 3),
+              "hostElapsedS": round(active_elapsed, 3),
+              "activeElapsedS": round(active_elapsed, 3),
               "pauseRequestedAtS": round(
                   float(deadline_pause.get("requestedAtS", elapsed)), 3),
               "pauseSettledAtS": round(active_elapsed, 3),

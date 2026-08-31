@@ -223,6 +223,35 @@ assert calls.index(("/pause", "POST")) < len(calls) - 1 - calls[::-1].index(("pi
 
 clock.now = 0.0
 calls = prepare_paused_guest()
+process_states = iter(["R", "T"])
+SERVER._process_state = lambda process_id: next(process_states, "T")
+use_temperatures([42.0, 67.0])
+result = SERVER.t_slice({
+    "seconds": 1.0, "maxStartC": 68.0, "includeState": False,
+})
+assert result["completed"] is True and result["paused"] is True, (
+    "The slice did not adopt the independent thermal process hold."
+)
+assert result["externalProcessHold"] is True, (
+    "The independent thermal hold lost its source evidence."
+)
+assert result["holdMode"] == "process" and result["activeElapsedS"] == 0.25, (
+    "The independent thermal hold was charged to the full slice deadline."
+)
+assert result["pauseRequestedAtS"] is None, (
+    "The controller reported its own pause request for an independent hold."
+)
+assert calls.count(("/pause", "POST")) == 0, (
+    "The controller called the in-process pause API after the device guard held it."
+)
+assert clock.timers[-1].cancelled is True, (
+    "The independent hold left an old slice deadline armed."
+)
+SERVER._process_hold_pid = None
+SERVER._process_state = lambda process_id: "R"
+
+clock.now = 0.0
+calls = prepare_paused_guest()
 slow_values = iter([42.0, 50.0])
 
 
