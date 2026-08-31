@@ -10816,3 +10816,61 @@ rendering progress.
   `0x8041090A`, no fatal error, and progress beyond PhysX startup. Require
   correct gameplay before an HLE claim and a matched sustained gameplay result
   before a 30 FPS claim.
+
+## 261. The watchdog hold still counted as active slice time
+
+- Status: core timeout repair passed its boundary, route accounting repaired,
+  not-HLE, not-gameplay, not-comparable for FPS.
+- Cold gate: No-boot capture
+  `20260831-012342-thor-input-strict-cool-gate` passed at 32.9 C fixed silicon.
+  Battery temperature was 22.0 C, and skin temperature was 30.0 C. The gate
+  force-stopped RPCSX and did not launch it.
+- Artifact identity: Push capture
+  `20260831-012430-transformers-physx-poll-budget-dev-core-push` copied the
+  63,254,024-byte stripped core without a launch. Its local, staged, manifest,
+  and app-internal SHA-256 is
+  `6DBD8E8F1975A95842E9C30D408CADCF043F8CDB4F52F7F249B458CC434189B6`.
+  Installed APK SHA-256 is
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+  RPCSX had no PID, and fan mode was Smart `4`.
+- Route identity: Capture `20260831-012556-thor-input-custom` used those exact
+  artifacts. The legal START frame passed on slice 7. Visual inspection shows
+  the correct Unreal and PhysX legal screen without visible corruption. Its
+  29.58 FPS overlay is startup data, not a gameplay measurement.
+- PhysX result: The PPU PhysX thread was created at emulator time 4:40.013587.
+  The title created all six queues and task 0 from ELF `0x018c1000`. SPU 4
+  entered the exact interpreter at PC `0x06800` at 5:00.446227. At the last
+  performance sample at 6:26.234596, the PPU still waited on queue `0x1eccb80`
+  and the SPU producer had not left the interpreter.
+- Core boundary: The log has no `startup ready` row, no `startup timeout` row,
+  no `0x8041090A` queue failure, and no targeted fatal error. The final core
+  does not repeat the pause-inflated timeout. The missing producer completion
+  still rejects HLE and gameplay.
+- Route cause: The three nominal 30-second slices each ended in a process hold.
+  The independent watchdog held RPCSX three times. The controller released two
+  holds at the start of later slices, and the third hold stayed active until
+  cleanup. It incorrectly reported about 93 seconds as active because its
+  deadline continued while the watchdog owned `SIGSTOP`.
+- Host repair: Commit `3a08a9c89` adopts an independent watchdog hold when the
+  same fixed-silicon domain approaches the slice ceiling. It cancels the old
+  deadline, ends the current slice, cools while stopped, and resumes in a new
+  slice. It does not call the stopped in-process pause API. Normal slices now
+  also report active and host elapsed time.
+- Verification: The guarded-slice state-machine test models the independent
+  hold and stale-deadline cancellation. It passes with Python compilation, the
+  fixed-silicon guard contract, the device thermal-guard contract, the focused
+  Transformers HLE route contract, and `git diff --check`.
+- Thermal and fan result: The route maximum was 68.7 C fixed silicon. The
+  independent watchdog recorded 327 valid samples. Fixed silicon ranged from
+  34.5 to 68.7 C, and junction temperature ranged from 35.9 to 86.7 C. Every
+  sample reported Smart fan mode `4`. No hard thermal stop occurred. Cleanup
+  found no PID or RPCSX `top` row at 38.5 C fixed silicon, and all debug
+  properties were cleared at 37.7 C. The saved Custom slider value `100` is not
+  a current fan-speed measurement.
+- Next: Do not launch again in this cool round. In the next independently cool
+  round, verify the same installed APK and core identities. Use the corrected
+  controller and the default 32 after-handoff slices; do not restore the
+  three-slice override. Keep the 240-second host limit. Require `startup ready`,
+  exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal
+  error, and progress beyond PhysX startup. Require correct gameplay before an
+  HLE claim and matched sustained gameplay before a 30 FPS claim.

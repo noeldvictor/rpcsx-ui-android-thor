@@ -16174,3 +16174,59 @@ app-internal hash. Run one guarded route. Require the new `startup ready` row,
 exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal
 error, and progress beyond PhysX startup. Require correct gameplay before an
 HLE claim. Require a matched sustained gameplay result before a 30 FPS claim.
+
+## Current HLE handoff: end a slice when the watchdog holds the process
+
+No-boot gate `20260831-012342-thor-input-strict-cool-gate` passed at 32.9 C
+fixed silicon. Battery temperature was 22.0 C, and skin temperature was 30.0 C.
+The gate force-stopped RPCSX and did not launch it. Push capture
+`20260831-012430-transformers-physx-poll-budget-dev-core-push` then copied exact
+stripped core SHA-256
+`6DBD8E8F1975A95842E9C30D408CADCF043F8CDB4F52F7F249B458CC434189B6`
+without a launch. A direct app-internal hash matched. Installed APK SHA-256 was
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+RPCSX had no PID, and fan mode was Smart `4`.
+
+Capture `20260831-012556-thor-input-custom` used those exact artifacts. The
+legal START frame passed on slice 7. Visual inspection shows the correct Unreal
+and PhysX legal screen without visible corruption. Its 29.58 FPS overlay is
+startup data, not a gameplay measurement.
+
+The title created the PPU PhysX thread, all six queues, and task 0 from ELF
+`0x018c1000`. SPU 4 entered the exact interpreter at PC `0x06800`. At the final
+sample, the PPU still waited on queue `0x1eccb80`, and the SPU producer had not
+left the interpreter. The log has no `startup ready` row, no `startup timeout`
+row, no `0x8041090A` queue failure, and no targeted fatal error. Therefore, the
+new core does not repeat the pause-inflated timeout, but this run does not reach
+HLE or gameplay.
+
+The route used three nominal 30-second long slices. The independent watchdog
+held the process at 68 C three times. The controller released two holds at the
+start of later slices, and the third hold stayed active until cleanup. The old
+controller still reported about 93 seconds as active because its deadline ran
+while the watchdog owned `SIGSTOP`. The producer did not receive that amount of
+runnable host time.
+
+Commit `3a08a9c89` adopts an independent watchdog process hold as soon as the
+fixed-silicon domain approaches the slice ceiling. It cancels the old deadline,
+ends the current slice, cools while stopped, and resumes in a new slice. It
+records the detected interval as active time and does not call the stopped
+in-process pause API. Normal emulator-held slices now also report active and
+host elapsed time. The guarded-slice state-machine test, Python compilation,
+the fixed-silicon guard contract, the device thermal-guard contract, the
+Transformers HLE route contract, and `git diff --check` pass.
+
+The route maximum was 68.7 C fixed silicon. The independent watchdog recorded
+327 valid samples. Fixed silicon ranged from 34.5 to 68.7 C, and junction
+temperature ranged from 35.9 to 86.7 C. Every sample reported Smart fan mode
+`4`. No hard thermal stop occurred. Cleanup found no PID or RPCSX `top` row at
+38.5 C fixed silicon, and all debug properties were cleared at 37.7 C. The
+saved Custom slider value `100` is not a current fan-speed measurement.
+
+Do not launch again in this cool round. In the next independently cool round,
+verify the same installed APK and core identities. Run the corrected route with
+the default 32 after-handoff slices; do not restore the three-slice override.
+Keep the 240-second after-handoff host limit. Require `startup ready`, exact
+`pc=0x06920 queue_rc=0x00000000`, no timeout, no `0x8041090A`, no fatal error,
+and progress beyond PhysX startup. Require correct gameplay before an HLE claim.
+Require a matched sustained gameplay result before a 30 FPS claim.
