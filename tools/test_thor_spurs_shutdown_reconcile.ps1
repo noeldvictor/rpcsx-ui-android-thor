@@ -55,4 +55,23 @@ if ($repairIndex -lt 0 -or $syncIndex -le $repairIndex) {
     throw "The shutdown repair does not run before the semaphore wait setup."
 }
 
+foreach ($required in @(
+    'const bool retry_transformers_shutdown = get_thor_hle_spurs_kernel_enabled()',
+    'Emu.GetTitleID() == "BLUS30357" && wid == 7;',
+    "constexpr u64 retry_us = 20'000;",
+    'sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us)',
+    'wait_result + 0u == CELL_ETIMEDOUT',
+    'Thor TWC SHUTDOWN WAIT RETRY'
+)) {
+    if (-not $wait.Contains($required)) {
+        throw "The Transformers shutdown wait retry is missing '$required'."
+    }
+}
+
+$timedWaitIndex = $wait.IndexOf('sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us)')
+$lateRepairIndex = $wait.LastIndexOf('thor_reconcile_transformers_shutdown(ppu, spurs, wid)')
+if ($timedWaitIndex -lt 0 -or $lateRepairIndex -le $timedWaitIndex) {
+    throw "The shutdown repair does not retry after the timed semaphore wait."
+}
+
 Write-Output "Thor SPURS shutdown reconciliation contract passed."

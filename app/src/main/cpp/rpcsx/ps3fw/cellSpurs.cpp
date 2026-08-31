@@ -3333,7 +3333,43 @@ s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, 
 
 	if (wait_sema)
 	{
-		ensure(sys_semaphore_wait(ppu, static_cast<u32>(info.sem), 0) == 0);
+		const bool retry_transformers_shutdown = get_thor_hle_spurs_kernel_enabled() &&
+			Emu.GetTitleID() == "BLUS30357" && wid == 7;
+
+		if (!retry_transformers_shutdown)
+		{
+			ensure(sys_semaphore_wait(ppu, static_cast<u32>(info.sem), 0) == 0);
+		}
+		else
+		{
+			// The first reconciliation can run while the last task is still
+			// leaving workload 7. Retry after a short wait. Each reconciliation
+			// keeps the status bit for an active or unknown SPU.
+			constexpr u64 retry_us = 20'000;
+			u32 retries = 0;
+
+			for (;;)
+			{
+				const auto wait_result = sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us);
+
+				if (wait_result == CELL_OK)
+				{
+					break;
+				}
+
+				ensure(wait_result + 0u == CELL_ETIMEDOUT);
+
+				if (!retries++)
+				{
+					cellSpurs.error("Thor TWC SHUTDOWN WAIT RETRY: wid=%u timeout_us=%llu", wid, retry_us);
+				}
+
+				if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid))
+				{
+					return rc;
+				}
+			}
+		}
 	}
 
 	// Reverified

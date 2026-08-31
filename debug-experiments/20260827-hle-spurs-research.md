@@ -10133,3 +10133,71 @@ rendering progress.
   symbol-strip task, binary marker check, and export-surface check passed. The
   stripped core is 63,252,552 bytes and has SHA-256
   `AD86E50B6AA30818997683C4743CCFFFB40B28C5F42C478160AE99130CD4D749`.
+
+## 247. The corrected PhysX route stops in the earlier taskset join
+
+- Status: device-confirmed intermittent shutdown blocker, not-PhysX,
+  not-gameplay
+- Identity: Capture `20260830-210910-thor-input-custom` used exact corrected
+  core SHA-256
+  `AD86E50B6AA30818997683C4743CCFFFB40B28C5F42C478160AE99130CD4D749`
+  and installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+- Route result: The after-START controller completed 26 two-second slices over
+  369.093 host seconds. It did not reach its PPU PhysX handoff marker. The
+  requested 30-second after-handoff slices did not run.
+- Exact wait: At emulator time 4:13.032337, the rendering thread shut down
+  taskset `0x1f73f00`, which is workload 7. It entered
+  `cellSpursJoinTaskset` 168 microseconds later. The nested PPU call then stayed
+  at HLE address `0x02003ee4` until the route stopped. No shutdown completion,
+  reconciliation, FMOD, or PhysX row followed.
+- Race evidence: The last task SPU JIT block loaded about 15 milliseconds after
+  join started. The reconciliation runs once before the semaphore is armed. At
+  that instant, it can correctly keep the workload bit because the SPU still
+  reports workload 7. The function then uses an unlimited semaphore wait, so
+  it cannot repeat the reconciliation after the SPU leaves.
+- Frame and fatal result: The final diagnostic reported 210 frames and 0.00
+  FPS. The targeted VM, native, Vulkan, LLVM, verification, and signal-fault
+  scan had zero matches. This is a wait, not a crash.
+- Thermal and fan result: The independent watchdog recorded 482 valid samples.
+  Fixed silicon ranged from 34.1 to 65.4 C, and junction temperature peaked at
+  81.9 C. Every sample reported Smart fan mode `4`. The watchdog completed
+  because the package stopped. Final cleanup found no PID or `top` row at 40.1
+  C fixed silicon and 41.0 C junction temperature. The saved Custom slider
+  value is not a measured or active fan speed.
+- Decision: The corrected queue-result diagnostic did not execute. It remains
+  device-pending. Do not give queue, HLE, gameplay, FPS, or stability credit,
+  and do not run a second route in this device round.
+
+## 248. Retry the narrow shutdown reconciliation after the task exits
+
+- Status: host-pass, device-pending
+- Upstream check: The current official RPCS3 `master` source still arms the
+  workload event and then calls `sys_semaphore_wait` with an unlimited timeout.
+  It has no late reconciliation because the official SPURS kernel supplies the
+  completion. The fork needs a narrow retry only for its HLE policy-module
+  boundary.
+- Change: Only the HLE SPURS route for title `BLUS30357` and workload 7 now
+  waits for 20 milliseconds at a time. A timeout runs the existing fail-closed
+  reconciliation again. The loop ends on the real completion semaphore. All
+  other titles, workloads, and SPURS modes keep the original unlimited wait.
+- Safety: Each retry reads every matching SPU current workload ID twice. It
+  keeps the status bit for an active SPU, an unknown SPU, a context mismatch,
+  or an ID that changes during the read. It clears only a stable non-owner bit
+  after shutdown made workload 7 non-runnable. The first timeout writes one
+  bounded `Thor TWC SHUTDOWN WAIT RETRY` row. A state change writes the existing
+  full reconciliation row.
+- Verification: The shutdown-reconciliation contract, the Transformers HLE
+  route contract, `git diff --check`, and the Android ARM64 RelWithDebInfo build
+  pass. The Thortest symbol-strip task passes. The stripped core is 63,252,856
+  bytes and has SHA-256
+  `2E1725D761D12C568AF85B5A87FC61D944E6E96C92E03ECDBB92AF2071263CDF`.
+  It contains the new retry marker. Its export surface passes with 40 defined
+  dynamic symbols, 596 explicit relocations, 392 jump slots, and 44,445 encoded
+  relocation bytes.
+- Device result: Not run. No device command followed this host repair.
+- Next: In a later cool device round, push this exact stripped core without a
+  launch. Run one guarded route. Require the timed-retry row, a full
+  reconciliation row, workload removal, and later FMOD or PhysX progress. If
+  the route reaches PhysX, also require `pc=0x06920 queue_rc=0x00000000` and a
+  real PPU `ready after` row before it gets HLE progress credit.
