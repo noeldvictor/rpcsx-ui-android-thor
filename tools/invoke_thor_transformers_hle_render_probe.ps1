@@ -754,9 +754,16 @@ try {
                 throw "The after-START slice loop did not reach its requested paused marker."
             }
             if ($targetsPhysxQueueBoundary -and
-                    $effectiveAfterStartStopMatch -ceq $SliceAfterStartStopMatch -and
-                    [string]$sliceResult.matchedStopMatch -cne $SliceAfterStartStopMatch) {
-                throw "The PhysX queue startup reached a proven failure marker."
+                    $effectiveAfterStartStopMatch -ceq $SliceAfterStartStopMatch) {
+                if ($SliceAfterStartPostMarkerSlices -gt 0) {
+                    if ([string]$sliceResult.markerKind -cne "post-arm" -or
+                            [string]$sliceResult.armMatch -cne $SliceAfterStartStopMatch -or
+                            [int]$sliceResult.postArmSlicesCompleted -lt $SliceAfterStartPostMarkerSlices) {
+                        throw "The PhysX queue startup did not complete its post-marker slices."
+                    }
+                } elseif ([string]$sliceResult.matchedStopMatch -cne $SliceAfterStartStopMatch) {
+                    throw "The PhysX queue startup reached a proven failure marker."
+                }
             }
         } else {
             $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)
