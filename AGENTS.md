@@ -16462,3 +16462,36 @@ queue. Require every cold PhysX reply queue to become ready, no timeout, no
 `0x8041090A`, no fatal error, and visible progress beyond the loading screen.
 Require correct gameplay before an HLE claim. Require a matched sustained
 gameplay result before a 30 FPS claim.
+
+## Interrupted HLE handoff: PC shutdown during the per-queue proof
+
+No-boot gate `20260831-090805-thor-input-strict-cool-gate` passed at 33.7 C
+fixed silicon. Battery temperature was 21.0 C, and skin temperature was 30.0 C.
+Push capture `20260831-090834-transformers-physx-per-queue-wait-dev-core-push`
+then installed exact 63,254,232-byte core
+`8756DE497FDFAAF65A3D6567E00719F876F5CD3FD4BAB4EB851990312AF55CAF`
+without a launch. Local, staged, and app-internal hashes matched. Installed APK
+SHA-256 was
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+RPCSX had no PID, and fan mode was Smart `4`.
+
+Capture `20260831-091041-thor-input-custom` passed the legal frame on slice 6
+and pressed START. It reached the PPU PhysX thread at emulator time 3:39.724502
+after 10.251 active seconds in three handoff slices. The handoff controller
+maximum was 60.6 C.
+
+The user requested PC shutdown while the extended after-handoff controller was
+active. The route has no `slice-loop-after-start.json` and no pulled runtime
+log. It cannot prove or disprove the per-queue repair. Do not infer a ready
+queue, queue error, gameplay, or FPS result from this capture.
+
+The independent watchdog recorded 174 valid samples, a 63.0 C maximum, no
+hold, no hard stop, and Smart fan mode `4` in every sample. Normal cancellation
+cleanup found no PID or RPCSX `top` row at 38.1 C fixed silicon. It cleared all
+69 route properties and recorded 37.7 C fixed silicon. The exact dev core
+remains installed.
+
+After the PC and device are available, start with a fresh no-boot cool gate.
+Reverify the app-internal core and APK hashes. Run the same extended,
+fail-closed post-marker route once. Require all reply queues, no timeout, no
+`0x8041090A`, no fatal error, and correct gameplay before an HLE claim.
