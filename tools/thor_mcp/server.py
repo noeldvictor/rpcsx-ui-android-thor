@@ -644,11 +644,30 @@ def t_slice(a):
     deadline_timer.join(timeout=8.0)
     pause = deadline_pause.get("result")
     if pause is None:
-        deadline_timer.cancel()
-        pause = api("/pause", "POST")
+        if "requestedAtS" in deadline_pause:
+            # The deadline callback is already inside its bounded request or
+            # process fallback. Do not submit a second pause to the same
+            # single-threaded control path while that callback still owns it.
+            pause = {"pending": True, "source": "deadline"}
+        else:
+            deadline_timer.cancel()
+            pause = api("/pause", "POST")
 
-    process_hold = deadline_pause.get("processHold")
-    if process_hold and process_hold.get("ok"):
+    def deadline_control_pending():
+        result = deadline_pause.get("result")
+        return ("requestedAtS" in deadline_pause and
+                (result is None or
+                 (isinstance(result, dict) and result.get("error") and
+                  "processHold" not in deadline_pause)))
+
+    def completed_deadline_hold():
+        # The deadline thread can finish the process fallback after the first
+        # join returns. Read its shared result at each control boundary. A
+        # stopped process cannot answer the in-process API, so a single early
+        # snapshot can otherwise turn a valid hold into repeated API timeouts.
+        process_hold = deadline_pause.get("processHold")
+        if not process_hold or not process_hold.get("ok"):
+            return None
         settled = float(deadline_pause.get("settledAtS", elapsed))
         host_elapsed = time.monotonic() - started
         return {"completed": True, "requestedS": duration,
@@ -661,13 +680,18 @@ def t_slice(a):
                 "startFixedSiliconC": start_silicon,
                 "endFixedSiliconC": silicon,
                 "maxFixedSiliconC": max_silicon,
-                "resume": resume, "pause": pause,
+                "resume": resume,
+                "pause": deadline_pause.get("result", pause),
                 "display": display,
                 "processHold": process_hold,
                 "paused": True, "holdMode": "process",
                 "initialState": initial_state,
                 "finalState": deadline_pause.get("state"),
                 "startupHandoff": startup_handoff}
+
+    held_result = completed_deadline_hold()
+    if held_result:
+        return held_result
 
     # Check liveness only after the independent deadline pause. A pid read can
     # take more than one second on this device.
@@ -676,11 +700,21 @@ def t_slice(a):
                 "elapsedS": round(elapsed, 3),
                 "maxFixedSiliconC": max_silicon, "pause": pause}
 
+    held_result = completed_deadline_hold()
+    if held_result:
+        return held_result
+
     final_state = emulation_state()
+    held_result = completed_deadline_hold()
+    if held_result:
+        return held_result
     paused = final_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
     pause_started = time.monotonic()
     hold_timeout = startup_pause_timeout if startup_handoff else pause_timeout
     while not paused and time.monotonic() - pause_started < hold_timeout:
+        held_result = completed_deadline_hold()
+        if held_result:
+            return held_result
         silicon = fixed_silicon_c()
         max_silicon = max(max_silicon, silicon)
         if silicon < 0 or silicon >= hard_limit:
@@ -700,10 +734,21 @@ def t_slice(a):
         # The first resume from Ready already requests pause-after-startup.
         # system_state::starting cannot accept a normal pause. Wait for that
         # one startup handoff while the fixed-silicon hard guard stays active.
-        if not paused and not (startup_handoff and final_state == EMU_STATE_STARTING):
+        startup_is_starting = (
+            startup_handoff and final_state == EMU_STATE_STARTING)
+        if (not paused and not deadline_control_pending() and
+                not startup_is_starting):
             pause = api("/pause", "POST")
             final_state = emulation_state()
             paused = final_state in (EMU_STATE_PAUSED, EMU_STATE_READY)
+
+        held_result = completed_deadline_hold()
+        if held_result:
+            return held_result
+
+    held_result = completed_deadline_hold()
+    if held_result:
+        return held_result
 
     if not paused:
         stop = t_stop({})

@@ -292,6 +292,35 @@ SERVER._process_hold_pid = None
 
 clock.now = 0.0
 calls = prepare_paused_guest()
+use_temperatures([42.0, 45.0])
+late_hold = {"ok": False, "pid": "123", "processState": None}
+state_reads = 0
+
+
+def complete_late_hold():
+    global state_reads
+    state_reads += 1
+    if state_reads == 1:
+        return 4
+    late_hold.update({"ok": True, "processState": "T"})
+    SERVER._process_hold_pid = "123"
+    return None
+
+
+SERVER.emulation_state = complete_late_hold
+SERVER.api = timeout_pause_api
+SERVER.stop_process_for_slice = lambda process_id: late_hold
+result = SERVER.t_slice({"seconds": 0.1, "includeState": False})
+assert result["completed"] is True and result["paused"] is True, (
+    "The slice did not recognize a process hold that completed after its join."
+)
+assert result["holdMode"] == "process" and state_reads == 2, (
+    "The late process hold fell through to repeated in-process API calls."
+)
+SERVER._process_hold_pid = None
+
+clock.now = 0.0
+calls = prepare_paused_guest()
 startup_states = iter([6, 7, 7, 4])
 SERVER.emulation_state = lambda: next(startup_states)
 use_temperatures([42.0, 55.0])
