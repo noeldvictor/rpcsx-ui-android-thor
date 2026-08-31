@@ -15991,3 +15991,48 @@ then run one guarded route. Require a real `ready after` row, no queue failure,
 no fatal error, and progress beyond PhysX startup. Do not claim HLE before
 correct gameplay. Do not claim 30 FPS before a matched sustained gameplay
 measurement.
+
+## Current HLE handoff: give the PhysX producer a complete proof window
+
+No-boot gate `20260831-002609-thor-input-strict-cool-gate` passed at 32.9 C
+fixed silicon. Push capture
+`20260831-002700-transformers-physx-producer-aware-dev-core-push` copied exact
+core SHA-256
+`08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`
+without a launch. A direct app-internal hash matched. RPCSX had no PID, and fan
+mode was Smart `4`.
+
+Capture `20260831-002801-thor-input-custom` used the exact core and installed
+APK SHA-256
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+The legal START frame passed on slice 6. The FMOD mutex route completed. The
+title created the PPU PhysX thread at emulator time 3:44.905. It created all six
+queues and task 0 from ELF `0x018c1000`. SPU 5 entered the exact startup
+interpreter at PC `0x06800` at 4:04.331.
+
+The after-handoff controller used two 30-second slices. PhysX PPU setup used
+19.426 seconds before the interpreter started. The controller paused at
+4:43.380, after 39.047 seconds in the exact interpreter. The prior exact
+producer needed 41.948 seconds. The route ended about 2.901 seconds too early.
+
+The PhysX PPU still waited in `cellSpursQueuePopBody`. The exact interpreter was
+still active. The log has no interpreter-leave row, no queue `ready after` row,
+no queue timeout, no `0x8041090A` failure, and no targeted fatal error. This run
+does not pass or reject the producer-aware core.
+
+The route now requires at least 90 active seconds for this exact PhysX handoff
+and queue target. This maximum includes PPU setup and the producer's 60-second
+safety limit. The old two-by-30-second route now fails on the host before ADB
+contact. The route contract executes this rejection.
+
+The controller maximum was 68.7 C fixed silicon. The watchdog recorded 253
+valid samples. Fixed silicon was 34.5 to 69.1 C, and junction temperature was
+36.3 to 83.9 C. Every sample reported Smart fan mode `4`. Cleanup found no PID
+or RPCSX `top` row at 38.5 C fixed silicon. All debug properties were cleared.
+The saved Custom slider value `100` is not a current fan-speed measurement.
+
+Do not launch again in this cool round. In the next independently cool round,
+use three 30-second after-handoff slices. Require the interpreter-leave row, a
+real queue `ready after` row, no `0x8041090A`, no fatal error, and progress
+beyond PhysX startup. Do not claim HLE before correct gameplay. Do not claim
+30 FPS before a matched sustained gameplay measurement.

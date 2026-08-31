@@ -169,6 +169,9 @@ $requiredRenderProbeFragments = @(
     '[string]$SliceAfterStartDiagnosticStopMatch = ''stage=POST-FETCH''',
     '[double]$SliceAfterHandoffSeconds = 30.0',
     '[ValidateRange(0.0, 300.0)]',
+    '$physxHandoffWindowMinimumSeconds = 90.0',
+    '$effectiveAfterHandoffSliceSeconds * $SliceAfterHandoffMaxSlices',
+    'The PhysX handoff route needs at least $physxHandoffWindowMinimumSeconds active seconds.',
     '$afterStartArguments.stopMatches = @(',
     '$matchedHandoff = [string]$handoffResult.matchedStopMatch',
     '$failedSourceRepair = $failureHandoffs -ccontains $matchedHandoff',
@@ -309,6 +312,26 @@ foreach ($fragment in $requiredRenderProbeFragments) {
     if (-not $renderProbe.Contains($fragment)) {
         throw "The Transformers HLE render probe is missing: $fragment"
     }
+}
+
+$underBudgetRejected = $false
+try {
+    & $renderProbePath `
+        -ExpectedInstalledApkSha256 ('0' * 64) `
+        -SliceLoop `
+        -SliceStopMatch '__THOR_CONTRACT_UNREACHED__' `
+        -SliceAfterHandoffSeconds 30 `
+        -SliceAfterHandoffMaxSlices 2 2>&1 | Out-Null
+} catch {
+    if ($_.Exception.Message -like '*PhysX handoff route needs at least 90 active seconds*') {
+        $underBudgetRejected = $true
+    } else {
+        throw
+    }
+}
+
+if (-not $underBudgetRejected) {
+    throw 'The Transformers route accepted an under-budget PhysX handoff window.'
 }
 
 $requiredTransformersFifoFragments = @(

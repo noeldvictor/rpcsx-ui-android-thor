@@ -10616,3 +10616,56 @@ rendering progress.
   failure, no fatal error, and progress beyond PhysX startup. Require correct
   gameplay before any HLE claim. Require a matched sustained gameplay result
   before a 30 FPS claim.
+
+## 257. The PhysX proof window ended before the producer
+
+- Status: route-tooling correction, exact core still under test, not-gameplay,
+  not-comparable for FPS.
+- Cold gate: No-boot capture
+  `20260831-002609-thor-input-strict-cool-gate` verified installed APK SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+  Fixed silicon was 32.9 C, battery was 22.0 C, and skin was 30.0 C. The gate
+  force-stopped the package and did not launch it.
+- Core identity: Push capture
+  `20260831-002700-transformers-physx-producer-aware-dev-core-push` copied the
+  63,253,912-byte stripped core from commit `a2ca70f81` without a launch. The
+  local, manifest, staged, and app-internal core SHA-256 is
+  `08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+  A direct app-internal `sha256sum` matched. RPCSX had no PID before launch, and
+  fan mode was Smart `4`.
+- Route identity: Capture `20260831-002801-thor-input-custom` used that APK and
+  core. The legal START frame passed on slice 6. Visual inspection shows the
+  correct Unreal and PhysX legal screen with no visible corruption. Its 22.25
+  FPS overlay is startup data, not a gameplay measurement.
+- Route progress: The FMOD mutex on runtime ID `0x95008c00` completed the
+  dependency-scan-miss and direct-owner-wake route. The title created the PPU
+  PhysX thread at emulator time 3:44.905. It created all six queues and task 0
+  from ELF `0x018c1000`. SPU 5 entered the exact startup interpreter at PC
+  `0x06800` at 4:04.331.
+- Under-budget result: The after-handoff controller allowed two 30-second
+  slices. The first part of this window included 19.426 seconds of PhysX PPU
+  setup before the SPU interpreter started. The controller paused at 4:43.380,
+  when the interpreter had run for 39.047 seconds. The prior exact producer
+  needed 41.948 seconds. The proof window ended about 2.901 seconds too early.
+- Emulator result: At the final sample, the PhysX PPU still waited in
+  `cellSpursQueuePopBody` at HLE PC `0x02003e6c`, and the exact SPU interpreter
+  was still active. The log has no interpreter-leave row, no queue `ready after`
+  row, no queue timeout, no `0x8041090A` queue failure, and no targeted fatal
+  error. Therefore, this run does not pass or reject the producer-aware core.
+- Harness repair: The route now requires at least 90 active seconds when it
+  targets the exact PhysX handoff and queue marker. This maximum includes the
+  observed PPU setup and the producer's 60-second safety limit. An under-budget
+  route now fails on the host before ADB contact. The contract executes and
+  rejects the former two-by-30-second shape.
+- Thermal and fan result: The controller maximum was 68.7 C fixed silicon. The
+  independent watchdog recorded 253 valid samples. Fixed silicon ranged from
+  34.5 to 69.1 C, and junction temperature ranged from 36.3 to 83.9 C. Every
+  sample reported Smart fan mode `4`. The saved Custom slider value `100` was
+  inactive and is not a fan-speed measurement. Cleanup found no PID or RPCSX
+  `top` row at 38.5 C fixed silicon, and all debug properties were cleared.
+- Next: Do not launch again in this cool round. In the next independently cool
+  round, use three 30-second after-handoff slices. The marker can stop the route
+  early. Require the interpreter-leave row, a real queue `ready after` row, no
+  `0x8041090A`, no fatal error, and progress beyond PhysX startup. Require
+  correct gameplay before an HLE claim and matched sustained gameplay before a
+  30 FPS claim.

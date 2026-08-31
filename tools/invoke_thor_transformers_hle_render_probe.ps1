@@ -121,11 +121,9 @@ foreach ($deadOwnerMatch in $deadOwnerMatches) {
     }
 }
 
-$adb = Resolve-ThorAdb
 $inputMacroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
 $thorCallPath = Join-Path $PSScriptRoot "thor_mcp\call.py"
 $transformersStartCheckPath = Join-Path $PSScriptRoot "bench\thor_transformers_start_check.py"
-$env:ANDROID_SERIAL = $Serial
 $hleLfqAny2Any = if ($Mode -eq "HLE") { $LfqAny2Any } else { "off" }
 $hleSpursSelectorFixes = if ($Mode -eq "HLE") { $SpursSelectorFixes } else { "off" }
 $hleTasksetSelectAtomic = if ($Mode -eq "HLE") { $TasksetSelectAtomic } else { "off" }
@@ -162,6 +160,26 @@ if ($SliceLoop -and $SlicePostArmSlices -gt 0 -and [string]::IsNullOrWhiteSpace(
 if ($SlicePressStartAfterFirstLoop -and -not $SliceLoop) {
     throw "The slice START handoff requires -SliceLoop."
 }
+
+$physxHandoffWindowMinimumSeconds = 90.0
+$targetsPhysxQueueBoundary = (
+    $Mode -eq "HLE" -and
+    $SliceLoop -and
+    $PhysxQueueWait -eq "on" -and
+    $PhysxStartInterp -eq "on" -and
+    $SliceAfterStartHandoffMatch -match 'PPU PhysX thread' -and
+    $SliceAfterStartStopMatch -eq "Thor Transformers PhysX queue startup wait:"
+)
+if ($targetsPhysxQueueBoundary) {
+    $physxHandoffWindowSeconds =
+        $effectiveAfterHandoffSliceSeconds * $SliceAfterHandoffMaxSlices
+    if ($physxHandoffWindowSeconds -lt $physxHandoffWindowMinimumSeconds) {
+        throw "The PhysX handoff route needs at least $physxHandoffWindowMinimumSeconds active seconds. The configured window is $physxHandoffWindowSeconds seconds."
+    }
+}
+
+$adb = Resolve-ThorAdb
+$env:ANDROID_SERIAL = $Serial
 
 function Set-ThorRenderProbeProperty {
     param(
