@@ -10297,3 +10297,56 @@ rendering progress.
   verified cleanup from experiment 249 found no RPCSX process and reported
   Smart fan mode `4`. The Custom slider value `100` is not an active fan-speed
   reading.
+
+## 251. The shutdown snapshot exposes a failed SPU lookup
+
+- Status: device-confirmed lookup failure, host successor passed, not-HLE,
+  not-PhysX, not-gameplay.
+- Identity: Capture `20260830-221350-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `9877BAB6392043E53110D5E0E1486866A159D45BCAD94843EB546B3F49CDA8B9`.
+  The device-side core hash matched after cleanup.
+- Route result: The legal START frame passed on slice 7. The bounded after-START
+  route reached `stage=PRE-SCHEDULE-SCAN` and then
+  `stage=POST-FETCH attempts=1 result=0x0`. The route did not create the PPU
+  PhysX thread. It had no PhysX queue, `queue_rc`, or `ready after` row. The
+  targeted fatal scan had zero matches.
+- Shutdown result: The rendering thread entered `cellSpursJoinTaskset` for
+  taskset `0x1f73f00` at emulator time 3:51.026999. The retry ran 20
+  milliseconds later. The no-change row reported state `3`, status `0x24`,
+  event `0x10`, update and message masks `0xe4`, ready count `1`, contention
+  `1`, and taskset workload ID `7`. Task zero had running, ready, and enabled
+  mask `0x80000000`; pending, waiting, and signalled were zero.
+- Interpretation: Running and ready can both name a selected task in the
+  taskset contract, so the mask does not prove a stale task. The decisive value
+  is `known=0x00`. Every current workload ID and PC was unknown. The helper used
+  direct ID lookup through `CellSpurs::spus`, but the Android status path later
+  enumerated six live SPU objects at SPURS address `0x01e97a80`. The helper
+  preserved status `0x24` because every owner was unknown. This is the correct
+  fail-closed result for a failed observation path.
+- Thermal and fan result: The independent watchdog recorded 207 valid samples.
+  Fixed silicon ranged from 34.1 to 67.8 C, and junction temperature ranged
+  from 35.5 to 87.1 C. Every sample reported Smart fan mode `4`. The controller
+  saw one fixed-silicon sample at 68.7 C before it re-paused the process; the
+  72 C hard stop was not reached. Final cleanup found no PID or `top` row at
+  40.5 C fixed silicon. All Thor debug properties were empty. The saved Custom
+  slider value is not an active fan speed.
+- Host successor: The reconciliation now enumerates live SPU objects, as the
+  working Android status path does. It accepts an object only when the host
+  SPURS address and local-store context both match. It keeps a status bit for
+  an active, changing, or unknown owner. It can clear only a stable non-owner
+  bit after shutdown. It does not clear a task or force preemption.
+- Verification: The shutdown-reconciliation, shutdown-completion, taskset-join,
+  and Transformers route contracts pass. `git diff --check`, Android ARM64
+  RelWithDebInfo, and the Thortest strip task pass. The stripped core is
+  63,254,248 bytes with SHA-256
+  `BCEBB365BC0CEE564FCA7EC3B5BF61F6FCFEE49D93FD05E387B1323D23100C68`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+- Next: In a later independently cool round, push this exact core without a
+  launch. Require a nonzero known-SPU mask, full shutdown reconciliation,
+  taskset join return, workload removal, and safe taskset reuse. If it reaches
+  PhysX, also require `pc=0x06920 queue_rc=0x00000000` and a real PPU
+  `ready after` row. Do not claim HLE, gameplay, FPS, speed, or stability yet.

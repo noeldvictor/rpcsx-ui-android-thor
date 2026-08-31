@@ -15794,24 +15794,28 @@ there to Bink playback. Diff the two runs' main_thread call sequences from boot 
 That is a bounded comparison of two logs over thirteen seconds, and both sides are
 reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.
 
-## Current HLE handoff: workload-7 shutdown snapshot is next
+## Current HLE handoff: live SPU shutdown scan is next
 
 This section replaces the old next-step notes above. HLE has not reached PhysX,
 gameplay, or a valid 30 FPS result.
 
-The last device route used stripped core SHA-256
-`2E1725D761D12C568AF85B5A87FC61D944E6E96C92E03ECDBB92AF2071263CDF`.
-It entered `cellSpursJoinTaskset` for workload 7. The 20-millisecond retry ran,
-but it did not change the shutdown state. The route did not reach the PhysX
-handoff. Capture `20260830-213516-thor-input-custom` is self-rejected because
-its last pause request timed out.
-
-Commit `99338ebd6` adds one bounded no-change snapshot. The host-passed stripped
-successor is 63,254,552 bytes and has SHA-256
+Capture `20260830-221350-thor-input-custom` used exact stripped core SHA-256
 `9877BAB6392043E53110D5E0E1486866A159D45BCAD94843EB546B3F49CDA8B9`.
-It has no device result. The next independently cool route must use this exact
-core and must collect `Thor TWC SHUTDOWN RECONCILE NO CHANGE` if the retry does
-not repair the state.
+The legal START frame passed on slice 7. The route reached the bounded
+`PRE-SCHEDULE-SCAN` and `POST-FETCH result=0x0` rows. It did not create the PPU
+PhysX thread or reach the PhysX queue.
+
+The new shutdown snapshot ran at workload-7 join. It reported workload state
+`3`, status `0x24`, event `0x10`, update and message masks `0xe4`, ready count
+`1`, and contention `1`. Task zero had running, ready, and enabled mask
+`0x80000000`. This mask combination is valid for a selected task. It is not
+proof of a stale task.
+
+The important failure is `known=0x00`: the direct lookup through the guest
+`CellSpurs::spus` ID array found no SPU objects. All current IDs and PCs were
+therefore unknown. The Android status path later enumerated all six live SPU
+objects for the same SPURS address. The shutdown helper could not clear any
+status bit because it correctly preserves every unknown owner.
 
 Ghidra analysis of the real kernel does not support a forced PPU-side removal.
 The real selector records pending contention during a policy-module poll. The
@@ -15821,15 +15825,30 @@ code also leaves the direct preempted-entry path as a TODO. Existing LLE local-
 store captures contain a taskset or job-chain policy module at `0xA00`; they do
 not contain the real system-service image.
 
-Use the next snapshot to select one repair:
+The host successor enumerates the live SPU objects, as the working Android
+status path does. It accepts an SPU only when both its host SPURS address and
+its local-store context match. It reads the current workload ID twice. It keeps
+the status bit for an active, changing, or unknown owner. The 20-millisecond
+retry can clear a stable non-owner bit after the task moves away. It does not
+clear a task or force preemption.
 
-1. If all task running words are zero and the only blocker is a stale workload-
-   7 owner, add a narrow idle-owner repair.
-2. If a task is active, implement or invoke the policy-module yield or workload-
-   preemption path before removal. Do not clear the task or status bit from the
-   PPU join waiter.
+The shutdown-reconciliation, shutdown-completion, taskset-join, and Transformers
+route contracts pass. `git diff --check`, the Android ARM64 RelWithDebInfo
+build, and the Thortest strip task pass. The next stripped core is 63,254,248
+bytes with SHA-256
+`BCEBB365BC0CEE564FCA7EC3B5BF61F6FCFEE49D93FD05E387B1323D23100C68`.
+Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
 
-The last verified cleanup found no RPCSX PID or `top` row. Every watchdog sample
-and the direct cleanup reported Smart fan mode `4`. A saved Custom slider value
-of `100` is not an active fan speed or an RPM measurement. Keep Smart fan mode
-enabled. Do not repeat the same route in one cool round.
+In the next independently cool route, require a nonzero known-SPU mask. Require
+a full reconciliation row, taskset join return, workload removal, and safe
+taskset reuse. If the route reaches PhysX, also require
+`pc=0x06920 queue_rc=0x00000000` and a real PPU `ready after` row. Do not give
+HLE, gameplay, FPS, speed, or stability credit before these events occur.
+
+The last watchdog recorded 207 valid samples. Fixed silicon was 34.1 to 67.8 C,
+and junction temperature was 35.5 to 87.1 C. Every sample reported Smart fan
+mode `4`. Final cleanup found no RPCSX PID or `top` row at 40.5 C fixed silicon.
+All Thor debug properties are empty. A saved Custom slider value of `100` is not
+an active fan speed or an RPM measurement. Keep Smart fan mode enabled. Do not
+repeat the same route in one cool round.

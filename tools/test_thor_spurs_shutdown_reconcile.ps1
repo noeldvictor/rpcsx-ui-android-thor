@@ -19,6 +19,9 @@ foreach ($required in @(
     'wid != 7',
     'currentIds.fill(umax);',
     'bool log_no_change = false',
+    'idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread>& thread)',
+    'thread.spurs_addr != spurs.addr()',
+    'const auto ctxt = thread._ptr<SpursKernelContext>(0x100);',
     'const u32 current1 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);',
     'const u32 current2 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);',
     'current1 != current2',
@@ -41,6 +44,10 @@ foreach ($required in @(
 
 if ($repair.Contains('status = 0;')) {
     throw "The Transformers shutdown repair clears unknown SPU status bits."
+}
+
+if ($repair.Contains('idm::get<named_thread<spu_thread>>(spurs->spus[i]')) {
+    throw "The Transformers shutdown repair uses the stale direct SPU ID path."
 }
 
 $waitMatch = [regex]::Match(

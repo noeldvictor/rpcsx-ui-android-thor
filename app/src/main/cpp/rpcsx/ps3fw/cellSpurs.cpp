@@ -3188,37 +3188,38 @@ static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpu
 
 	u8 knownSpus = 0;
 	u8 activeSpus = 0;
-	const u32 nSpus = std::min<u32>(spurs->nSpus, 8);
 
-	for (u32 i = 0; i < nSpus; i++)
+	// Enumerate the live SPU objects. The direct lookup through CellSpurs::spus
+	// returned no objects in the Transformers capture while the Android status
+	// view found all six SPUs for this SPURS instance. The host SPURS address and
+	// the local-store context identify the instance without that stale ID path.
+	idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread>& thread)
 	{
-		const auto thread = idm::get<named_thread<spu_thread>>(spurs->spus[i], [](named_thread<spu_thread>&) {});
-
-		if (!thread || thread->spurs_addr != spurs.addr())
+		if (thread.spurs_addr != spurs.addr())
 		{
-			continue;
+			return;
 		}
 
-		const auto ctxt = thread->_ptr<SpursKernelContext>(0x100);
+		const auto ctxt = thread._ptr<SpursKernelContext>(0x100);
 		const u32 current1 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
 		const u32 current2 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
 		const u32 spuNum = +atomic_storage<be_t<u32>>::load(ctxt->spuNum);
 
 		if (current1 != current2 || spuNum >= 8 || ctxt->spurs.addr() != spurs.addr())
 		{
-			continue;
+			return;
 		}
 
 		const u8 bit = static_cast<u8>(1u << spuNum);
 		knownSpus |= bit;
 		currentIds[spuNum] = current1;
-		pcs[spuNum] = thread->pc;
+		pcs[spuNum] = thread.pc;
 
 		if (current1 == wid)
 		{
 			activeSpus |= bit;
 		}
-	}
+	});
 
 	u8 statusBefore = 0;
 	u8 statusAfter = 0;
