@@ -22,7 +22,6 @@ namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_unlock_lr = 0x00e28c18;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
-constexpr u32 thor_transformers_post_audio_lwmutex_id = 0x95008d00;
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_post_audio_unlock_trace_limit = 8;
 constexpr u32 thor_transformers_reown_scan_limit = 64;
@@ -37,6 +36,7 @@ std::atomic<u32> g_thor_transformers_audio_owner_candidate_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_seq{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_lwmutex_id{0};
 std::atomic<u32> g_thor_transformers_audio_dependency_owner_id{0};
+std::atomic<u32> g_thor_transformers_post_audio_lwmutex_id{0};
 std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
 std::atomic<bool> g_thor_transformers_audio_owner_signal_pending{false};
 
@@ -56,10 +56,12 @@ bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 
 bool thor_transformers_post_audio_unlock_trace_target(
     const ppu_thread &ppu, u32 lwmutex_id) noexcept {
+  const u32 post_audio_lwmutex_id =
+      g_thor_transformers_post_audio_lwmutex_id.load(std::memory_order_acquire);
   return thor_transformers_lv2_lwmutex_trace_enabled() &&
          ppu.id == 0x0100'0000 &&
          static_cast<u32>(ppu.lr) == thor_transformers_main_lwmutex_unlock_lr &&
-         lwmutex_id == thor_transformers_post_audio_lwmutex_id;
+         post_audio_lwmutex_id && lwmutex_id == post_audio_lwmutex_id;
 }
 
 void thor_transformers_post_audio_unlock_trace(
@@ -478,11 +480,12 @@ void thor_transformers_complete_audio_owner_wake(
     }
 
     const bool is_deferred_dependency_candidate =
-        lwmutex_id == thor_transformers_post_audio_lwmutex_id &&
         owner_id == 0x0100'000c && owner &&
         static_cast<std::string>(owner->thread_name) ==
             "FMOD libAudio event receive thread";
     if (is_deferred_dependency_candidate) {
+      g_thor_transformers_post_audio_lwmutex_id.store(
+          lwmutex_id, std::memory_order_release);
       u32 yields = 0;
       while (yields < thor_transformers_audio_dependency_yield_limit &&
              cpu_flag::suspend - owner->state) {

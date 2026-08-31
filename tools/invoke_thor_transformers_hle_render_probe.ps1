@@ -95,6 +95,7 @@ param(
     [string]$SliceAfterStartHandoffMatch = 'Thread "PPU PhysX thread" created',
     [string]$SliceAfterStartDiagnosticMatch = 'stage=PRE-SCHEDULE-SCAN',
     [string]$SliceAfterStartFailureMatch = 'stage=REPAIR-SELF-CYCLE',
+    [string]$SliceAfterStartDeadOwnerMatch = 'owner=0x100000c owner_live=0',
     [string]$SliceAfterStartDiagnosticStopMatch = 'stage=POST-FETCH',
     [ValidateRange(0.0, 300.0)]
     [double]$SliceAfterHandoffSeconds = 30.0,
@@ -109,6 +110,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
+
+$deadOwnerMatches = @(
+    $SliceAfterStartFailureMatch,
+    $SliceAfterStartDeadOwnerMatch
+) | Where-Object { $_ -match 'owner_live=0' }
+foreach ($deadOwnerMatch in $deadOwnerMatches) {
+    if ($deadOwnerMatch -notmatch 'owner=0x100000c') {
+        throw "An after-START dead-owner marker must include owner=0x100000c. The reserved owner is a normal handoff value."
+    }
+}
 
 $adb = Resolve-ThorAdb
 $inputMacroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
@@ -631,6 +642,7 @@ try {
                 $afterStartArguments.stopMatches = @(
                     @(
                         $SliceAfterStartFailureMatch,
+                        $SliceAfterStartDeadOwnerMatch,
                         $SliceAfterStartDiagnosticMatch,
                         $SliceAfterStartHandoffMatch
                     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
@@ -650,12 +662,13 @@ try {
                 }
 
                 $matchedHandoff = [string]$handoffResult.matchedStopMatch
-                $failedSourceRepair = (
-                    -not [string]::IsNullOrWhiteSpace($SliceAfterStartFailureMatch) -and
-                    $matchedHandoff -ceq $SliceAfterStartFailureMatch
-                )
+                $failureHandoffs = @(
+                    $SliceAfterStartFailureMatch,
+                    $SliceAfterStartDeadOwnerMatch
+                ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                $failedSourceRepair = $failureHandoffs -ccontains $matchedHandoff
                 if ($failedSourceRepair) {
-                    throw "The stale-signal repair failed and the waiter self-cycle fallback ran."
+                    throw "The after-START source repair reached a proven failure marker."
                 }
 
                 $diagnosticHandoff = (

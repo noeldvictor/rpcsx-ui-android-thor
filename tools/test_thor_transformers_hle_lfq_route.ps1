@@ -164,13 +164,15 @@ $requiredRenderProbeFragments = @(
     '[string]$SliceAfterStartHandoffMatch = ''Thread "PPU PhysX thread" created''',
     '[string]$SliceAfterStartDiagnosticMatch = ''stage=PRE-SCHEDULE-SCAN''',
     '[string]$SliceAfterStartFailureMatch = ''stage=REPAIR-SELF-CYCLE''',
+    '[string]$SliceAfterStartDeadOwnerMatch = ''owner=0x100000c owner_live=0''',
+    'An after-START dead-owner marker must include owner=0x100000c.',
     '[string]$SliceAfterStartDiagnosticStopMatch = ''stage=POST-FETCH''',
     '[double]$SliceAfterHandoffSeconds = 30.0',
     '[ValidateRange(0.0, 300.0)]',
     '$afterStartArguments.stopMatches = @(',
     '$matchedHandoff = [string]$handoffResult.matchedStopMatch',
-    '$failedSourceRepair = (',
-    'throw "The stale-signal repair failed and the waiter self-cycle fallback ran."',
+    '$failedSourceRepair = $failureHandoffs -ccontains $matchedHandoff',
+    'throw "The after-START source repair reached a proven failure marker."',
     '$diagnosticHandoff = (',
     '$afterStartArguments.maxSlices = 1',
     '$effectiveAfterStartStopMatch = $SliceAfterStartDiagnosticStopMatch',
@@ -483,7 +485,9 @@ if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(') -
 $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
-    'thor_transformers_post_audio_lwmutex_id = 0x95008d00',
+    'g_thor_transformers_post_audio_lwmutex_id{0}',
+    'g_thor_transformers_post_audio_lwmutex_id.load(std::memory_order_acquire)',
+    'g_thor_transformers_post_audio_lwmutex_id.store(',
     'lv2_obj::force_owner_wake_after_waiter_sleep(',
     '*owner, &g_thor_transformers_audio_owner_signal_pending)',
     'g_thor_transformers_audio_owner_signal_pending',
@@ -534,6 +538,10 @@ foreach ($fragment in $requiredAudioOwnerWakeFragments) {
 if ($lv2Lwmutex.Contains('idm::get_unlocked<named_thread<ppu_thread>>(owner_id)') -or
     $lv2Lwmutex.Contains('idm::get_unlocked<named_thread<ppu_thread>>(dependency_lookup_id)')) {
     throw "The Transformers audio-owner repair still uses a direct PPU ID lookup."
+}
+
+if ($lv2Lwmutex.Contains('thor_transformers_post_audio_lwmutex_id = 0x95008d00')) {
+    throw "The Transformers audio-owner repair still uses a boot-specific lwmutex ID."
 }
 
 $requiredDeferredPpuCensusFragments = @(

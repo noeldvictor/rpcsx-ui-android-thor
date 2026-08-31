@@ -15794,7 +15794,7 @@ there to Bink playback. Diff the two runs' main_thread call sequences from boot 
 That is a bounded comparison of two logs over thirteen seconds, and both sides are
 reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.
 
-## Current HLE handoff: make the FMOD live-owner route repeatable
+## Prior HLE handoff: make the FMOD live-owner route repeatable
 
 This section replaces the old next-step notes above. HLE has reached the PhysX
 startup task in an earlier run. It has not reached gameplay or a valid 30 FPS
@@ -15853,3 +15853,52 @@ mode `4`. Final cleanup found no RPCSX PID or `top` row at 40.1 C fixed silicon.
 A saved Custom slider value of `100` is not an active fan speed or an RPM
 measurement. Keep Smart fan mode enabled. Do not repeat the same route in one
 cool round.
+
+## Current HLE handoff: ignore the reserved owner and follow the live mutex
+
+Capture `20260830-231942-thor-input-custom` used installed APK SHA-256
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+and exact stripped core SHA-256
+`3023A5C5EB24EDA5D32E6F94B643FDE791E8E1D641AC3194BF88C53D0BD8F5B9`.
+The legal START frame passed on slice 6. The after-START controller then
+stopped after one slice on custom marker `owner_live=0 owner_state=0x0`.
+
+This stop was a controller error. The matching row named owner `0xfffffffd`,
+which is `lwmutex_reserved`. It is the normal guest baton value during an
+lwmutex handoff. It is not a PPU ID. The core did not report a dead FMOD PPU.
+The first FMOD lock on `0x95008c00` completed. The main PPU returned, unlocked
+the mutex, and woke the FMOD receiver. The receiver consumed audio events and
+continued its receive loop before the false stop. The route had no targeted
+fatal error. It did not create the PPU PhysX thread, so it gives no PhysX,
+gameplay, FPS, speed, or stability result.
+
+The capture also proves that the post-audio lwmutex ID changes between boots.
+The prior route used `0x95008b00` and then `0x95008d00`. This route used
+`0x95008c00` and then `0x95008e00`. The host successor removes the fixed
+`0x95008d00` behavior gate. It recognizes the exact live FMOD receiver by PPU
+ID and thread name, then records the observed lwmutex ID for the later unlock
+trace. A reserved owner cannot enter this path.
+
+The route now has two exact failure markers: the self-cycle marker and
+`owner=0x100000c owner_live=0`. It rejects a broad dead-owner marker that does
+not name PPU `0x100000c`. The Transformers route, shutdown-reconciliation,
+shutdown-completion, and taskset-join contracts pass. PowerShell parsing,
+`git diff --check`, the optimized Android ARM64 build, the Thortest strip task,
+the binary marker check, and the export-surface check pass. The stripped core
+is 63,253,448 bytes with SHA-256
+`0B578A88B419D7B5D3CF580F3D728F62A91FA3E1E72A673EC770E41DA665F206`.
+Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+
+In the next independently cool route, do not require a fixed mutex ID. If a
+live FMOD owner appears, require a `DEFERRED SCAN` row for its observed ID. If
+the reserved baton appears, let the normal handoff continue. Require progress
+beyond the FMOD lock chain. If the route reaches PhysX, require
+`pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue-failure
+row, and no fatal error. Then require correct gameplay before any HLE or 30 FPS
+claim.
+
+The watchdog for the false-stop route recorded 161 valid samples. Fixed
+silicon was 34.1 to 64.6 C, and junction temperature was 35.1 to 76.7 C. Every
+sample reported Smart fan mode `4`. Cleanup found no RPCSX PID. The saved
+Custom slider value `100` was inactive and is not a fan-speed measurement.

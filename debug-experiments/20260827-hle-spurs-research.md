@@ -10453,3 +10453,59 @@ rendering progress.
   `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no
   queue-failure row, and no fatal error. Do not claim HLE, gameplay, FPS, speed,
   or stability before these gates pass.
+
+## 254. A reserved owner caused a false route stop
+
+- Status: route-tooling correction, host successor passed, not-PhysX,
+  not-gameplay, not-comparable for FPS.
+- Identity: Capture `20260830-231942-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `3023A5C5EB24EDA5D32E6F94B643FDE791E8E1D641AC3194BF88C53D0BD8F5B9`.
+  The legal START frame passed on slice 6.
+- False-stop result: The after-START controller completed one two-second slice
+  and matched custom text `owner_live=0 owner_state=0x0`. The full row named
+  owner `0xfffffffd`. This is `lwmutex_reserved`, not a PPU ID. Experiment 214
+  already proves that this value is the normal guest baton during a handoff.
+  The controller stopped on a legal value and incorrectly reported a stale
+  signal repair failure.
+- Audio result: The first FMOD mutex was `0x95008c00`. Its live owner was PPU
+  `0x0100000c`. The owner wake changed state `0x224->0x4`. The main PPU then
+  returned, unlocked the mutex, and woke the FMOD receiver. The receiver
+  consumed queued events and continued its receive loop. The later candidate
+  mutex was `0x95008e00` with the reserved owner. The audio sender later filled
+  its two-entry queue because the route stopped before this new boundary could
+  be classified.
+- Mutex-ID correction: The prior run used first and second IDs `0x95008b00`
+  and `0x95008d00`. This run used `0x95008c00` and `0x95008e00`. The fixed
+  second ID was boot-dependent. The host successor now gates the deferred scan
+  on the exact live FMOD PPU ID and thread name. It records the observed mutex
+  ID for the later unlock trace. It does not act on a reserved owner.
+- Controller correction: The route keeps the self-cycle failure marker and now
+  adds exact dead-owner marker `owner=0x100000c owner_live=0`. It rejects a
+  broad dead-owner marker that does not name the FMOD PPU. This prevents a
+  normal reserved-owner handoff from ending the route.
+- Route result: The route did not create the PPU PhysX thread. It had no PhysX
+  queue result and no targeted fatal error. Startup samples of 3.80 and 5.90
+  FPS are not comparable gameplay data and get no speed credit.
+- Thermal and fan result: The independent watchdog recorded 161 valid samples.
+  Fixed silicon ranged from 34.1 to 64.6 C, and junction temperature ranged
+  from 35.1 to 76.7 C. Every sample reported Smart fan mode `4`. Cleanup found
+  no RPCSX PID. The saved Custom slider value `100` was inactive and is not a
+  fan-speed measurement.
+- Verification: The Transformers route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. The broad-marker
+  rejection test and PowerShell parsing pass. `git diff --check`, Android ARM64
+  RelWithDebInfo, the Thortest strip task, the binary marker check, and the
+  export-surface check pass. The stripped core is 63,253,448 bytes with
+  SHA-256
+  `0B578A88B419D7B5D3CF580F3D728F62A91FA3E1E72A673EC770E41DA665F206`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes.
+- Next: Push this exact core without a launch in a later independently cool
+  round. Do not require a fixed mutex ID. Let a reserved-owner handoff continue.
+  If a live FMOD owner appears, require a `DEFERRED SCAN` row for its observed
+  ID. Then require progress into PhysX, exact stop
+  `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue
+  failure, and no fatal error before any HLE or gameplay claim.
