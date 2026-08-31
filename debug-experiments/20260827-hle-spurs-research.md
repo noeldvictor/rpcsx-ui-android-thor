@@ -10786,3 +10786,33 @@ rendering progress.
   fatal error, and progress beyond PhysX startup. Require correct gameplay
   before an HLE claim and a matched sustained gameplay result before a 30 FPS
   claim.
+
+## 260. Queue readiness now wins over the timeout
+
+- Status: final host successor passed, no device result, not-HLE, not-gameplay,
+  not-comparable for FPS.
+- Ordering repair: Commit `1b12997d1` checks the real PhysX queue state before
+  it makes the timeout decision. Therefore, an item that the SPU has published
+  always produces the `startup ready` row, even if the exact producer flag has
+  just become inactive. The code does not create or change queue data.
+- Contract repair: The focused route contract requires the queue readiness
+  check to occur before the timeout decision. This prevents a later edit from
+  restoring the rejection race.
+- Verification: The focused HLE route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. `git diff --check`, the
+  ARM64 RelWithDebInfo build, the Thortest strip task, the binary marker check,
+  and the export-surface check pass.
+- Binary identity: The final stripped successor is 63,254,024 bytes with
+  SHA-256
+  `6DBD8E8F1975A95842E9C30D408CADCF043F8CDB4F52F7F249B458CC434189B6`.
+  It has both the `startup ready` and `startup timeout` markers. Its export
+  surface has 40 defined dynamic symbols, 596 explicit relocations, 392 jump
+  slots, and 44,453 encoded relocation bytes. The earlier
+  `2A9CB8AB...FE47B1` build is obsolete.
+- Next: Do not launch again in the previous cool round. In the next
+  independently cool round, push exact core `6DBD8E8F...189B6` without a
+  launch and verify its app-internal hash. Run one guarded route. Require the
+  `startup ready` row, exact `pc=0x06920 queue_rc=0x00000000`, no timeout, no
+  `0x8041090A`, no fatal error, and progress beyond PhysX startup. Require
+  correct gameplay before an HLE claim and a matched sustained gameplay result
+  before a 30 FPS claim.
