@@ -15793,3 +15793,43 @@ there to Bink playback. Diff the two runs' main_thread call sequences from boot 
 
 That is a bounded comparison of two logs over thirteen seconds, and both sides are
 reproducible in about a minute each through `thor_boot` + `thor_wait_ready`.
+
+## Current HLE handoff: workload-7 shutdown snapshot is next
+
+This section replaces the old next-step notes above. HLE has not reached PhysX,
+gameplay, or a valid 30 FPS result.
+
+The last device route used stripped core SHA-256
+`2E1725D761D12C568AF85B5A87FC61D944E6E96C92E03ECDBB92AF2071263CDF`.
+It entered `cellSpursJoinTaskset` for workload 7. The 20-millisecond retry ran,
+but it did not change the shutdown state. The route did not reach the PhysX
+handoff. Capture `20260830-213516-thor-input-custom` is self-rejected because
+its last pause request timed out.
+
+Commit `99338ebd6` adds one bounded no-change snapshot. The host-passed stripped
+successor is 63,254,552 bytes and has SHA-256
+`9877BAB6392043E53110D5E0E1486866A159D45BCAD94843EB546B3F49CDA8B9`.
+It has no device result. The next independently cool route must use this exact
+core and must collect `Thor TWC SHUTDOWN RECONCILE NO CHANGE` if the retry does
+not repair the state.
+
+Ghidra analysis of the real kernel does not support a forced PPU-side removal.
+The real selector records pending contention during a policy-module poll. The
+normal kernel dispatch then commits system-service workload 32. The kernel does
+not write `sysSrvPreemptWklId`. The current RPCSX and RPCS3 system-service HLE
+code also leaves the direct preempted-entry path as a TODO. Existing LLE local-
+store captures contain a taskset or job-chain policy module at `0xA00`; they do
+not contain the real system-service image.
+
+Use the next snapshot to select one repair:
+
+1. If all task running words are zero and the only blocker is a stale workload-
+   7 owner, add a narrow idle-owner repair.
+2. If a task is active, implement or invoke the policy-module yield or workload-
+   preemption path before removal. Do not clear the task or status bit from the
+   PPU join waiter.
+
+The last verified cleanup found no RPCSX PID or `top` row. Every watchdog sample
+and the direct cleanup reported Smart fan mode `4`. A saved Custom slider value
+of `100` is not an active fan speed or an RPM measurement. Keep Smart fan mode
+enabled. Do not repeat the same route in one cool round.

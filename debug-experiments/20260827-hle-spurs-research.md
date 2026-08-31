@@ -10251,3 +10251,49 @@ rendering progress.
   use that exact evidence for a narrow idle-owner repair. If a task is active,
   implement or invoke workload preemption before removal. Do not give HLE,
   PhysX, gameplay, FPS, speed, or stability credit yet.
+
+## 250. Real-kernel preemption research does not support a forced join repair
+
+- Status: host research complete, device snapshot still pending.
+- Ghidra input: A headless Ghidra 12.0.4 import used processor
+  `SPU:BE:128:default` and loaded
+  `_research/spurs/spurs_kernel1.spu.bin` at address `0x100`. The 2,048-byte
+  input has SHA-256
+  `A6382C356D528AFCD9BFD7713174489EC4E21EDDB59FEA2A3B58E30BEAFA7B85`.
+  The matching 2,100-byte ELF has SHA-256
+  `5B62B86C8979609C33633D53CB0074D1B31A519D5222DEC892F5A19DA00DFB38`.
+  The ignored disassembly output is
+  `debug-captures/ghidra-kernel1-preemption-20260830/kernel1-full.txt`.
+- Kernel result: The selector at `0x310` handles a policy-module poll and a
+  kernel selection as separate operations. A poll that selects another
+  workload records pending contention. The kernel path commits the selected
+  workload and dispatches its policy module. The real kernel contains no write
+  to the `CellSpurs::sysSrvPreemptWklId` array.
+- Source comparison: `spursSysServiceCleanupAfterSystemWorkload` only consumes
+  a victim ID that another path already recorded. It does not select a victim.
+  `spursSysServiceEntry` still has the same preempted-workload TODO in this tree
+  and in current RPCS3. The public preemption-victim-hints function is a
+  separate unimplemented API. These facts do not support writing a victim ID
+  or clearing an active task from the PPU join waiter. Current RPCS3 source:
+  <https://raw.githubusercontent.com/RPCS3/rpcs3/master/rpcs3/Emu/Cell/Modules/cellSpurs.cpp>.
+- Online research: No arXiv result defines this SPURS shutdown transition.
+  Sony task-manager material describes task switching through a yield and
+  context-switch path. It does not define a PPU join operation that deletes an
+  active SPU task. Primary sources:
+  <https://patents.google.com/patent/EP1934739A1/en> and
+  <https://patents.google.com/patent/EP2312441A2/en>.
+- Capture result: The saved route proves that workload-7 task zero started on
+  SPU 4 at emulator time 2:48.024. The same SPU started FMOD workload-8 task
+  zero at 3:40.901. This proves that SPU 4 left workload 7, but it does not
+  prove that task zero did not resume on another SPU before the join at
+  3:41.159. The saved trace has no later task mask or complete SPU workload-ID
+  census.
+- Decision: Keep commit `99338ebd6` unchanged. Do not add a speculative forced
+  preemption. The next independently cool device route must collect the bounded
+  no-change snapshot. If it shows no running task and a stale owner, repair only
+  that idle owner. If it shows an active task, repair the policy-module yield or
+  preemption path first.
+- Device and fan result: No device command followed this research. The last
+  verified cleanup from experiment 249 found no RPCSX process and reported
+  Smart fan mode `4`. The Custom slider value `100` is not an active fan-speed
+  reading.
