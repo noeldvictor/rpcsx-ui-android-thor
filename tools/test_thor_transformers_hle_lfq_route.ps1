@@ -847,6 +847,19 @@ foreach ($fragment in $requiredPhysxProducerStateFragments) {
     }
 }
 
+$requiredPhysxPcCensusFragments = @(
+	'const bool physx_start_interp_active = transformers_physx_start_interp_active();',
+	'if (!spu_pc_census_enabled() && !physx_start_interp_active)',
+	'static constexpr u32 max_samples = 192;',
+	'physx_start_interp=%u'
+)
+
+foreach ($fragment in $requiredPhysxPcCensusFragments) {
+	if (-not $pcCensus.Contains($fragment)) {
+		throw "The automatic Transformers PhysX PC census is missing: $fragment"
+	}
+}
+
 if (-not $spuThreadHeader.Contains('u32 interp_fallback_stop_pc = umax;')) {
     throw 'The exact interpreter fallback stop PC field is missing.'
 }

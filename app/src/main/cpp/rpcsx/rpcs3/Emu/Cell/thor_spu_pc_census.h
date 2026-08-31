@@ -259,7 +259,12 @@ namespace thor
 
 	inline void spu_transformers_physx_pc_census_tick()
 	{
-		if (!spu_pc_census_enabled())
+		const bool physx_start_interp_active = transformers_physx_start_interp_active();
+
+		// The exact startup interpreter can run longer than the normal diagnostic
+		// window. Sample it without a second property so a bounded HLE proof always
+		// records the live SPU PC that prevents the first queue reply.
+		if (!spu_pc_census_enabled() && !physx_start_interp_active)
 		{
 			return;
 		}
@@ -276,7 +281,7 @@ namespace thor
 			return;
 		}
 
-		static constexpr u32 max_samples = 16;
+		static constexpr u32 max_samples = 192;
 		static constexpr u32 max_wait_samples = 16;
 		static u32 s_sample = 0;
 		static u32 s_wait_sample = 0;
@@ -310,14 +315,16 @@ namespace thor
 					"pc=0x%05x op=0x%08x base=0x%05x lr=0x%05x sp=0x%05x "
 					"r3=0x%08x r4=0x%08x r5=0x%08x mfc=0x%02x ea=0x%08x "
 					"out=%u intr=%u in=%u state=0x%08x group=%u spursrun=%u "
-					"blocks=%llu recover=%llu failures=%llu hash=0x%016llx interp=%u thread='%s'",
+					"blocks=%llu recover=%llu failures=%llu hash=0x%016llx interp=%u "
+					"physx_start_interp=%u thread='%s'",
 					sample, id, spu.index, taskset, task_id, spu.pc, +spu._ref<u32>(spu.pc),
 					spu.base_pc, spu.gpr[0]._u32[3], spu.gpr[1]._u32[3], spu.gpr[3]._u32[3],
 					spu.gpr[4]._u32[3], spu.gpr[5]._u32[3], +spu.ch_mfc_cmd.cmd,
 					+spu.ch_mfc_cmd.eal, spu.ch_out_mbox.get_count(),
 					spu.ch_out_intr_mbox.get_count(), spu.ch_in_mbox.get_count(), state,
 					group_state, spurs_running, spu.block_counter, spu.block_recover,
-					spu.block_failure, spu.block_hash, spu.interp_fallback ? 1 : 0, name);
+					spu.block_failure, spu.block_hash, spu.interp_fallback ? 1 : 0,
+					physx_start_interp_active ? 1 : 0, name);
 			});
 
 		if (matches)
