@@ -716,7 +716,10 @@ $requiredPhysxQueueWaitFragments = @(
     'static_cast<u32>(ppu.lr) == 0x00a94678u',
     'first_task_elf == 0x018c1000u',
     'static constexpr u64 c_max_wait_us = 6''000''000;',
-    'while (get_system_time() - started < c_max_wait_us)',
+    'static constexpr u64 c_producer_wait_limit_us = 60''000''000;',
+    'thor::transformers_physx_start_interp_active();',
+    'elapsed >= c_max_wait_us',
+    'elapsed >= c_producer_wait_limit_us',
     'thread_ctrl::wait_for(c_poll_us, false);',
     'Thor Transformers PhysX queue startup wait:'
 )
@@ -737,6 +740,8 @@ $requiredPhysxStartInterpFragments = @(
 	'spu.interp_fallback_begin = 0x030a8;',
 	'spu.interp_fallback_end = 0x06e54;',
 	'spu.interp_fallback_stop_pc = 0x06920;',
+	'thor::set_transformers_physx_start_interp_active(true);',
+	'thor::set_transformers_physx_start_interp_active(false);',
 	'spu.pc == spu.interp_fallback_stop_pc',
 	'Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu'
 )
@@ -744,6 +749,41 @@ $requiredPhysxStartInterpFragments = @(
 foreach ($fragment in $requiredPhysxStartInterpFragments) {
     if (-not $spuCommon.Contains($fragment)) {
         throw "The Transformers PhysX startup interpreter is missing: $fragment"
+    }
+}
+
+$physxProducerWindowPattern = '(?s)static void spu_run_thor_transformers_physx_start_interp_dispatch\(spu_thread& spu\).*?' +
+    'set_transformers_physx_start_interp_active\(true\);.*?' +
+    'spu_recompiler_base::old_interpreter\(spu, spu\._ptr<u8>\(0\), nullptr\);.*?' +
+    'set_transformers_physx_start_interp_active\(false\);'
+
+if ($spuCommon -notmatch $physxProducerWindowPattern) {
+    throw 'The exact Transformers PhysX interpreter does not own the producer-active window.'
+}
+
+$genericFallbackStart = $spuCommon.IndexOf('static void spu_run_interp_fallback(')
+$genericFallbackEnd = $spuCommon.IndexOf('// A cached module can transfer', $genericFallbackStart)
+if ($genericFallbackStart -lt 0 -or $genericFallbackEnd -le $genericFallbackStart) {
+    throw 'The generic SPU interpreter fallback boundary is missing.'
+}
+
+$genericFallback = $spuCommon.Substring($genericFallbackStart, $genericFallbackEnd - $genericFallbackStart)
+if ($genericFallback.Contains('set_transformers_physx_start_interp_active')) {
+    throw 'The generic SPU interpreter fallback must not control the Transformers PhysX producer state.'
+}
+
+$requiredPhysxProducerStateFragments = @(
+    's_transformers_physx_start_interp_active{false}',
+    's_transformers_physx_start_interp_active.store(false, std::memory_order_relaxed);',
+    'set_transformers_physx_start_interp_active(bool active)',
+    'transformers_physx_start_interp_active() noexcept',
+    'std::memory_order_release',
+    'std::memory_order_acquire'
+)
+
+foreach ($fragment in $requiredPhysxProducerStateFragments) {
+    if (-not $pcCensus.Contains($fragment)) {
+        throw "The Transformers PhysX producer state is missing: $fragment"
     }
 }
 

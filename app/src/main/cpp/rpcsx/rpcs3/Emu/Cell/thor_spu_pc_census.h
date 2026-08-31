@@ -41,9 +41,11 @@ namespace thor
 	inline std::atomic<u32> s_transformers_physx_task_id{0};
 	inline std::atomic<u32> s_transformers_physx_elf{0};
 	inline std::atomic<u64> s_transformers_physx_arm_time_us{0};
+	inline std::atomic<bool> s_transformers_physx_start_interp_active{false};
 
 	inline void arm_transformers_physx_spu_census(u32 taskset, u32 task_id, u32 elf) noexcept
 	{
+		s_transformers_physx_start_interp_active.store(false, std::memory_order_relaxed);
 		s_transformers_physx_task_id.store(task_id, std::memory_order_relaxed);
 		s_transformers_physx_elf.store(elf, std::memory_order_relaxed);
 		s_transformers_physx_arm_time_us.store(get_system_time(), std::memory_order_relaxed);
@@ -58,6 +60,16 @@ namespace thor
 		result.elf = s_transformers_physx_elf.load(std::memory_order_relaxed);
 		result.arm_time_us = s_transformers_physx_arm_time_us.load(std::memory_order_relaxed);
 		return result;
+	}
+
+	inline void set_transformers_physx_start_interp_active(bool active) noexcept
+	{
+		s_transformers_physx_start_interp_active.store(active, std::memory_order_release);
+	}
+
+	inline bool transformers_physx_start_interp_active() noexcept
+	{
+		return s_transformers_physx_start_interp_active.load(std::memory_order_acquire);
 	}
 
 	inline bool spu_pc_census_enabled()

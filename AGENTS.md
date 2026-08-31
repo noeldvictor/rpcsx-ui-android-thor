@@ -15946,3 +15946,48 @@ FMOD lock chain. If the title reaches PhysX, require
 `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue
 failure, and no fatal error. Do not claim HLE or 30 FPS before correct gameplay
 and a matched sustained measurement.
+
+## Current HLE handoff: wait for the active PhysX producer
+
+Capture `20260831-000215-thor-input-custom` used installed APK SHA-256
+`CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+and exact stripped core SHA-256
+`88B8F528E6154F832473B020B74AC80F5A979938D5F5872769C3C6D8571950E8`.
+The legal START frame passed on slice 7.
+
+The runtime FMOD mutex `0x95008b00` completed its handoff. The FMOD receiver
+consumed audio events and continued its receive loop. This run did not enter the
+deferred candidate path, so it does not test the composed-name repair.
+
+The title created the PPU PhysX thread, six queues, taskset `0x1ec4700`, and
+task 0 from ELF `0x018c1000`. SPU 3 entered the exact startup interpreter at PC
+`0x06800`. The PPU queue wait on `0x1eccb80` reported a timeout after
+41,973,741 us. The SPU reached exact stop PC `0x06920` with queue result
+`0x00000000` only 187 us later. The title then reported queue-pop failure
+`0x8041090A` and started teardown. The run did not reach gameplay.
+
+The host successor publishes an active flag only around the exact Transformers
+PhysX startup interpreter. The PPU keeps the normal 6,000,000 us limit. It can
+continue to wait only while this exact producer is active, with an absolute
+60,000,000 us limit. Release and acquire operations order the real queue result.
+The path does not fabricate queue data. The route contract rejects a producer
+flag in the generic SPU interpreter fallback.
+
+The Transformers route, shutdown-reconciliation, shutdown-completion, and
+taskset-join contracts pass. `git diff --check`, the Android ARM64
+RelWithDebInfo build, the Thortest strip task, and the export-surface check pass.
+The next stripped core is 63,253,912 bytes with SHA-256
+`08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+
+The controller peak fixed-silicon temperature was 69.5 C. The watchdog recorded
+285 valid samples. Fixed silicon was 34.5 to 69.1 C, and junction temperature
+was 35.9 to 85.9 C. Every watchdog sample reported Smart fan mode `4`. Cleanup
+found no RPCSX PID or `top` row at 38.9 C fixed silicon.
+
+In the next independently cool route, push this exact core without a launch,
+then run one guarded route. Require a real `ready after` row, no queue failure,
+no fatal error, and progress beyond PhysX startup. Do not claim HLE before
+correct gameplay. Do not claim 30 FPS before a matched sustained gameplay
+measurement.

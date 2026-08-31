@@ -411,7 +411,9 @@ static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& sp
 	spu_log.error("Thor Transformers PhysX startup interpreter enter #%u pc=0x%05x lr=0x%05x",
 		count, spu.pc, spu.gpr[0]._u32[3]);
 
+	thor::set_transformers_physx_start_interp_active(true);
 	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+	thor::set_transformers_physx_start_interp_active(false);
 
 	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu",
 		count, spu.pc, spu.gpr[3]._u32[3],

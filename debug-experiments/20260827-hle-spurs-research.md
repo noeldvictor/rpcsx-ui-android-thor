@@ -10560,3 +10560,59 @@ rendering progress.
   reaches PhysX, require `pc=0x06920 queue_rc=0x00000000`, a real PPU
   `ready after` row, no queue failure, and no fatal error. Do not claim HLE,
   gameplay, FPS, speed, or stability before these gates pass.
+
+## 256. The PPU timeout ends just before the PhysX producer
+
+- Status: device-confirmed PhysX boundary, host successor passed, not-gameplay,
+  not-comparable for FPS.
+- Identity: Capture `20260831-000215-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `88B8F528E6154F832473B020B74AC80F5A979938D5F5872769C3C6D8571950E8`.
+  The legal START frame passed on slice 7.
+- Audio result: Runtime mutex `0x95008b00` completed its handoff. The direct
+  owner wake changed PPU `0x0100000c` from state `0x224` to `0x304`. The FMOD
+  receiver unlocked the mutex, consumed audio events, and continued its receive
+  loop. The run used the normal dependency-scan miss path. It did not enter the
+  deferred candidate path. Therefore, this run does not test the composed-name
+  repair.
+- PhysX result: The title created the PPU PhysX thread at emulator time
+  4:29.795. It created six queues and taskset `0x1ec4700`. It created task 0
+  from ELF `0x018c1000` at 4:49.879. SPU 3 entered the exact startup
+  interpreter at PC `0x06800` at 4:49.905.
+- Exact boundary: The PPU queue wait on `0x1eccb80` reported a timeout at
+  5:31.853203 after 41,973,741 us. The SPU interpreter reached the exact stop
+  PC `0x06920` at 5:31.853390, only 187 us later. Register 3 contained success
+  value `0x00000000`. The exact SPU path took 41,948,057 us. The title then
+  reported queue-pop failure `0x8041090A` and started teardown. This is not a
+  gameplay or full-HLE result.
+- Cause: The PPU did not run its polling loop while the cold SPU interpreter
+  used the host. When the PPU ran again, its normal deadline had passed. It
+  returned BUSY immediately before the real producer made the queue result
+  visible. The exact timing and the successful SPU queue return support this
+  scheduling cause.
+- Host successor: The exact Transformers PhysX interpreter now publishes an
+  active-producer flag. The PPU keeps its normal 6,000,000 us wait. It can wait
+  longer only while this exact producer is active, and it has an absolute
+  60,000,000 us limit. A release store after the interpreter and an acquire
+  load in the PPU order the real queue result. The path does not fabricate data.
+  A contract rejects use of this flag in the generic SPU interpreter fallback.
+- Verification: The Transformers route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. `git diff --check`, the
+  Android ARM64 RelWithDebInfo build, the Thortest strip task, and the
+  export-surface check pass. The new stripped core is 63,253,912 bytes with
+  SHA-256
+  `08E9E8448D520F8F307E8F5D4AFF4D601B84F010CE361C670780D4BF193ABE25`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It has no device result.
+- Thermal and fan result: The controller recorded a peak fixed-silicon
+  temperature of 69.5 C. The independent watchdog recorded 285 valid samples.
+  Fixed silicon ranged from 34.5 to 69.1 C, and junction temperature ranged
+  from 35.9 to 85.9 C. Every watchdog sample reported Smart fan mode `4`.
+  Cleanup found no RPCSX PID or `top` row. Final fixed silicon was 38.9 C.
+- Next: In the next independently cool route, push this exact core without a
+  launch, then run one guarded route. Require a real `ready after` row, no queue
+  failure, no fatal error, and progress beyond PhysX startup. Require correct
+  gameplay before any HLE claim. Require a matched sustained gameplay result
+  before a 30 FPS claim.
