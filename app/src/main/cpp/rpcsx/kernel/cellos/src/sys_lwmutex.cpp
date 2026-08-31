@@ -22,6 +22,8 @@ namespace {
 constexpr u32 thor_transformers_main_lwmutex_lock_lr = 0x00e28c5c;
 constexpr u32 thor_transformers_main_lwmutex_unlock_lr = 0x00e28c18;
 constexpr u32 thor_transformers_main_lwmutex_caller = 0x00dd6264;
+constexpr auto thor_transformers_fmod_receiver_name =
+    "PPU[0x100000c] FMOD libAudio event receive thread";
 constexpr u32 thor_transformers_lv2_lwmutex_trace_limit = 128;
 constexpr u32 thor_transformers_post_audio_unlock_trace_limit = 8;
 constexpr u32 thor_transformers_reown_scan_limit = 64;
@@ -39,6 +41,12 @@ std::atomic<u32> g_thor_transformers_audio_dependency_owner_id{0};
 std::atomic<u32> g_thor_transformers_post_audio_lwmutex_id{0};
 std::atomic<bool> g_thor_transformers_audio_owner_wake_completed{false};
 std::atomic<bool> g_thor_transformers_audio_owner_signal_pending{false};
+
+bool thor_transformers_is_fmod_receiver(const ppu_thread &ppu) {
+  return ppu.id == 0x0100'000c &&
+         static_cast<std::string>(ppu.thread_name) ==
+             thor_transformers_fmod_receiver_name;
+}
 
 bool thor_transformers_lv2_lwmutex_trace_enabled() noexcept {
 #ifdef __ANDROID__
@@ -145,9 +153,7 @@ ppu_thread *thor_transformers_reown_with_trace(
 
           const bool repairable_self_cycle =
               cycle && depth == 1 && repeated_at == 0 && head && next == head &&
-              head->id == 0x0100'000c &&
-              static_cast<std::string>(head->thread_name) ==
-                  "FMOD libAudio event receive thread" &&
+              thor_transformers_is_fmod_receiver(*head) &&
               thor_transformers_audio_wake_fix_enabled();
           if (repairable_self_cycle) {
             result = head;
@@ -227,9 +233,7 @@ thor_transformers_select_live_ppu(u32 ppu_id) {
 void thor_transformers_discard_stale_audio_owner_signal(
     ppu_thread &ppu, u32 lwmutex_id) {
   if (!thor_transformers_audio_wake_fix_enabled() ||
-      ppu.id != 0x0100'000c ||
-      static_cast<std::string>(ppu.thread_name) !=
-          "FMOD libAudio event receive thread" ||
+      !thor_transformers_is_fmod_receiver(ppu) ||
       !g_thor_transformers_audio_owner_signal_pending.exchange(
           false, std::memory_order_acq_rel)) {
     return;
@@ -345,9 +349,7 @@ bool thor_transformers_discover_audio_dependency(u32 primary_lwmutex_id,
       [&](u32 candidate_lwmutex_id, lv2_lwmutex &candidate) -> bool {
         bool contains_fmod_receiver = false;
         for (auto cpu = candidate.load_sq(); cpu; cpu = cpu->next_cpu) {
-          if (cpu->id == 0x0100'000c &&
-              static_cast<std::string>(cpu->thread_name) ==
-                  "FMOD libAudio event receive thread") {
+          if (thor_transformers_is_fmod_receiver(*cpu)) {
             contains_fmod_receiver = true;
             break;
           }
@@ -480,9 +482,7 @@ void thor_transformers_complete_audio_owner_wake(
     }
 
     const bool is_deferred_dependency_candidate =
-        owner_id == 0x0100'000c && owner &&
-        static_cast<std::string>(owner->thread_name) ==
-            "FMOD libAudio event receive thread";
+        owner && thor_transformers_is_fmod_receiver(*owner);
     if (is_deferred_dependency_candidate) {
       g_thor_transformers_post_audio_lwmutex_id.store(
           lwmutex_id, std::memory_order_release);

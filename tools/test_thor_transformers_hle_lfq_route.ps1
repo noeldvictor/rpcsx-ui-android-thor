@@ -381,8 +381,7 @@ $requiredLv2LwmutexTraceFragments = @(
     'constexpr u32 thor_transformers_reown_scan_limit = 64;',
     'stage=PRE-SCHEDULE-SCAN depth=%u cycle=%u',
     'const bool repairable_self_cycle =',
-    "head->id == 0x0100'000c",
-    '"FMOD libAudio event receive thread"',
+    'thor_transformers_is_fmod_receiver(*head)',
     'thor_transformers_audio_wake_fix_enabled();',
     'data.sq = nullptr;',
     'stage=REPAIR-SELF-CYCLE waiter=0x%x queue=0x0',
@@ -485,6 +484,11 @@ if (-not $sysSync.Contains('static bool force_owner_wake_after_waiter_sleep(') -
 $requiredAudioOwnerWakeFragments = @(
     '"debug.rpcsx.thor.transformers_audio_wake_fix"',
     'thor_transformers_main_lwmutex_caller = 0x00dd6264',
+    'thor_transformers_fmod_receiver_name =',
+    '"PPU[0x100000c] FMOD libAudio event receive thread"',
+    'thor_transformers_is_fmod_receiver(const ppu_thread &ppu)',
+    'thor_transformers_is_fmod_receiver(*owner)',
+    'thor_transformers_is_fmod_receiver(*cpu)',
     'g_thor_transformers_post_audio_lwmutex_id{0}',
     'g_thor_transformers_post_audio_lwmutex_id.load(std::memory_order_acquire)',
     'g_thor_transformers_post_audio_lwmutex_id.store(',
@@ -506,11 +510,9 @@ $requiredAudioOwnerWakeFragments = @(
     'const auto owner = thor_transformers_select_live_ppu(owner_id);',
     'thor_transformers_select_live_ppu(dependency_lookup_id);',
     'owner_live=%u owner_state=0x%x',
-    '"FMOD libAudio event receive thread"',
     'thor_transformers_discover_audio_dependency(lwmutex_id);',
     'idm::select<lv2_obj, lv2_lwmutex>(',
     'for (auto cpu = candidate.load_sq(); cpu; cpu = cpu->next_cpu)',
-    'cpu->id == 0x0100''000c',
     'idm::unlocked',
     'g_thor_transformers_audio_dependency_lwmutex_id.store(',
     'g_thor_transformers_audio_dependency_owner_id.store(',
@@ -542,6 +544,10 @@ if ($lv2Lwmutex.Contains('idm::get_unlocked<named_thread<ppu_thread>>(owner_id)'
 
 if ($lv2Lwmutex.Contains('thor_transformers_post_audio_lwmutex_id = 0x95008d00')) {
     throw "The Transformers audio-owner repair still uses a boot-specific lwmutex ID."
+}
+
+if ($lv2Lwmutex -match 'static_cast<std::string>\((owner|cpu)->thread_name\)\s*==\s*"FMOD libAudio event receive thread"') {
+    throw "The Transformers audio-owner repair still compares a composed PPU name with a bare guest thread name."
 }
 
 $requiredDeferredPpuCensusFragments = @(

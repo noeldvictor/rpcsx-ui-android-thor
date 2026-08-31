@@ -10509,3 +10509,54 @@ rendering progress.
   ID. Then require progress into PhysX, exact stop
   `pc=0x06920 queue_rc=0x00000000`, a real PPU `ready after` row, no queue
   failure, and no fatal error before any HLE or gameplay claim.
+
+## 255. The live FMOD route uses a composed PPU name
+
+- Status: device-confirmed cause, host successor passed, not-PhysX,
+  not-gameplay, not-comparable for FPS.
+- Identity: Capture `20260830-234043-thor-input-custom` used installed APK
+  SHA-256
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`
+  and exact stripped core SHA-256
+  `0B578A88B419D7B5D3CF580F3D728F62A91FA3E1E72A673EC770E41DA665F206`.
+  The legal START frame passed on slice 7.
+- Audio result: At emulator time 4:09.245, the main PPU found live FMOD PPU
+  `0x0100000c` as owner of runtime lwmutex `0x95008e00`. The owner state was
+  `0x4`. The row reported `owner_live=1`, but no `DEFERRED SCAN` row followed.
+  The code used the plain `candidate` chain action. The audio queue then filled
+  its two entries and returned `0x8001000a` on later sends.
+- Persistent state: From emulator time 4:11 through 8:11, repeated PPU samples
+  put the main PPU and the FMOD receiver at HLE PC `0x022254ec` with link
+  register `0x00e28c5c`. The title did not create the PPU PhysX thread. No
+  targeted fatal error occurred.
+- Cause: `ppu_thread::thread_name_t::operator std::string()` builds the name as
+  `PPU[0x<id>] <guest-name>`. Four audio-owner checks compared this composed
+  name with only `FMOD libAudio event receive thread`. These checks could not
+  match. This disabled the deferred candidate scan, the live dependency scan,
+  the stale-signal cleanup, and the guarded self-cycle repair.
+- Host successor: One helper now requires PPU ID `0x0100000c` and the exact
+  composed name
+  `PPU[0x100000c] FMOD libAudio event receive thread`. All four paths use this
+  helper. The title gate and all existing state checks remain. The change does
+  not change a guest mutex word or queue directly.
+- Route result: The controller completed 20 two-second after-START slices. Its
+  last pause request timed out when the control API became unavailable, and it
+  stopped the package. This controller stop is not a core fatal error.
+- Thermal and fan result: The watchdog recorded 381 valid samples. Fixed
+  silicon ranged from 34.1 to 68.2 C, and junction temperature ranged from
+  35.5 to 85.5 C. Every sample reported Smart fan mode `4`. Cleanup found no
+  RPCSX PID. Final fixed silicon was 38.1 C.
+- Verification: The Transformers route, shutdown-reconciliation,
+  shutdown-completion, and taskset-join contracts pass. PowerShell parsing,
+  `git diff --check`, the Android ARM64 RelWithDebInfo build, the Thortest strip
+  task, and the export-surface check pass. The stripped core is 63,253,848
+  bytes with SHA-256
+  `88B8F528E6154F832473B020B74AC80F5A979938D5F5872769C3C6D8571950E8`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes.
+- Next: Push this exact core without a launch. In a later independently cool
+  route, require the live candidate and a `DEFERRED SCAN` row for its observed
+  mutex ID. Then require progress beyond the FMOD lock chain. If the title
+  reaches PhysX, require `pc=0x06920 queue_rc=0x00000000`, a real PPU
+  `ready after` row, no queue failure, and no fatal error. Do not claim HLE,
+  gameplay, FPS, speed, or stability before these gates pass.
