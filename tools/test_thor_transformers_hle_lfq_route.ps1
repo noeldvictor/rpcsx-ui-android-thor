@@ -760,6 +760,16 @@ foreach ($fragment in $requiredPhysxQueueWaitFragments) {
     }
 }
 
+$physxWaitStart = $cellSpurs.IndexOf('static constexpr u32 c_poll_us = 100;')
+$physxReadyCheck = $cellSpurs.IndexOf(
+    'if (queue->head.load() != queue->tail.load())', $physxWaitStart)
+$physxTimeoutDecision = $cellSpurs.IndexOf(
+    'if (elapsed >= c_max_wait_us', $physxWaitStart)
+if ($physxWaitStart -lt 0 -or $physxReadyCheck -lt $physxWaitStart -or
+        $physxTimeoutDecision -le $physxReadyCheck) {
+    throw 'The PhysX consumer can reject a published result before it records readiness.'
+}
+
 $requiredPhysxStartInterpFragments = @(
     'static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept',
     '"debug.rpcsx.thor.transformers_physx_start_interp"',

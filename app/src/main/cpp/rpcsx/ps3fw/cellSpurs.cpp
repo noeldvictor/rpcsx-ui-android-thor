@@ -5968,6 +5968,14 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					const u64 elapsed = get_system_time() - started;
 					const bool producer_active =
 						thor::transformers_physx_start_interp_active();
+					if (queue->head.load() != queue->tail.load())
+					{
+						cellSpurs.notice("Thor Transformers PhysX queue startup ready: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
+							queue.addr(), first_task_elf, elapsed,
+							producer_active ? 1u : 0u, producer_wait_polls);
+						break;
+					}
+
 					if (elapsed >= c_max_wait_us &&
 						(!producer_active ||
 							producer_wait_polls >= c_producer_wait_poll_limit))
@@ -5983,14 +5991,6 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 
 					thread_ctrl::wait_for(c_poll_us, false);
 					producer_wait_polls += elapsed >= c_max_wait_us ? 1u : 0u;
-
-					if (queue->head.load() != queue->tail.load())
-					{
-						cellSpurs.notice("Thor Transformers PhysX queue startup ready: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
-							queue.addr(), first_task_elf, get_system_time() - started,
-							producer_active ? 1u : 0u, producer_wait_polls);
-						break;
-					}
 				}
 
 				if (queue->head.load() != queue->tail.load())
