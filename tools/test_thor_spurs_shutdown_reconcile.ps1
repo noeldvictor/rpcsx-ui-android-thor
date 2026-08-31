@@ -18,6 +18,7 @@ foreach ($required in @(
     'Emu.GetTitleID() != "BLUS30357"',
     'wid != 7',
     'currentIds.fill(umax);',
+    'bool log_no_change = false',
     'const u32 current1 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);',
     'const u32 current2 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);',
     'current1 != current2',
@@ -29,7 +30,9 @@ foreach ($required in @(
     'sendEvent = event & 0x12 && !(event & 1);',
     'event |= 1;',
     'sys_event_port_send(spurs->eventPort, 0, 0, (1u << 31) >> wid)',
-    'Thor TWC SHUTDOWN RECONCILE'
+    'Thor TWC SHUTDOWN RECONCILE',
+    'Thor TWC SHUTDOWN RECONCILE NO CHANGE',
+    'taskAny{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x}'
 )) {
     if (-not $repair.Contains($required)) {
         throw "The Transformers shutdown repair is missing '$required'."
@@ -61,7 +64,9 @@ foreach ($required in @(
     "constexpr u64 retry_us = 20'000;",
     'sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us)',
     'wait_result + 0u == CELL_ETIMEDOUT',
-    'Thor TWC SHUTDOWN WAIT RETRY'
+    'Thor TWC SHUTDOWN WAIT RETRY',
+    'const bool first_retry = retries++ == 0;',
+    'thor_reconcile_transformers_shutdown(ppu, spurs, wid, first_retry)'
 )) {
     if (-not $wait.Contains($required)) {
         throw "The Transformers shutdown wait retry is missing '$required'."
@@ -69,7 +74,7 @@ foreach ($required in @(
 }
 
 $timedWaitIndex = $wait.IndexOf('sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us)')
-$lateRepairIndex = $wait.LastIndexOf('thor_reconcile_transformers_shutdown(ppu, spurs, wid)')
+$lateRepairIndex = $wait.LastIndexOf('thor_reconcile_transformers_shutdown(ppu, spurs, wid, first_retry)')
 if ($timedWaitIndex -lt 0 -or $lateRepairIndex -le $timedWaitIndex) {
     throw "The shutdown repair does not retry after the timed semaphore wait."
 }

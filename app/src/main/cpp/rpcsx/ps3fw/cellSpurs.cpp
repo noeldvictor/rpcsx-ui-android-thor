@@ -3174,7 +3174,7 @@ s32 cellSpursShutdownWorkload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid
 // the thread is missing, the SPURS context does not match, or the current ID
 // changes while it is read. This makes the repair fail closed. Workload 7 is
 // the rendering taskset that has this failure in BLUS30357.
-static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
+static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid, bool log_no_change = false)
 {
 	if (!get_thor_hle_spurs_kernel_enabled() || Emu.GetTitleID() != "BLUS30357" || wid != 7)
 	{
@@ -3222,22 +3222,30 @@ static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpu
 
 	u8 statusBefore = 0;
 	u8 statusAfter = 0;
+	u8 stateBefore = 0;
+	u8 eventBefore = 0;
 	u8 eventAfter = 0;
+	bool inspected = false;
 	bool completed = false;
 	bool sendEvent = false;
 	const u8 keepSpus = activeSpus | static_cast<u8>(~knownSpus);
 
-	if (!vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_wkl_state_op>(spurs.ptr(&CellSpurs::wklState1)), [&](spurs_wkl_state_op& op)
+	const bool changed = vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_wkl_state_op>(spurs.ptr(&CellSpurs::wklState1)), [&](spurs_wkl_state_op& op)
 			{
 				auto& state = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklState1[wid] : op.wklState2[wid % 16];
+				auto& status = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklStatus1[wid] : op.wklStatus2[wid % 16];
+				auto& event = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklEvent1[wid] : op.wklEvent2[wid % 16];
+
+				stateBefore = state;
+				statusBefore = statusAfter = status;
+				eventBefore = eventAfter = event;
+				inspected = true;
 
 				if (state != SPURS_WKL_STATE_SHUTTING_DOWN)
 				{
 					return false;
 				}
 
-				auto& status = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklStatus1[wid] : op.wklStatus2[wid % 16];
-				statusBefore = status;
 				status = (status & keepSpus) | activeSpus;
 				statusAfter = status;
 
@@ -3249,7 +3257,6 @@ static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpu
 				if (!statusAfter)
 				{
 					state = SPURS_WKL_STATE_REMOVABLE;
-					auto& event = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklEvent1[wid] : op.wklEvent2[wid % 16];
 					sendEvent = event & 0x12 && !(event & 1);
 					event |= 1;
 					eventAfter = event;
@@ -3257,8 +3264,51 @@ static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpu
 				}
 
 				return true;
-			}))
+			});
+
+	if (!changed)
 	{
+		if (log_no_change && inspected)
+		{
+			const u32 tasksetAddr = static_cast<u32>(+spurs->wklInfo(wid).arg);
+			u32 tasksetWid = umax;
+			u32 taskRunning = 0;
+			u32 taskReady = 0;
+			u32 taskPending = 0;
+			u32 taskWaiting = 0;
+			u32 taskEnabled = 0;
+			u32 taskSignalled = 0;
+			const bool tasksetReadable = tasksetAddr && vm::check_addr(tasksetAddr, 0, 0x80);
+
+			if (tasksetReadable)
+			{
+				tasksetWid = +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, wid));
+
+				for (u32 i = 0; i < 4; i++)
+				{
+					taskRunning |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, running) + i * sizeof(u32));
+					taskReady |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, ready) + i * sizeof(u32));
+					taskPending |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, pending_ready) + i * sizeof(u32));
+					taskWaiting |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, waiting) + i * sizeof(u32));
+					taskEnabled |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, enabled) + i * sizeof(u32));
+					taskSignalled |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, signalled) + i * sizeof(u32));
+				}
+			}
+
+			cellSpurs.error("Thor TWC SHUTDOWN RECONCILE NO CHANGE: wid=%u state=%u status=0x%02x event=0x%02x "
+				"known=0x%02x active=0x%02x update=0x%02x message=0x%02x ready=%u contention=%u "
+				"taskset=0x%x readable=%u taskWid=%u taskAny{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} "
+				"current=[%x,%x,%x,%x,%x,%x,%x,%x] pc=[%x,%x,%x,%x,%x,%x,%x,%x]",
+				wid, stateBefore, statusBefore, eventBefore, knownSpus, activeSpus,
+				+spurs->sysSrvMsgUpdateWorkload.load(), +spurs->sysSrvMessage.load(),
+				+spurs->readyCount(wid).load(), +spurs->wklCurrentContention[wid],
+				tasksetAddr, tasksetReadable ? 1u : 0u, tasksetWid,
+				taskRunning, taskReady, taskPending, taskWaiting, taskEnabled, taskSignalled,
+				currentIds[0], currentIds[1], currentIds[2], currentIds[3],
+				currentIds[4], currentIds[5], currentIds[6], currentIds[7],
+				pcs[0], pcs[1], pcs[2], pcs[3], pcs[4], pcs[5], pcs[6], pcs[7]);
+		}
+
 		return CELL_OK;
 	}
 
@@ -3359,12 +3409,14 @@ s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, 
 
 				ensure(wait_result + 0u == CELL_ETIMEDOUT);
 
-				if (!retries++)
+				const bool first_retry = retries++ == 0;
+
+				if (first_retry)
 				{
 					cellSpurs.error("Thor TWC SHUTDOWN WAIT RETRY: wid=%u timeout_us=%llu", wid, retry_us);
 				}
 
-				if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid))
+				if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid, first_retry))
 				{
 					return rc;
 				}

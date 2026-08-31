@@ -10201,3 +10201,53 @@ rendering progress.
   reconciliation row, workload removal, and later FMOD or PhysX progress. If
   the route reaches PhysX, also require `pc=0x06920 queue_rc=0x00000000` and a
   real PPU `ready after` row before it gets HLE progress credit.
+
+## 249. The timed retry runs but cannot change workload 7
+
+- Status: device-confirmed shutdown blocker, diagnostic successor host-pending,
+  not-PhysX, not-gameplay.
+- Identity: Capture `20260830-213516-thor-input-custom` used exact stripped
+  core SHA-256
+  `2E1725D761D12C568AF85B5A87FC61D944E6E96C92E03ECDBB92AF2071263CDF`.
+  The source-repair push matched this hash before launch.
+- Retry result: The rendering thread shut down taskset `0x1f73f00` and entered
+  `cellSpursJoinTaskset` at emulator time 3:41.159. The new 20-millisecond
+  timeout wrote `Thor TWC SHUTDOWN WAIT RETRY` at 3:41.179. No full shutdown
+  reconciliation, completion event, workload removal, or taskset reuse
+  followed. The rendering thread stayed at HLE address `0x02003ee4`.
+- Corrected boundary: FMOD taskset `0x11574a80` was created at 3:40.801. Its
+  SPU task started at 3:40.901, and its event interpreter ran at 3:41.033.
+  These events are before workload-7 join. FMOD presence does not prove that
+  the later join returned. The prior inference that the retry passed join was
+  incorrect.
+- Route result: The after-START controller reported 13 completed slices. Its
+  final bounded slice requested a pause after 2.016 seconds, but the control
+  API became unreachable. The slice returned after 55.719 seconds without a
+  held emulator state. The route rejected itself after 208.781 host seconds.
+  It did not reach the PPU PhysX handoff marker or run the requested 30-second
+  PhysX slices. The targeted fatal scan had zero matches.
+- Thermal and fan result: The independent watchdog recorded 291 valid samples.
+  Fixed silicon ranged from 34.5 to 68.2 C, and junction temperature ranged
+  from 36.1 to 82.3 C. The watchdog held the process at the 68 C early limit
+  and completed after the package stopped. Every sample reported Smart fan
+  mode `4`. Direct cleanup found no PID or `top` row and confirmed Smart fan
+  mode `4`. The saved Custom slider value is not an active fan speed.
+- Decision: The timed loop works, but the fail-closed helper sees no state that
+  it can change. Do not clear an active or unknown SPU status bit. Add one
+  bounded first-retry snapshot with the workload state, status, event, SPU
+  current IDs and PCs, and taskset running, ready, pending, waiting, enabled,
+  and signalled masks. This successor does not change shutdown behavior.
+- Host successor: The shutdown-reconciliation, shutdown-completion, taskset-
+  join, and Transformers route contracts pass. `git diff --check`, the Android
+  ARM64 RelWithDebInfo build, and the Thortest symbol-strip task pass. The
+  stripped core is 63,254,552 bytes with SHA-256
+  `9877BAB6392043E53110D5E0E1486866A159D45BCAD94843EB546B3F49CDA8B9`.
+  It contains the new no-change marker. Its export surface passes with 40
+  defined dynamic symbols, 596 explicit relocations, 392 jump slots, and
+  44,453 encoded relocation bytes. The successor has no device result.
+- Acceptance: The next independently cool route must contain the new
+  `Thor TWC SHUTDOWN RECONCILE NO CHANGE` row if the retry cannot repair the
+  state. If the taskset has no running task and only a stale SPU owner remains,
+  use that exact evidence for a narrow idle-owner repair. If a task is active,
+  implement or invoke workload preemption before removal. Do not give HLE,
+  PhysX, gameplay, FPS, speed, or stability credit yet.
