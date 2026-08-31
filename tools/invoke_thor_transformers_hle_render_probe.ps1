@@ -790,6 +790,25 @@ try {
                 -TimeoutSeconds 60
         }
         Write-ThorStandardSnapshot -Adb $adb -CaptureDir $captureDir -Package "net.rpcsx.easy" -Prefix "slice-loop"
+
+        if ($SlicePressStartAfterFirstLoop) {
+            $postStartLogPath = Join-Path $captureDir "slice-loop-RPCSX.log"
+            if (-not (Test-Path -LiteralPath $postStartLogPath -PathType Leaf)) {
+                throw "The after-START proof did not capture its RPCSX log."
+            }
+
+            $postStartLog = Get-Content -LiteralPath $postStartLogPath -Raw
+            $postStartFailureMarkers = @(
+                "Thor Transformers PhysX queue startup timeout:",
+                "8041090A",
+                "Thread terminated due to fatal error:"
+            )
+            foreach ($failureMarker in $postStartFailureMarkers) {
+                if ($postStartLog.Contains($failureMarker)) {
+                    throw "The after-START proof captured a proven failure marker: $failureMarker"
+                }
+            }
+        }
     }
 } catch {
     $failure = $_
