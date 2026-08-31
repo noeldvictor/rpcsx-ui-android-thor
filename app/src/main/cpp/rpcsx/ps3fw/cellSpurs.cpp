@@ -167,8 +167,11 @@ static bool thor_transformers_fmod_event_interp() noexcept
 // 45 microseconds later. It treats BUSY as fatal. A guarded Thor run showed
 // that the exact interpreted initialization and queue push can finish after
 // the title's normal deadline. Keep the wait active only while that exact
-// producer is running, with an absolute safety limit. This switch does not
-// fabricate queue data and it does not change later nonblocking pops.
+// producer is running, with a bounded count of completed poll waits. Do not
+// use a second wall-clock limit here. A process-held thermal pause advances
+// the host clock while neither side can run, and can make the consumer reject
+// the real result immediately after resume. This switch does not fabricate
+// queue data and it does not change later nonblocking pops.
 //
 //   debug.rpcsx.thor.transformers_physx_queue_wait = 1
 static bool thor_transformers_physx_queue_wait() noexcept
@@ -5956,8 +5959,9 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 			{
 				static constexpr u32 c_poll_us = 100;
 				static constexpr u64 c_max_wait_us = 6'000'000;
-				static constexpr u64 c_producer_wait_limit_us = 60'000'000;
+				static constexpr u32 c_producer_wait_poll_limit = 600'000;
 				const u64 started = get_system_time();
+				u32 producer_wait_polls = 0;
 
 				while (true)
 				{
@@ -5965,7 +5969,8 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					const bool producer_active =
 						thor::transformers_physx_start_interp_active();
 					if (elapsed >= c_max_wait_us &&
-						(!producer_active || elapsed >= c_producer_wait_limit_us))
+						(!producer_active ||
+							producer_wait_polls >= c_producer_wait_poll_limit))
 					{
 						break;
 					}
@@ -5977,12 +5982,13 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					}
 
 					thread_ctrl::wait_for(c_poll_us, false);
+					producer_wait_polls += elapsed >= c_max_wait_us ? 1u : 0u;
 
 					if (queue->head.load() != queue->tail.load())
 					{
-						cellSpurs.notice("Thor Transformers PhysX queue startup wait: queue=0x%x elf=0x%x ready after %llu us producer=%u",
+						cellSpurs.notice("Thor Transformers PhysX queue startup ready: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
 							queue.addr(), first_task_elf, get_system_time() - started,
-							producer_active ? 1u : 0u);
+							producer_active ? 1u : 0u, producer_wait_polls);
 						break;
 					}
 				}
@@ -5992,9 +5998,10 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 					continue;
 				}
 
-				cellSpurs.warning("Thor Transformers PhysX queue startup wait: queue=0x%x elf=0x%x timed out after %llu us producer=%u",
+				cellSpurs.warning("Thor Transformers PhysX queue startup timeout: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
 					queue.addr(), first_task_elf, get_system_time() - started,
-					thor::transformers_physx_start_interp_active() ? 1u : 0u);
+					thor::transformers_physx_start_interp_active() ? 1u : 0u,
+					producer_wait_polls);
 			}
 
 			return CELL_SPURS_TASK_ERROR_BUSY;

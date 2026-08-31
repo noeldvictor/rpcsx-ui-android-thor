@@ -103,7 +103,7 @@ param(
     [int]$SliceAfterHandoffMaxSlices = 32,
     [ValidateRange(30, 600)]
     [double]$SliceAfterHandoffMaxHostSeconds = 240,
-    [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:",
+    [string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup ready:",
     [ValidateRange(0, 64)]
     [int]$SliceAfterStartPostMarkerSlices = 0
 )
@@ -168,7 +168,7 @@ $targetsPhysxQueueBoundary = (
     $PhysxQueueWait -eq "on" -and
     $PhysxStartInterp -eq "on" -and
     $SliceAfterStartHandoffMatch -match 'PPU PhysX thread' -and
-    $SliceAfterStartStopMatch -eq "Thor Transformers PhysX queue startup wait:"
+    $SliceAfterStartStopMatch -eq "Thor Transformers PhysX queue startup ready:"
 )
 if ($targetsPhysxQueueBoundary) {
     $physxHandoffWindowSeconds =
@@ -721,6 +721,14 @@ try {
                 $afterStartArguments.stopMatch = "__THOR_TRANSFORMERS_AFTER_START_UNREACHED__"
                 $afterStartArguments.armMatch = $effectiveAfterStartStopMatch
                 $afterStartArguments.postArmSlices = $SliceAfterStartPostMarkerSlices
+            } elseif ($targetsPhysxQueueBoundary -and
+                    $effectiveAfterStartStopMatch -ceq $SliceAfterStartStopMatch) {
+                $afterStartArguments.Remove("stopMatch")
+                $afterStartArguments.stopMatches = @(
+                    $effectiveAfterStartStopMatch,
+                    "Thor Transformers PhysX queue startup timeout:",
+                    "SPURS PPU queue pop wasn't successful: 8041090A"
+                )
             } else {
                 $afterStartArguments.stopMatch = $effectiveAfterStartStopMatch
             }
@@ -737,6 +745,11 @@ try {
                     $sliceResult.thermalStop -or $sliceResult.fatal -or
                     -not $sliceResult.markerReached -or -not $sliceResult.paused) {
                 throw "The after-START slice loop did not reach its requested paused marker."
+            }
+            if ($targetsPhysxQueueBoundary -and
+                    $effectiveAfterStartStopMatch -ceq $SliceAfterStartStopMatch -and
+                    [string]$sliceResult.matchedStopMatch -cne $SliceAfterStartStopMatch) {
+                throw "The PhysX queue startup reached a proven failure marker."
             }
         } else {
             $controllerTimeout = [int][Math]::Ceiling($MaxSliceHostSeconds + 150)

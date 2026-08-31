@@ -169,6 +169,7 @@ $requiredRenderProbeFragments = @(
     '[string]$SliceAfterStartDiagnosticStopMatch = ''stage=POST-FETCH''',
     '[double]$SliceAfterHandoffSeconds = 30.0',
     '[ValidateRange(0.0, 300.0)]',
+    '[string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup ready:"',
     '$physxHandoffWindowMinimumSeconds = 90.0',
     '$effectiveAfterHandoffSliceSeconds * $SliceAfterHandoffMaxSlices',
     'The PhysX handoff route needs at least $physxHandoffWindowMinimumSeconds active seconds.',
@@ -180,6 +181,9 @@ $requiredRenderProbeFragments = @(
     '$afterStartArguments.maxSlices = 1',
     '$effectiveAfterStartStopMatch = $SliceAfterStartDiagnosticStopMatch',
     '$effectiveAfterStartStopMatch = $SliceAfterStartStopMatch',
+    '"Thor Transformers PhysX queue startup timeout:"',
+    '"SPURS PPU queue pop wasn''t successful: 8041090A"',
+    'throw "The PhysX queue startup reached a proven failure marker."',
     'slice-loop-after-start-handoff.json',
     '$afterStartArguments.seconds = $effectiveAfterHandoffSliceSeconds',
     '$afterStartArguments.maxDurationS = $effectiveAfterHandoffSliceSeconds',
@@ -227,7 +231,7 @@ $requiredRenderProbeFragments = @(
     '[switch]$SlicePressStartAfterFirstLoop',
     '[int]$SliceAfterStartMaxSlices = 32',
     '[double]$SliceAfterStartMaxHostSeconds = 240',
-    '[string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup wait:"',
+    '[string]$SliceAfterStartStopMatch = "Thor Transformers PhysX queue startup ready:"',
     '[int]$SliceAfterStartPostMarkerSlices = 0',
     'if ($Mode -eq "HLE" -and $FmodEventWaitTrace -eq "on" -and',
     '[string]::IsNullOrWhiteSpace($SliceArmMatch) -and',
@@ -739,12 +743,15 @@ $requiredPhysxQueueWaitFragments = @(
     'static_cast<u32>(ppu.lr) == 0x00a94678u',
     'first_task_elf == 0x018c1000u',
     'static constexpr u64 c_max_wait_us = 6''000''000;',
-    'static constexpr u64 c_producer_wait_limit_us = 60''000''000;',
+    'static constexpr u32 c_producer_wait_poll_limit = 600''000;',
+    'u32 producer_wait_polls = 0;',
     'thor::transformers_physx_start_interp_active();',
     'elapsed >= c_max_wait_us',
-    'elapsed >= c_producer_wait_limit_us',
+    'producer_wait_polls >= c_producer_wait_poll_limit',
+    'producer_wait_polls += elapsed >= c_max_wait_us ? 1u : 0u;',
     'thread_ctrl::wait_for(c_poll_us, false);',
-    'Thor Transformers PhysX queue startup wait:'
+    'Thor Transformers PhysX queue startup ready:',
+    'Thor Transformers PhysX queue startup timeout:'
 )
 
 foreach ($fragment in $requiredPhysxQueueWaitFragments) {
