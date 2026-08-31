@@ -11034,3 +11034,71 @@ rendering progress.
   ready`, no timeout, no `0x8041090A`, no fatal error, and progress beyond
   PhysX startup. Require correct gameplay before an HLE claim. Require a
   matched sustained gameplay result before a 30 FPS claim.
+
+## 265. The first two PhysX reply queues became ready
+
+- Status: the PPU lock repair passed on the device, but a later reply queue
+  returned `0x8041090A`. This is not HLE, gameplay, or a comparable FPS result.
+- Cold gate: No-boot capture
+  `20260831-083422-thor-input-strict-cool-gate` passed at 30.9 C fixed silicon.
+  Battery temperature was 21.0 C, and skin temperature was 30.0 C. The gate
+  force-stopped RPCSX and did not launch it.
+- Artifact identity: Push capture
+  `20260831-083509-transformers-physx-ppu-lock-repair-dev-core-push` installed
+  the 63,254,056-byte repair core without a launch. The local, staged, and
+  app-internal SHA-256 values were
+  `1326F83D79578B62CDDA530B05BCD2997558CACB3564128E38416DD1BE388BF9`.
+  Installed APK SHA-256 was
+  `CB840615A6BC1A4B58AC379CE6745091251F53B95FCD9C745965269A0BFC6004`.
+  RPCSX had no PID, and fan mode was Smart `4`.
+- Route identity: Capture `20260831-083747-thor-input-custom` used those exact
+  artifacts. The legal Unreal and PhysX frame passed on slice 6. The PPU PhysX
+  thread was created at emulator time 4:35.657729.
+- Lock-repair proof: The PPU called `cellSpursQueuePopBody` on queue
+  `0x01eccb80` at 4:58.649893. SPU 4 entered the exact interpreter at PC
+  `0x06800` at 4:58.674705. It left 212 microseconds later at PC `0x06920` with
+  `queue_rc=0x00000000`. The PPU recorded `startup ready` after 25,025
+  microseconds. This proves that commit `8678fb220` removed the measured
+  `PUTLLC` lock cycle.
+- Downstream progress: Reply queue `0x01ed2100` also became ready after
+  1,641,212 microseconds. The PPU then created a task from ELF `0x0181ec80` and
+  called the nonblocking pop on queue `0x01ed0480`. That pop returned BUSY, and
+  the title printed `SPURS PPU queue pop wasn't successful: 8041090A`.
+- Failure order: The first RSX FIFO desynchronization row followed 25.367
+  milliseconds after the queue error. The RSX thread reported `Dead FIFO
+  commands queue state` 66.645 milliseconds after the queue error. The queue
+  error therefore remains the first proven failure. Do not change RSX FIFO
+  accuracy from this route alone.
+- Root cause: The old helper used one global waited-queue address. Each matching
+  queue initialization reset that address. Queue `0x01ed2100` claimed the one
+  wait after the last initialization, so the later first pop on initialized
+  queue `0x01ed0480` did not wait for its cold producer.
+- Host repair: Commit `2bb0a2b3c` keeps a title-gated set of queue addresses.
+  Each matching queue initialization rearms its own address. The first empty
+  pop on that queue can use the existing bounded wait. Later empty pops on the
+  same queue keep the normal BUSY result. The repair does not fabricate queue
+  data. Commit `a8605c924` also makes the proof reject a captured startup
+  timeout, `0x8041090A`, or fatal thread termination after a ready marker.
+- Verification: The focused Transformers HLE route, shutdown reconciliation,
+  shutdown completion, and taskset-join contracts pass. `git diff --check`,
+  the ARM64 RelWithDebInfo build, the Thortest strip task, three binary marker
+  checks, and the export-surface check pass. The host-only stripped successor
+  core is 63,254,232 bytes with SHA-256
+  `8756DE497FDFAAF65A3D6567E00719F876F5CD3FD4BAB4EB851990312AF55CAF`.
+  Its export surface has 40 defined dynamic symbols, 596 explicit relocations,
+  392 jump slots, and 44,453 encoded relocation bytes. It is not installed.
+- Visual result: `slice-loop-boundary.png` shows only the Decepticon loading
+  screen. The overlay reads 31.22 FPS at that instant. This is not gameplay and
+  is not a sustained 30 FPS result.
+- Thermal and fan result: The controller maximum was 67.8 C. The independent
+  watchdog recorded 245 valid samples, a 68.2 C sampled maximum, no hold, and
+  no hard stop. Every sample reported Smart fan mode `4`. Cleanup found no PID
+  or RPCSX `top` row at 38.5 C fixed silicon. All 69 debug properties were
+  cleared at 38.1 C.
+- Next: Do not launch again in this cool round. In a later independently cool
+  round, push exact core `8756DE49...55CAF` without a launch and verify its
+  app-internal hash. Use post-marker slices so the proof continues after the
+  first ready queue. Require every cold PhysX reply queue to become ready, no
+  timeout, no `0x8041090A`, no fatal error, and visible progress beyond the
+  loading screen. Require correct gameplay before an HLE claim. Require a
+  matched sustained gameplay result before a 30 FPS claim.
