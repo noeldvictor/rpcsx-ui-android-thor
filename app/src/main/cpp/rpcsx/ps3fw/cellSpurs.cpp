@@ -5963,6 +5963,12 @@ s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::pt
 				const u64 started = get_system_time();
 				u32 producer_wait_polls = 0;
 
+				// Release the PPU memory lock before this thread waits for the SPU.
+				// The SPU uses an accurate PUTLLC on this queue. That store needs a
+				// VM writer lock. If this PPU keeps its memory lock, the PPU waits for
+				// the SPU and the SPU waits for the PPU.
+				lv2_obj::prepare_for_sleep(ppu);
+
 				while (true)
 				{
 					const u64 elapsed = get_system_time() - started;

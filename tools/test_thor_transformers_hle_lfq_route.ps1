@@ -765,6 +765,7 @@ $requiredPhysxQueueWaitFragments = @(
     'static constexpr u64 c_max_wait_us = 6''000''000;',
     'static constexpr u32 c_producer_wait_poll_limit = 600''000;',
     'u32 producer_wait_polls = 0;',
+	'lv2_obj::prepare_for_sleep(ppu);',
     'thor::transformers_physx_start_interp_active();',
     'elapsed >= c_max_wait_us',
     'producer_wait_polls >= c_producer_wait_poll_limit',
@@ -788,6 +789,13 @@ $physxTimeoutDecision = $cellSpurs.IndexOf(
 if ($physxWaitStart -lt 0 -or $physxReadyCheck -lt $physxWaitStart -or
         $physxTimeoutDecision -le $physxReadyCheck) {
     throw 'The PhysX consumer can reject a published result before it records readiness.'
+}
+
+$physxUnlock = $cellSpurs.IndexOf(
+    'lv2_obj::prepare_for_sleep(ppu);', $physxWaitStart)
+$physxPollLoop = $cellSpurs.IndexOf('while (true)', $physxWaitStart)
+if ($physxUnlock -lt $physxWaitStart -or $physxUnlock -ge $physxPollLoop) {
+    throw 'The PhysX startup wait must release the PPU memory lock before it polls the SPU.'
 }
 
 $requiredPhysxStartInterpFragments = @(
