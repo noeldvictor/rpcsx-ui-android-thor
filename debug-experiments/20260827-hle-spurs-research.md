@@ -9962,3 +9962,66 @@ rendering progress.
   push core
   `DBB76F0EC7BB375A4451420EE968BA1FBA13D8AEBCFCDC6E67652D3FC4EF35F5`
   without a launch and run the guarded source-repair proof.
+
+## 241. The guarded source-repair route stops in taskset join
+
+- Status: device-confirmed HLE blocker, not-gameplay
+- Identity: Capture `20260830-194059-thor-input-custom` used exact stripped
+  core SHA-256
+  `DBB76F0EC7BB375A4451420EE968BA1FBA13D8AEBCFCDC6E67652D3FC4EF35F5`.
+  The legal screen and the direct START input both passed.
+- Route result: The controller completed 27 two-second slices after START.
+  This is 54 seconds of active guest time over 362.969 seconds of host time.
+  The run did not reach the FMOD or PhysX markers. It had no targeted fatal
+  error. The source owner-signal repair did not get a chance to run.
+- Exact wait: The rendering thread called `cellSpursShutdownTaskset` and then
+  `cellSpursJoinTaskset` for taskset `0x1f73f00`, which is workload 7. Join did
+  not return. The log has no shutdown-completion mask. The main thread then
+  stayed in a guest fence wait with counter 1 and target 0.
+- Comparison: Capture `20260830-051545-thor-input-custom` completed the same
+  taskset shutdown. Its shutdown-completion mask arrived about 0.030 seconds
+  after join started. This confirms that the missing completion is an
+  intermittent boundary in the HLE route.
+- Thermal and fan result: Every guest slice started from 44.5 to 48.2 C fixed
+  silicon. The controller peak was 63.0 C. Cleanup stopped RPCSX, found no
+  package PID, and left Smart fan mode `4` active. Do not report the saved
+  Custom slider as a measured fan speed.
+- Decision: Do not give HLE, gameplay, PhysX, FPS, speed, or stability credit.
+  Do not run a second device route in this cool round. Diagnose the missing
+  workload-7 shutdown acknowledgement on the host.
+
+## 242. Reconcile the stale workload-7 acknowledgement before join
+
+- Status: host-pass, device-pending
+- Source result: A workload status bit records that one SPU has the workload
+  in its local runnable snapshot. Shutdown becomes complete only after every
+  SPU clears its bit. The HLE system service can clear a bit only after a real
+  policy module polls or exits. The stopped run kept one SPU in the GCM policy
+  module at PC `0x13dcc`. This gives a source path for an unrelated workload-7
+  status bit to remain set. It does not prove which bit was stale in that run.
+- Change: Before the workload-shutdown semaphore is armed, the HLE
+  Transformers route reads each matching SPU current workload ID twice. It
+  keeps a status bit for workload-7 owners, unknown SPUs, and SPUs whose ID
+  changes during the read. It clears only stable non-owner bits under the
+  existing guest reservation. It restores a missing bit for a known active
+  owner. If no bit remains, it makes the workload removable and uses the
+  normal completion event path.
+- Scope: The repair requires the HLE SPURS kernel, title `BLUS30357`, and
+  workload 7. LLE SPURS, other titles, other workloads, and unknown SPUs keep
+  the existing path. The repair logs the before and after masks, the known and
+  active masks, all current workload IDs, and all sampled SPU PCs.
+- Build correction: A signed queue-address literal from an earlier diagnostic
+  failed when the complete source file rebuilt. The literal now has the same
+  unsigned 64-bit value. This changes no queue address or queue behavior.
+- Verification: The new reconciliation contract, the existing shutdown
+  completion contract, the existing taskset join contract, and
+  `git diff --check` pass. The Android ARM64 RelWithDebInfo build and the
+  stripped-symbol task pass. The stripped core is 63,252,552 bytes with
+  SHA-256
+  `4CE3E002F67CD59CB8CCAF651C1F02062CA36FE161E77F98340C6276E5A591F8`.
+  Its export surface passes with 40 defined dynamic symbols, 596 explicit
+  relocations, 392 jump slots, and 44,445 encoded relocation bytes.
+- Device result: Not run. No ADB command contacted the Thor in this host work.
+- Next: In a later cool round, push the exact stripped core without a launch.
+  Run one guarded Transformers route. Require the shutdown-reconcile row,
+  taskset join return, workload removal, and later FMOD or PhysX progress.

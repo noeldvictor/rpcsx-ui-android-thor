@@ -3160,6 +3160,123 @@ s32 cellSpursShutdownWorkload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid
 	return CELL_OK;
 }
 
+// Reconcile one stale HLE shutdown acknowledgement in Transformers.
+//
+// A SPURS workload status bit means that an SPU has the workload in its local
+// runnable snapshot. The real SPURS system service clears each bit after a
+// shutdown request. An HLE SPU that runs a real policy module cannot enter the
+// host system service until that module polls or exits. A long GCM policy-module
+// wait can therefore keep an unrelated taskset status bit set forever and make
+// cellSpursJoinTaskset wait on a completion that cannot occur.
+//
+// Run this only after shutdown made the target workload non-runnable. Keep a
+// bit for an SPU that is currently in the target workload. Also keep a bit when
+// the thread is missing, the SPURS context does not match, or the current ID
+// changes while it is read. This makes the repair fail closed. Workload 7 is
+// the rendering taskset that has this failure in BLUS30357.
+static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
+{
+	if (!get_thor_hle_spurs_kernel_enabled() || Emu.GetTitleID() != "BLUS30357" || wid != 7)
+	{
+		return CELL_OK;
+	}
+
+	std::array<u32, 8> currentIds{};
+	std::array<u32, 8> pcs{};
+	currentIds.fill(umax);
+	pcs.fill(umax);
+
+	u8 knownSpus = 0;
+	u8 activeSpus = 0;
+	const u32 nSpus = std::min<u32>(spurs->nSpus, 8);
+
+	for (u32 i = 0; i < nSpus; i++)
+	{
+		const auto thread = idm::get<named_thread<spu_thread>>(spurs->spus[i], [](named_thread<spu_thread>&) {});
+
+		if (!thread || thread->spurs_addr != spurs.addr())
+		{
+			continue;
+		}
+
+		const auto ctxt = thread->_ptr<SpursKernelContext>(0x100);
+		const u32 current1 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
+		const u32 current2 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
+		const u32 spuNum = +atomic_storage<be_t<u32>>::load(ctxt->spuNum);
+
+		if (current1 != current2 || spuNum >= 8 || ctxt->spurs.addr() != spurs.addr())
+		{
+			continue;
+		}
+
+		const u8 bit = static_cast<u8>(1u << spuNum);
+		knownSpus |= bit;
+		currentIds[spuNum] = current1;
+		pcs[spuNum] = thread->pc;
+
+		if (current1 == wid)
+		{
+			activeSpus |= bit;
+		}
+	}
+
+	u8 statusBefore = 0;
+	u8 statusAfter = 0;
+	u8 eventAfter = 0;
+	bool completed = false;
+	bool sendEvent = false;
+	const u8 keepSpus = activeSpus | static_cast<u8>(~knownSpus);
+
+	if (!vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_wkl_state_op>(spurs.ptr(&CellSpurs::wklState1)), [&](spurs_wkl_state_op& op)
+			{
+				auto& state = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklState1[wid] : op.wklState2[wid % 16];
+
+				if (state != SPURS_WKL_STATE_SHUTTING_DOWN)
+				{
+					return false;
+				}
+
+				auto& status = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklStatus1[wid] : op.wklStatus2[wid % 16];
+				statusBefore = status;
+				status = (status & keepSpus) | activeSpus;
+				statusAfter = status;
+
+				if (statusAfter == statusBefore)
+				{
+					return false;
+				}
+
+				if (!statusAfter)
+				{
+					state = SPURS_WKL_STATE_REMOVABLE;
+					auto& event = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklEvent1[wid] : op.wklEvent2[wid % 16];
+					sendEvent = event & 0x12 && !(event & 1);
+					event |= 1;
+					eventAfter = event;
+					completed = true;
+				}
+
+				return true;
+			}))
+	{
+		return CELL_OK;
+	}
+
+	cellSpurs.error("Thor TWC SHUTDOWN RECONCILE: wid=%u status=0x%02x->0x%02x known=0x%02x active=0x%02x "
+		"complete=%u event=0x%02x current=[%x,%x,%x,%x,%x,%x,%x,%x] pc=[%x,%x,%x,%x,%x,%x,%x,%x]",
+		wid, statusBefore, statusAfter, knownSpus, activeSpus, completed ? 1u : 0u, eventAfter,
+		currentIds[0], currentIds[1], currentIds[2], currentIds[3],
+		currentIds[4], currentIds[5], currentIds[6], currentIds[7],
+		pcs[0], pcs[1], pcs[2], pcs[3], pcs[4], pcs[5], pcs[6], pcs[7]);
+
+	if (completed && sendEvent && sys_event_port_send(spurs->eventPort, 0, 0, (1u << 31) >> wid))
+	{
+		return CELL_SPURS_CORE_ERROR_STAT;
+	}
+
+	return CELL_OK;
+}
+
 /// Wait for workload shutdown
 s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 {
@@ -3179,6 +3296,11 @@ s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, 
 
 	if (spurs->exception)
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
+
+	if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid))
+	{
+		return rc;
+	}
 
 	auto& info = spurs->wklSyncInfo(wid);
 
@@ -5496,7 +5618,7 @@ s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::c
 		static std::atomic<u32> s_pay{0};
 		static std::atomic<u32> s_render_pay{0};
 		const bool render_queue = Emu.GetTitleID() == "BLUS30357" &&
-			queue->taskset.addr() == 0x10364100 && depth == 256 && entry_size == 16;
+			queue->taskset.addr() == u64{0x10364100} && depth == 256 && entry_size == 16;
 		const u32 n = render_queue
 			? s_render_pay.fetch_add(1, std::memory_order_relaxed)
 			: s_pay.fetch_add(1, std::memory_order_relaxed);

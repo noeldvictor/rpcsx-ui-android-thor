@@ -769,7 +769,7 @@ $requiredQueuePublishFragments = @(
 )
 
 $requiredRenderQueueDiagnosticFragments = @(
-    'queue->taskset.addr() == 0x10364100 && depth == 256 && entry_size == 16',
+    'queue->taskset.addr() == u64{0x10364100} && depth == 256 && entry_size == 16',
     's_render_pay.fetch_add(1, std::memory_order_relaxed)',
     'Thor %sPAYLOAD #%u: queue=0x%x taskset=0x%x',
     'render_queue && n < 128'
