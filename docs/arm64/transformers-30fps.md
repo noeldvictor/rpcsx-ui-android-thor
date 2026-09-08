@@ -1637,3 +1637,49 @@ The property `spu_putllc16=0` engaged: the SPU object cache gained
 patterns, the setting ships for this title with the patterns refused; if it
 stays without them, the writer_lock skip itself is unsafe here and the ARMSX3
 route (a whitelisted 16-byte commit, `813774767`) is the one left.
+
+## Round Q: who frees the GCMX ring
+
+Capture `debug-captures/20260908-145834-transformers-diag-round`, core
+`7D621ADC` (commits c250a170d and 64b1f9e2c, the memory watch), one arm at 19.13
+FPS with `mem_watch_ea=01f94998`, `put_census=1`, `spurs_wkl_census=1`.
+
+The render thread's poll (`0x00fdcb88`) reads the word at `0x01f94998`, adds
+`0x4000` and waits until the sum is under `0x100000`: bytes in use of a 1 MiB ring
+of 16 KB segments. The allocator (`0x00fdcaa8`) adds to it with `lwarx`/`stwcx`,
+converts the segment to an io offset and writes a JUMP (`0x20000000 | offset`)
+at the current write pointer of a cellGcm context (begin, end, current,
+callback), then stamps `0x00043000` as the segment's first word. Every write that
+touched the word during the window, sampled (first 24 then every 256th):
+
+| writer | thread | pc | sampled hits |
+| --- | --- | --- | --- |
+| SPU `PUTLLC` on line `0x01f94980` | SPU job code | LS `0x13850` | 1,624 |
+| SPU `PUTLLC` | SPU job code | LS `0x13440` | 671 |
+| SPU `PUTLLC` | SPU job code | LS `0x8c0c` | 333 |
+| PPU `stwcx` | `RenderingThread` (0x100000b) | `0x00fdc9b4`, `0x00fdca38` and four more in the allocator | 968 |
+| PPU `stwcx` | `FlipPump` (0x1000007) | `0x00fdc9b4`, `0x00fdca38` | 11 |
+| PPU `stwcx` | `main_thread` | `0x00fdc9b4` | 2 |
+| SPU PUT, list PUT, RSX label, ZCULL report | | | 0 |
+
+About 3,600 sampled lines over three minutes is on the order of 900,000 atomics on
+that one line, some 250 a frame: 180 from the SPUs, 70 from the PPU allocator.
+**The SPUs free the ring.** GCMX job code on the SPUs consumes the 16 KB segments
+the render thread fills and subtracts them from the counter with `PUTLLC`; no
+label, report or plain DMA touches the word. The word sat at `0xfc400` (ring
+full) in ten of twenty monitor ticks. So the frame's chain is: render thread
+writes segments and stalls on a full ring; the SPU jobs drain them; the RSX thread
+parses what they produce. The render thread waits for the SPUs, not for the RSX,
+which is what rounds L, O and P said from three other directions.
+
+**One 128-byte line carries 250 atomics a frame from six threads, and every
+SPU-side one is a `PUTLLC` that, under Accurate SPU Reservations, takes the
+unique reservation lock and then `vm::writer_lock`, parking every PPU thread.**
+That is the SPU-side cost the accurate-off arms removed, and it is the target of
+ARMSX3 `813774767`: a `PUTLLC` that changes one aligned 16-byte chunk (a counter
+update always does) commits with a 16-byte compare-exchange and no writer_lock.
+Ported behind `debug.rpcsx.thor.spu_putllc16_nobarrier=1`, keeping Accurate SPU
+Reservations on; round R measures it against the accurate-off arm.
+
+The hook printed the SPU `id` field rather than its index, so which of the six
+SPUs ran the drain is not in this log; the stage 2 profile has the per-SPU split.
