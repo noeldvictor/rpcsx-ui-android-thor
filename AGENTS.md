@@ -513,11 +513,17 @@ It does not touch Thor.
 - Record a survey that finds nothing. Write the date and the empty result.
 - A port needs the same proof as any other change. See `Speed Claim Rules`.
 
-### Last survey: 2026-09-07, ARMSX3 eighth pass
+### Last survey: 2026-09-08, ARMSX3 ninth pass (head unchanged)
 
-ARMSX3 is at `6925a398e`, releases 0.9.5 to 0.9.7.3. Upstream RPCS3 is at
-`54014a7de`. The full account is
-[`docs/arm64/upstream-survey-2026-09-07.md`](docs/arm64/upstream-survey-2026-09-07.md).
+ARMSX3 is at `6925a398e`, releases 0.9.5 to 0.9.7.3; the 2026-09-08 fetch found
+nothing newer. Upstream RPCS3 is at `54014a7de`. The full account of the eighth
+pass is
+[`docs/arm64/upstream-survey-2026-09-07.md`](docs/arm64/upstream-survey-2026-09-07.md);
+the ninth pass is a `docs/fork-watch.md` entry. Ported on 2026-09-08, each behind
+a property: the ARMSX3 FIFO bundle (`ccbcbce36` 4 KB refill, `1c2f13fa5` inline
+hit path, `5636c9f3f` per-packet accuracy snapshot and GET publish lag,
+`8041edf5b` publish GET once). Their `busy_wait(200)` at the FIFO retry is about
+two 19.2 MHz ticks through upstream's ARM64 scale; this fork's is two hundred.
 
 - **Three ports, none measured yet.** ARMSX3 `2f0ce7786` stops the
   `mrs cntvct_el0` read that every PPU atomic, SPU DMA, MFC list and `PUTLLC`

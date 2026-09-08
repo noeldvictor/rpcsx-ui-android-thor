@@ -248,6 +248,21 @@ Nothing was ported from this survey. `#19230` is the one actionable item and it
 changes SPU verification behaviour, so it wants a device round of its own.
 
 
+### 2026-09-08 — ARMSX3 ninth pass: head unchanged
+
+Fetched `armsx3/master`: still `6925a398e` (0.9.7.3, 2026-09-07), one branch, no
+tag past 0.9.7.3. Nothing new to read. Re-read against the day's finding (the
+RSX FIFO fetch retries 400 times a frame at 10.4 us each, see
+`arm64/transformers-30fps.md`): ARMSX3 measured the same spin at 0.006 ms a
+frame because upstream's `busy_wait(cycles)` on ARM64 is
+`(cycles / 100) * arm_timer_scale` ticks, so their `busy_wait(200)` is about two
+ticks of the 19.2 MHz timer where this fork's is two hundred. The fork dropped
+the scale on 2026-08-05 after a lock convoy on contended reservations; the FIFO
+fetch retry is a single reader re-reading a line, not a convoy, and is measured
+on its own (`debug.rpcsx.thor.rsx_fifo_retry_ticks`). Ported today, before this
+pass: the FIFO bundle `ccbcbce36`, `1c2f13fa5`, `5636c9f3f`, `8041edf5b`, each
+behind a property, unmeasured at the time of writing.
+
 ### 2026-09-07 — ARMSX3 eighth pass and RPCS3 master
 
 Fetched `armsx3/master` to `6925a398e` (releases 0.9.5 to 0.9.7.3) and
