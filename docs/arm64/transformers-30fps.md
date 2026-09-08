@@ -1555,3 +1555,50 @@ scheduler still places other threads on cpu7, the pinned thread cannot leave, an
 it gets about half a core. 37 ms of RSX CPU per frame at half a core is 13 FPS,
 so when the RSX thread is starved the frame follows it exactly. Placement is
 closed on every variant tried: four pins, all worse than the scheduler.
+
+## Round O: the aliased lock removed, and Accurate SPU Reservations off
+
+Capture `debug-captures/20260908-134544-transformers-diag-round`, core
+`FB093FE0` (commits e35d22b64 and cc642e3f4: `rsx_fifo_ignore_res_lock`,
+render-pass end causes).
+
+| arm | fps | cores | p50 ms | retries/10 s | stalls | yields | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| control | 19.83 | 5.93 | 48.8 | 80,000 | 890 | 16,000 | |
+| `rsx_fifo_ignore_res_lock=1` | 20.50 | 6.03 | 47.0 | **13** | 40 | **0** | engaged; frames inside noise |
+| `spu_accurate_reservations=0` | 20.67 | **5.31** | 46.5 | 63,000 | 800 | 12,700 | above every control today |
+| both | **20.96** | 5.71 | 45.8 | | | | above every control today |
+| `rsx_fifo_ignore_res_lock=1`, repeat (hot start, 59 C) | 19.57 | 5.77 | 49.5 | 9 | 34 | 0 | |
+| control, second (hot start, 62 C) | 19.37 | 5.81 | | | | | |
+
+**Ignoring the aliased lock removes the whole RSX stall and moves no frames.**
+Retries 80,000 to 13, yields 16,000 to 0, mismatches 0 in six windows, so the
+double read alone keeps the FIFO correct here. The RSX thread got its 4.6 ms a
+frame back and the frame did not follow: 20.50 and 19.57 against 19.83 and 19.37.
+The RSX thread is not the binding stage at 20 FPS. The lever stays as a property;
+it is an RSX CPU and `sched_yield` reduction, a power lever, and goes into the
+profile only with a longer play session behind it.
+
+**Accurate SPU Reservations off is the day's largest mover, and it is not
+shippable as it stands.** 20.67 and 20.96 with 10 percent fewer cores, against six
+controls between 19.37 and 20.13. `docs/arm64/spurs-halt.md` records the price:
+with the setting off this title live-locks in one or two of eight cold boots,
+between 60 and 120 s into the intro. Two mechanisms change together under the
+setting. `do_putllc` skips the writer_lock for the SPURS instance lines, and the
+SPU analyser installs every PUTLLC16 inline pattern it finds with no whitelist
+(`SPUCommonRecompiler.cpp`, "because enabling it is a hack": in accurate mode it
+installs none). ARMSX3 traced its own "off breaks the title" to the second
+(`357eee994`). The next core separates them with `debug.rpcsx.thor.spu_putllc16`
+(0 never installs, 1 always, unset follows the setting; the SPU object cache is
+keyed on it), round P measures the pair, and the freeze repro
+(`tools/thor_spurs_freeze_repro.sh`, eight cold boots) decides which half the
+live-lock belongs to.
+
+**Where the SPU time goes is the frame.** The 2026-08-23 profile in the
+Transformers profile comment: `vm::range_lock_internal` 15.4 percent,
+`vm::writer_lock` 10.7, `vm::passive_lock` 3.1, 29 percent of all cycles in VM
+range locking, fed by all six SPUs. GCMX builds the draw commands on those SPUs
+and DMAs them into the ring; on ARM64 every 128-byte DMA chunk locks a
+reservation and takes a range lock, and every conditional store outside the
+SPURS lines takes the writer_lock that parks the PPU threads. That is the
+structural cost between 20 and 30 FPS, and it is SPU-side, not RSX-side.
