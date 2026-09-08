@@ -1769,3 +1769,12 @@ Both ship as defaults for BLUS30357 in commit f3be9b863 (`SPUThread.cpp`,
 pending the ten-minute combat soak in round S. The freeze repro was not run on
 this path: the owner stopped intro testing, and the path keeps the compare and
 the compare-exchange that the accurate-off fast path drops.
+
+### Round R, the profiler arm
+
+`spu_prof=1` on top of the barrier-free commit, after one discarded warm-up boot
+for the recompile: 20.06 FPS, 5.27 cores. The profiler's last chart in the log is
+from 0:00:20, the loading phase, where chunk `0x0f3c4` (the SPURS kernel's counted
+delay loop) holds 65 percent of all SPU samples; no chart landed inside combat,
+so the arm names nothing the stage 2 profile did not. A combat chart needs the
+profiler's print interval shortened or the arm's play window lengthened.
