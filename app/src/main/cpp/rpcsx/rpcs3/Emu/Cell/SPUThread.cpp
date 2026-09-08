@@ -6384,6 +6384,12 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 	// Store conditionally
 	const u32 addr = args.eal & -128;
 
+	// Thor MEMWATCH: a conditional store on the line that holds the watched word.
+	if (thor::mem_watch::armed()) [[unlikely]]
+	{
+		thor::mem_watch::on_range("SPU PUTLLC", addr, 128, +id, pc);
+	}
+
 	if ([&]()
 		{
 			perf_meter<"PUTLLC."_u64> perf2 = perf0;

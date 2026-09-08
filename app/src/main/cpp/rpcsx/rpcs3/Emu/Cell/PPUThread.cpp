@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_mem_watch.h"
 #include "rx/cpu/cell/ppu/Decoder.hpp"
 #include "util/JIT.h"
 #include "util/StrUtil.h"
@@ -5349,6 +5350,12 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 
 	auto& data = vm::_ref<atomic_be_t<u64>>(addr & -8);
 	auto& res = vm::reservation_acquire(addr);
+
+	// Thor MEMWATCH: a PPU conditional store on the watched word.
+	if (thor::mem_watch::armed()) [[unlikely]]
+	{
+		thor::mem_watch::on_range(sizeof(T) == 4 ? "PPU stwcx" : "PPU stdcx", addr, sizeof(T), ppu.id, ppu.cia);
+	}
 	const u64 rtime = ppu.rtime;
 
 	be_t<u64> old_data = 0;
