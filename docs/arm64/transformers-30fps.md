@@ -1126,3 +1126,34 @@ that expects the override must check which library `simpleperf` names.
   percent); Turnip's CPU side at 17.6 percent of the RSX thread; the GPU at 50
   to 62 percent busy at 550 of 680 MHz; the render thread's 1 MiB ring wait.
 - Not the cause: PhysX compute, SPU throughput, CPU throttling, vblank pacing.
+
+## Round E: 29.6 FPS that must not be counted, and what it points at
+
+Same shipped profile, scene gate lowered to 3.0 cores for one arm.
+
+| arm | fps | cores | CPU | GPU busy | screenshot |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.73 (19.50, 20.00, 19.70) | 5.40 | 68.5% | 55 to 61% | 2.25 MB, 17,209 colours, full scene |
+| `Disable ZCull Occlusion Queries: true` | **29.59** (29.47, 29.60, 29.70) | 3.90 | 48.0% | 40 to 42% | **1.22 MB, 14,029 colours: the interior, both robots and the floor are GONE** |
+| `resolution_scale=75` | 19.33 | 5.68 | 67.2% | 54 to 58% | VOID: the override lived only in the dev core, and this APK loaded its bundled core |
+| `resolution_scale=50` | 19.32 | 5.74 | 73.2% | 52 to 57% | VOID, same reason |
+
+**The 29.6 is the frame counter counting empty frames again**, the trap
+[`an fps number without a screenshot`] exists for. With queries disabled,
+`get_zcull_stats` reports 0 pixels for every query, the title reads that as
+"fully occluded" and culls, and the scene collapses to sky, lightning and a
+fragment of wall. It is not a result and it is not shipped.
+
+**What it does say is where a third of the frame goes.** Remove the occlusion
+query path and the title hits its cap on 3.9 cores. Either the geometry those
+queries normally cull is the cost, or the query round-trips are. The
+discriminating test is to report "visible" instead of "occluded"
+(`debug.rpcsx.thor.zcull_visible_value`, added after this round): the title then
+draws everything, with no query stalls. If the frame rate holds near the cap
+with the full picture, the stalls were the cost and the fix is a cheaper query
+path; if it falls back to 19, the geometry was.
+
+The resolution arms were void because the reinstalled thortest APK did not
+honour the dev-core override; only the `debug` build type set that flag. Fixed
+in `app/build.gradle.kts` the same night, and logcat now shows `Using Thor dev
+core override` on boot.
