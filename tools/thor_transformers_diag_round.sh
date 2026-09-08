@@ -119,16 +119,27 @@ frames=[l for l in lines if 'Frames:' in l]
 print(f"   Frames lines={len(frames)}; last 6:")
 for l in frames[-6:]:
     m=re.search(r'Frames:.*', l); print("     ", m.group(0)[:230] if m else l[-200:])
-# PPU census summary
+# PPU census summary, combat window only: from the first Frames line whose
+# interval median is 44 ms or more (the menu before the restore runs at 33 ms).
+def tsec(l):
+    mm=re.search(r' (\d+):(\d\d):(\d\d)\.(\d+) ',l)
+    return int(mm.group(1))*3600+int(mm.group(2))*60+int(mm.group(3))+int(mm.group(4)[:3])/1000 if mm else None
+start=None
+for l in lines:
+    if 'Frames:' in l and 'FT(ms) p50=' in l and float(re.search(r'p50=([0-9.]+)',l).group(1))>=44:
+        start=(tsec(l) or 10)-10; break
 cen=collections.defaultdict(lambda: {'n':0,'cia':collections.Counter(),'state':collections.Counter()})
 for l in lines:
-    m=re.search(r'Thor PPU PC: id=0x([0-9a-f]+) (\S+) cia=0x([0-9a-f]+) lr=0x([0-9a-f]+) sp=0x[0-9a-f]+ r3=0x[0-9a-f]+ state=0x([0-9a-f]+)', l)
+    if start is not None and (tsec(l) or 0) < start: continue
+    # Thread names carry spaces ("PPU[0x1000000] main_thread"), so match lazily
+    # up to " cia=". `func=` names the syscall or HLE function; older cores omit it.
+    m=re.search(r'Thor PPU PC: id=0x([0-9a-f]+) (.*?) cia=0x([0-9a-f]+) lr=0x([0-9a-f]+) sp=0x[0-9a-f]+ r3=0x[0-9a-f]+ state=0x([0-9a-f]+)(?: func=(\S+))?', l)
     if m:
-        k=f"{m.group(2)}[{m.group(1)}]"; d=cen[k]; d['n']+=1; d['cia'][(m.group(3),m.group(4))]+=1; d['state'][m.group(5)]+=1
+        k=m.group(2); d=cen[k]; d['n']+=1; d['cia'][(m.group(3),m.group(4),m.group(6) or '-')]+=1; d['state'][m.group(5)]+=1
 if cen:
     print(f"   PPU census: {sum(d['n'] for d in cen.values())} samples over {len(cen)} threads")
     for k,d in sorted(cen.items(), key=lambda kv:-kv[1]['n'])[:14]:
-        top=' '.join(f"cia={c}/lr={lr}:{n}" for (c,lr),n in d['cia'].most_common(3))
+        top=' '.join(f"cia={c}/lr={lr}/{f}:{n}" for (c,lr,f),n in d['cia'].most_common(3))
         st=' '.join(f"{s}:{n}" for s,n in d['state'].most_common(3))
         print(f"     {k:<34} n={d['n']:<4} {top}  state {st}")
 # SPU profiler chart for SPU0

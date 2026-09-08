@@ -710,9 +710,15 @@ void perf_monitor::operator()()
 
 							// A syscall PC can identify only a shared wrapper. Keep its caller,
 							// stack pointer and first argument in the same low-rate sample.
-							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x",
+							//
+							// `func` is the HLE function or syscall the thread is inside, or "-".
+							// The 2026-09-07 LLE combat census sampled every PPU thread inside a
+							// wait at nearly every tick, and a PC alone named only the eight
+							// wrappers the code dump below had room for. The name is free.
+							const char* const current_function = ppu.current_function;
+							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x func=%s",
 								id, ppu.get_name(), pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
-								ppu.gpr[3], static_cast<u32>(ppu.state.load()));
+								ppu.gpr[3], static_cast<u32>(ppu.state.load()), current_function ? current_function : "-");
 
 							// Capture a bounded stack for each new main-thread PC and LR pair.
 							// One startup stack cannot identify a later zero-frame phase. The
@@ -748,17 +754,20 @@ void perf_monitor::operator()()
 							//
 							// Dump the words around each sampled address once. The code can
 							// then be disassembled offline as PowerPC:BE:64.
-							static std::atomic<u32> s_dumped[8]{};
+							// 32 slots, not 8: on 2026-09-07 the boot-time wrappers of twenty
+							// background threads used every slot before the first combat sample,
+							// so the two PCs that mattered were never dumped.
+							static std::atomic<u32> s_dumped[32]{};
 							static std::atomic<u32> s_ndumped{0};
 
 							bool seen = false;
 
-							for (u32 i = 0, have = s_ndumped.load(); i < have && i < 8; i++)
+							for (u32 i = 0, have = s_ndumped.load(); i < have && i < 32; i++)
 							{
 								if (s_dumped[i].load() == pc) { seen = true; break; }
 							}
 
-							if (!seen && s_ndumped.load() < 8 && pc > 0x20000 && vm::check_addr(pc - 0x20, 0, 0x40))
+							if (!seen && s_ndumped.load() < 32 && pc > 0x20000 && vm::check_addr(pc - 0x20, 0, 0x40))
 							{
 								s_dumped[s_ndumped.load()].store(pc);
 								s_ndumped++;
