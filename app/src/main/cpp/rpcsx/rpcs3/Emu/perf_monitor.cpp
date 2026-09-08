@@ -716,9 +716,16 @@ void perf_monitor::operator()()
 							// wait at nearly every tick, and a PC alone named only the eight
 							// wrappers the code dump below had room for. The name is free.
 							const char* const current_function = ppu.current_function;
-							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x func=%s",
+
+							// r28 and r30 with the word at r28: the render thread's dominant wait
+							// (0x00fdcba0, decoded 2026-09-07) is `while (*r28 + r27 > r30)
+							// sys_timer_usleep(30)`, and the address in r28 says what it polls.
+							const u32 r28 = static_cast<u32>(ppu.gpr[28]);
+							const bool r28_ok = vm::check_addr(r28, 0, 4);
+							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x func=%s r27=0x%llx r28=0x%08x m28=%s r30=0x%llx",
 								id, ppu.get_name(), pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
-								ppu.gpr[3], static_cast<u32>(ppu.state.load()), current_function ? current_function : "-");
+								ppu.gpr[3], static_cast<u32>(ppu.state.load()), current_function ? current_function : "-",
+								ppu.gpr[27], r28, r28_ok ? fmt::format("0x%08x", +vm::_ref<be_t<u32>>(r28)) : "unmapped", ppu.gpr[30]);
 
 							// Capture a bounded stack for each new main-thread PC and LR pair.
 							// One startup stack cannot identify a later zero-frame phase. The

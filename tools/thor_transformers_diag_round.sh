@@ -43,6 +43,12 @@ mkdir -p "$OUTDIR"
 sh_(){ MSYS_NO_PATHCONV=1 "$ADB" -s "$W" shell "$1" 2>&1 | tr -d '\r'; }
 t_(){ sh_ "for z in /sys/class/thermal/thermal_zone*; do t=\$(cat \$z/temp 2>/dev/null); n=\$(cat \$z/type 2>/dev/null); case \$n in cpu*) [ -n \"\$t\" ] && echo \$((t/1000));; esac; done" | sort -rn | head -1; }
 freq_(){ sh_ "for p in /sys/devices/system/cpu/cpufreq/policy*; do f=\$(cat \$p/scaling_cur_freq 2>/dev/null); echo -n \"\$(basename \$p)=\$((f/1000)) \"; done"; }
+# GPU busy time. /sys/class/kgsl/kgsl-3d0/gpubusy is a cumulative "busy total"
+# pair that resets on read, so read once to zero it at the window start and once
+# at the end. Nothing had measured this on Transformers before 2026-09-07; the
+# "GPU is idle" claim rested on the driver's CPU share and the guest's RSX%.
+gpu_zero_(){ sh_ "cat /sys/class/kgsl/kgsl-3d0/gpubusy" >/dev/null 2>&1; }
+gpu_busy_(){ sh_ "b=\$(cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null); set -- \$b; [ -n \"\$2\" ] && [ \"\$2\" -gt 0 ] && echo \"gpu_busy=\$((100*\$1/\$2))% gpu_clk=\$(( \$(cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null || echo 0) / 1000000 ))MHz\" || echo gpu_busy=na"; }
 fan_(){ sh_ "settings get system fan_mode"; }
 api(){
   local out i
@@ -232,11 +238,12 @@ one_run(){
   echo "   $(score_shot "$OUTDIR/scene_$tag.png")"
 
   local fs=0 cs=0 n=0 s C
+  gpu_zero_
   for s in 1 2 3; do
     sh_ "sleep $((PLAY/3))" >/dev/null
     F=$(api device | grep -oE '"fps":[0-9.]+' | cut -d: -f2); F=${F:-0}
     C=$(api device | grep -oE '"coresBusy":[0-9.]+' | cut -d: -f2); C=${C:-0}
-    echo "   sample $s: fps=$F cores=$C temp=$(t_)C freq(MHz) $(freq_)"
+    echo "   sample $s: fps=$F cores=$C temp=$(t_)C $(gpu_busy_) freq(MHz) $(freq_)"
     fs=$(awk -v a="$fs" -v b="$F" 'BEGIN{print a+b}'); cs=$(awk -v a="$cs" -v b="$C" 'BEGIN{print a+b}'); n=$((n+1))
   done
   local CPU; CPU=$(sh_ "grep -a 'PERF: CPU Usage' $R/cache/RPCSX.log | tail -1 | grep -o 'Total: [0-9.]*%'")

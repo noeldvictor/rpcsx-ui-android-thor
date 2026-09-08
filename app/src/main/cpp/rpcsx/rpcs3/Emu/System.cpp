@@ -1779,6 +1779,41 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				force_bool("debug.rpcsx.thor.disable_zcull_queries", g_cfg.video.disable_zcull_queries, "Disable ZCull Occlusion Queries");
 				force_bool("debug.rpcsx.thor.vblank_ntsc", g_cfg.video.vblank_ntsc, "Vblank NTSC Fixup");
 
+				// 2026-09-07, after the PPU census: the render thread polls a word with
+				// sys_timer_usleep for 82% of its samples and the main thread waits on
+				// it in sys_cond_wait, so the chain runs through rsx::thread's command
+				// processing. These two move work off that thread or shorten its path.
+				//
+				//   debug.rpcsx.thor.multithreaded_rsx  = 0 | 1
+				//   debug.rpcsx.thor.rsx_fifo_accuracy  = fast | atomic | ordered
+				force_bool("debug.rpcsx.thor.multithreaded_rsx", g_cfg.video.multithreaded_rsx, "Multithreaded RSX");
+
+				char fifo_mode[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_accuracy", fifo_mode) > 0 && fifo_mode[0])
+				{
+					const std::string want(fifo_mode);
+					std::string canon;
+
+					// from_string matches the enum's own spelling. Canonicalise, and check the return.
+					if (want == "fast" || want == "Fast") canon = "Fast";
+					else if (want == "atomic" || want == "Atomic") canon = "Atomic";
+					else if (want == "ordered" || want == "Ordered" || want == "Ordered & Atomic") canon = "Ordered & Atomic";
+
+					if (canon.empty())
+					{
+						sys_log.error("Thor: ignoring RSX FIFO Accuracy '%s' (expected fast|atomic|ordered)", want);
+					}
+					else if (g_cfg.core.rsx_fifo_accuracy.from_string(canon))
+					{
+						sys_log.error("Thor: RSX FIFO Accuracy forced to %s (now %s)", canon, g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set RSX FIFO Accuracy '%s', still %s", canon, g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+				}
+
 				char vb_value[PROP_VALUE_MAX]{};
 
 				if (__system_property_get("debug.rpcsx.thor.vblank_rate", vb_value) > 0 && vb_value[0])
