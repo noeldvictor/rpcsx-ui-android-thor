@@ -1806,3 +1806,19 @@ SPURS kernel's own atomics on its instance lines (which still take the
 heavyweight path when a store touches more than 16 bytes), and the two unnamed
 SPU0 JIT blocks at 28 percent of that thread. On the PPU side the render thread
 still parks in `vm::passive_lock` for whatever whole-line SPU stores remain.
+
+### The main thread's waits, from the full Ghidra pass
+
+The five-hour full-analysis decompile of the EBOOT
+(`_research/transformers-ppu/waits-decompile.txt`, not committed) names the
+main thread's census sites. `0x00b56de0` under `0x00ae0da8` is a scope-cycle
+counter (time base reads, per-scope accumulators) wrapped around the
+`sys_cond_wait`: the main thread waits on a condition the render thread signals,
+the engine's frame sync. `FUN_009e4b58` at `0x009e4ba4` is the engine's sleep
+(`sys_timer_usleep` with a 30 us floor) and `FUN_00349260` at `0x003495c0` a
+timed wait on the time base, the frame pacer. So the main thread follows the
+render thread, the render thread follows the SPUs draining the ring, and the SPU
+side is where the frame is decided. The quick no-analysis pass had already given
+the render thread's poll and hand-off (`0x00fdcb88`, `0x00fddf08`, the allocator
+`0x00fdcaa8`); the full pass adds function boundaries and nothing that changes
+the chain.
