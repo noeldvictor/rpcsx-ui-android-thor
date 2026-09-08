@@ -18,7 +18,7 @@
 # so one reproduction is enough to identify the check.
 set -u
 ADB=/c/Users/leanerdesigner/AppData/Local/Android/Sdk/platform-tools/adb
-W=192.168.1.3:5555
+W=${W:-192.168.1.3:5555}
 PKG=net.rpcsx.easy
 R=/storage/emulated/0/Android/data/$PKG/files
 ISO="/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
@@ -33,7 +33,7 @@ hardstop(){ for _h in 1 2 3 4 5; do sh_ "am force-stop $PKG" >/dev/null 2>&1; P=
 
 cleanup(){
   hardstop
-  sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations ''; setprop debug.rpcsx.thor.spurs_always_notify ''; setprop debug.rpcsx.thor.thermal_abort_c ''; svc power stayon false" >/dev/null 2>&1
+  sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations ''; setprop debug.rpcsx.thor.spu_putllc16 ''; setprop debug.rpcsx.thor.spurs_always_notify ''; setprop debug.rpcsx.thor.thermal_abort_c ''; svc power stayon false" >/dev/null 2>&1
   echo "cleanup: temp=$(t_)C rpcsx_in_top=$(sh_ "top -b -n 2 -d 2 -o %CPU 2>/dev/null | grep -ci rpcsx")"
 }
 trap cleanup EXIT INT TERM
@@ -41,7 +41,7 @@ trap cleanup EXIT INT TERM
 BATT=$(sh_ "cat /sys/class/power_supply/battery/capacity")
 case "$BATT" in ''|*[!0-9]*) echo "ABORT: no battery read"; exit 1;; esac
 [ "$BATT" -lt 20 ] && { echo "ABORT: battery ${BATT}%"; exit 1; }
-echo "battery=${BATT}% temp=$(t_)C runs=$RUNS watch=${WATCH}s  accurate=OFF always_notify=${NOTIFY:-0} COLD BOOT"
+echo "battery=${BATT}% temp=$(t_)C runs=$RUNS watch=${WATCH}s  accurate=OFF putllc16=${P16:-default} always_notify=${NOTIFY:-0} COLD BOOT"
 sh_ "setprop debug.rpcsx.thor.thermal_abort_c 97" >/dev/null
 
 hits=0
@@ -52,6 +52,8 @@ for i in $(seq 1 "$RUNS"); do
 
   sh_ "rm -f $R/cache/RPCSX.log" >/dev/null
   sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations 0" >/dev/null
+  # Thor 2026-09-08: P16=0 keeps the inline PUTLLC16 patterns out while accurate is off.
+  sh_ "setprop debug.rpcsx.thor.spu_putllc16 ${P16:-}" >/dev/null
   sh_ "setprop debug.rpcsx.thor.spurs_always_notify ${NOTIFY:-0}" >/dev/null
   sh_ "input keyevent KEYCODE_WAKEUP; svc power stayon true" >/dev/null
   sh_ "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $PKG/net.rpcsx.MainActivity \

@@ -597,6 +597,33 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+int spu_putllc16_mode() noexcept
+{
+	// WHY. With Accurate SPU Reservations off, Transformers combat runs 4 to 5
+	// percent faster on 10 percent fewer cores, and the title live-locks in one
+	// or two of eight cold boots (docs/arm64/spurs-halt.md). Two mechanisms
+	// change together under that setting: do_putllc skips the writer_lock for
+	// the SPURS instance lines, and this analyser installs every PUTLLC16
+	// pattern it finds with no whitelist. ARMSX3 traced the same "off breaks the
+	// title" to the second one (357eee994). This property separates them so a
+	// round can measure each. The SPU object cache is keyed on it.
+	static const int mode = []() -> int
+	{
+#ifdef __ANDROID__
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_putllc16", value) > 0 && value[0])
+		{
+			if (value[0] == '0') return 0;
+			if (value[0] == '1') return 1;
+		}
+#endif
+		return -1;
+	}();
+
+	return mode;
+}
+
 bool spu_dec_dead_read_enabled() noexcept
 {
 	// Default off. It changes SPU codegen, so it also keys the SPU cache file
@@ -1584,7 +1611,7 @@ void spu_cache::initialize(bool build_existing_cache)
 		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u-v2", thor_reduced_loop_unroll) : "") +
 		(use_thor_reduced_loop_reuse ? "-reuse1" : "") +
 		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") +
-		(spu_dec_dead_read_enabled() ? "-thor-ddr" : "") + thor_arm_feature_cache + "-v1-tane.dat";
+		(spu_dec_dead_read_enabled() ? "-thor-ddr" : "") + (spu_putllc16_mode() == 0 ? "-thor-p16off" : spu_putllc16_mode() == 1 ? "-thor-p16on" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
@@ -9154,7 +9181,8 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			value.reg2 = pattern.reg2;
 		}
 
-		if (g_cfg.core.spu_accurate_reservations)
+		// Thor: the property decides first; otherwise the accuracy setting does.
+		if (const int p16 = spu_putllc16_mode(); p16 == 0 || (p16 < 0 && g_cfg.core.spu_accurate_reservations))
 		{
 			// Because enabling it is a hack, as it turns out
 			continue;
