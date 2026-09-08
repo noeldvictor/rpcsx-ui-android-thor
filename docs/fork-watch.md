@@ -246,3 +246,23 @@ almost all merged). The findings are written up in `CLAUDE.md`, section
 
 Nothing was ported from this survey. `#19230` is the one actionable item and it
 changes SPU verification behaviour, so it wants a device round of its own.
+
+
+### 2026-09-07 — ARMSX3 eighth pass and RPCS3 master
+
+Fetched `armsx3/master` to `6925a398e` (releases 0.9.5 to 0.9.7.3) and
+`origin/master` to `54014a7de`. Read by diff content against the vendored core.
+The full account, with the rejected list and the adaptation queue, is
+[`arm64/upstream-survey-2026-09-07.md`](arm64/upstream-survey-2026-09-07.md).
+
+| Change | Verdict |
+| --- | --- |
+| ARMSX3 `2f0ce7786` no `cntvct_el0` read per guest atomic and DMA | **Ported.** `perf_meter(std::nullptr_t)` at five hot sites. |
+| ARMSX3 `67c2763b9` `prctl(PR_SET_TIMERSLACK, 1)` in the core init | **Ported.** The Android core never ran the desktop `main()` that sets it. |
+| ARMSX3 `00f0d2e38` SPU-compile waiter throttle formula | **Ported.** Upstream's `thread_count - 10` is 0 on 8 cores. |
+| RPCS3 `2416d6526` SHUFB constant fast paths | Rejected. ARMSX3 reverted it on ARM64 after hangs and 403 ms frames. |
+| ARMSX3 sleeping reservation backoffs, FIFO spin removal, little-cluster affinity | Rejected. Each was reverted inside the same ARMSX3 release. |
+| ARMSX3 PUTLLC16 whitelist, `writer_lock` notify, cellSync notify, RPCS3 ZCULL report fixes | Adaptation queue. The fork's gates differ in shape. Read the fork's code first. |
+
+None of the three ports is measured yet. Each wants a device A/B against a core
+built before it.

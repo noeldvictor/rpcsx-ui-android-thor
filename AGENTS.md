@@ -3,10 +3,14 @@
 This file is the compact operating contract. It is not an experiment ledger.
 Put dated run details in `debug-experiments/`, not here.
 
-`CLAUDE.md` holds the AArch64 hardware knowledge: what the 8 Gen 2 exposes, what
-the JIT advertises, which features map to which lowering, how to verify a codegen
-change at three levels, and the traps that have already cost time. Read it before
-proposing a codegen optimization.
+Part 2 of this file holds the AArch64 hardware knowledge. It starts at the
+heading `# Part 2: fast AArch64 PS3 emulation on Snapdragon 8 Gen 2`. It gives
+what the 8 Gen 2 exposes, what the JIT advertises, which features map to which
+lowering, how to verify a codegen change at three levels, and the traps that
+have already cost time. Read it before you propose a codegen change.
+
+`CLAUDE.md` is a pointer to this file. It holds no content. Two copies of a map
+disagree, so do not copy text into it.
 
 The detail behind it is split by topic, because a single file had grown past
 1,600 lines and it is loaded every session:
@@ -21,9 +25,13 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/gpu-drivers.md` — driver swaps measured; why a GPU driver cannot help a CPU-bound scene
 - `docs/arm64/spurs-halt.md` — WHICH check the SPURS kernel refuses, and why every timing injection missed it
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
+- `docs/arm64/title-recipes.md` — per-title state, and the levers each title refused
+- `docs/arm64/lv2-ppu-spin.md` — the lv2 wait spin, measured, shipped as `lv2_spin=0`
+- `docs/arm64/jit-emitted-code.md` — what the SPU JIT emits, read from the on-device cache
 - `docs/hardware/` — Arm's vendored per-core optimization guides
 
-Keep `CLAUDE.md` as the map. New detail belongs in the topic file, not in it.
+Keep this file as the map. New detail belongs in the topic file, not here. The
+full topic index is the table in Part 2, section `Where the rest of this lives`.
 
 ## Communication
 
@@ -508,12 +516,32 @@ It does not touch Thor.
 - Record a survey that finds nothing. Write the date and the empty result.
 - A port needs the same proof as any other change. See `Speed Claim Rules`.
 
+### Last survey: 2026-09-07, ARMSX3 eighth pass
+
+ARMSX3 is at `6925a398e`, releases 0.9.5 to 0.9.7.3. Upstream RPCS3 is at
+`54014a7de`. The full account is
+[`docs/arm64/upstream-survey-2026-09-07.md`](docs/arm64/upstream-survey-2026-09-07.md).
+
+- **Three ports, none measured yet.** ARMSX3 `2f0ce7786` stops the
+  `mrs cntvct_el0` read that every PPU atomic, SPU DMA, MFC list and `PUTLLC`
+  paid for a discarded `perf_meter` sample. ARMSX3 `67c2763b9` adds the
+  `prctl(PR_SET_TIMERSLACK, 1)` that every desktop frontend sets and the Android
+  core never did, so `sys_timer_usleep` overshot by up to 50 us. ARMSX3
+  `00f0d2e38` keeps the SPU-compile waiter throttle formula that is not zero on
+  an 8-core device.
+- **Rejected with their own measurements**: the SHUFB constant fast paths, the
+  three sleeping reservation backoffs, the FIFO spin removal and the
+  little-cluster affinity. ARMSX3 reverted each one inside the same release.
+- **The web search says the 2400-iteration `RdDec` delay loop is a libspurs
+  pattern**, seen in Red Dead Redemption (RPCS3 PR #14469), and that upstream's
+  own task for it (issue #16834, draft PR #17172) is open and does not work.
+
 ### Last survey: 2026-08-22, ARMSX3 seventh pass
 
 ARMSX3 is at `daed55c42`, release 0.9.4.2, which is 38 commits past the sixth
 pass. Upstream RPCS3 is at `3aac7d776`. **Six changes are ported and none is
-measured on the device.** The full account is in `CLAUDE.md`, section "ARMSX3
-seventh pass".
+measured on the device.** The full account is in Part 2 of this file, section
+"ARMSX3 seventh pass".
 
 - The largest item is ours, not theirs. The redundant vertex program check in
   `nv4097.cpp` compared two different word orders, so it never fired and each
@@ -3121,7 +3149,8 @@ the three it is.
 
 Use Simplified Technical English for new documentation and for commit messages.
 Write short sentences. Use the active voice. Use one word for one meaning. Keep
-noun clusters to three words. The full rules are in `CLAUDE.md`.
+noun clusters to three words. The full rules are in Part 2 of this file,
+section `Write all documentation in ASD-STE100`.
 
 Do not rewrite old documents only to change their style. Convert a document when
 you change it for another reason.
@@ -3872,8 +3901,8 @@ stands on its own and this file is the map.
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
 | [`docs/hardware/`](docs/hardware/) | Vendored vendor docs: Arm's Cortex-X3, A715 and A710 optimization guides, plus Qualcomm's 200-page Adreno guide — and why the GPU one opens a review axis nothing here has started. |
 
-`AGENTS.md` is the operating contract. This file is the hardware knowledge behind
-it.
+Part 1 of this file is the operating contract. This part is the hardware
+knowledge behind it.
 
 ## Two things that outrank everything else here
 
