@@ -284,6 +284,36 @@ namespace rsx
 			return enabled;
 		}
 
+		// Thor (2026-09-08): ignore reservation lock bits on FIFO lines. The
+		// reservation table is indexed by the low 16 address bits, so one word
+		// serves every line 64 KB apart. Round N's retry log showed every retry
+		// waiting on a unique lock (bit 6) held on a line a megabyte from PUT,
+		// with low address bits matching the CellSpurs instance and its job
+		// lines: a SPURS atomic under Accurate SPU Reservations holds the word
+		// through a writer_lock that waits for the PPU threads to park, about a
+		// millisecond, 4.6 times a frame. Nothing writes the FIFO line itself;
+		// the double read below still catches a torn line. The timestamp check
+		// stays, so a completing aliased store costs one retry.
+		//   debug.rpcsx.thor.rsx_fifo_ignore_res_lock = 1
+		static bool thor_fifo_ignore_res_lock()
+		{
+			static const bool enabled = []() -> bool
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_ignore_res_lock", value) > 0 && value[0] && value[0] != '0')
+				{
+					rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits");
+					return true;
+				}
+#endif
+				return false;
+			}();
+
+			return enabled;
+		}
+
 		std::pair<bool, u32> FIFO_control::fetch_u32_refill(u32 addr)
 		{
 			if (addr - m_cache_addr >= m_cache_size)
@@ -374,7 +404,7 @@ namespace rsx
 					const u64 time0 = res;
 					u32 thor_cause = 0; // 1 locked, 2 changed, 3 mismatch
 
-					if (!(time0 & 127))
+					if (!(time0 & 127) || thor_fifo_ignore_res_lock())
 					{
 						mov_rdata(m_cache[i], src[i]);
 
