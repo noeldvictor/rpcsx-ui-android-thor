@@ -1778,3 +1778,31 @@ from 0:00:20, the loading phase, where chunk `0x0f3c4` (the SPURS kernel's count
 delay loop) holds 65 percent of all SPU samples; no chart landed inside combat,
 so the arm names nothing the stage 2 profile did not. A combat chart needs the
 profiler's print interval shortened or the arm's play window lengthened.
+
+## Round S: the ten-minute combat soaks
+
+Capture `debug-captures/20260908-162907-transformers-diag-round`, core
+`183C6B33` (commit f3be9b863, the two BLUS30357 defaults). Restored combat, no
+intro, ten minutes of play per arm, three samples 200 s apart, the log's Frames
+line every ten seconds.
+
+| arm | fps | cores | 10 s windows | frames per window | end temp |
+| --- | --- | --- | --- | --- | --- |
+| defaults (barrier-free commit + FIFO lock-ignore) | **20.97** | 5.39 | 61 | 191 to 214, median 208 | 94 C |
+| both forced off (the old behaviour) | 18.80 | 5.73 | 63 | 174 to 195, median 190 | 97 C |
+
+No window under 19.1 FPS in the default soak, no zero-frame window after boot,
+no SPU trap, no dead FIFO, FIFO retries 10 to 19 per 10 s with zero mismatches,
+both defaults present in the log (the first barrier-free commit came from
+`CellSpursKernel5` in this run), screenshots drawn in both arms. The two
+ten-minute ranges do not overlap: plus 11.5 percent of frames, minus 6 percent
+of cores, three degrees cooler at the end. The defaults stand.
+
+Where the day leaves the target: restored combat at 21 FPS against the game's 30
+cap, up from 19.4 this morning and 18.4 two days ago. The frame is the render
+thread filling a 1 MiB GCMX ring that four to five SPUs drain; the next costs on
+the SPUs are the non-RTM DMA PUT's per-chunk reservation lock and range lock, the
+SPURS kernel's own atomics on its instance lines (which still take the
+heavyweight path when a store touches more than 16 bytes), and the two unnamed
+SPU0 JIT blocks at 28 percent of that thread. On the PPU side the render thread
+still parks in `vm::passive_lock` for whatever whole-line SPU stores remain.
