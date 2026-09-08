@@ -1739,3 +1739,33 @@ compare-exchange, so it is not the same path.
 The owner stopped the repro at four boots: no more device time on the intro
 movie. Combat is the target, and the accurate-off arms ran six combat windows
 today without a freeze.
+
+## Round R: the barrier-free 16-byte commit, accuracy on
+
+Capture `debug-captures/20260908-153125-transformers-diag-round`, core
+`75A17F32` (commit 1ba97a16d). Accurate SPU Reservations on in every arm but
+the third.
+
+| arm | fps | cores | p50 / p95 ms | verdict |
+| --- | --- | --- | --- | --- |
+| control (hot start, 67 C) | 19.20 | 5.97 | 50 to 52 / 73 to 88 | |
+| `spu_putllc16_nobarrier=1` | **20.30** | 5.45 | 47 to 48 / 62 | engaged from `CellSpursKernel0` |
+| `spu_accurate_reservations=0` | 19.83 | 5.29 | | the unsafe setting, for scale |
+| control, second | 19.09 | 5.61 | | |
+| `spu_putllc16_nobarrier=1`, repeat | **20.43** | 5.29 | | |
+| `spu_putllc16_nobarrier=1` + `rsx_fifo_ignore_res_lock=1` | **21.10** | **5.21** | | the day's best |
+| control, third | 19.47 | 5.81 | | |
+
+**Claim: the barrier-free commit is worth 5 to 7 percent of frame rate and 8 to
+11 percent of cores with Accurate SPU Reservations kept on** (20.30 and 20.43
+against 19.09 to 19.47, no overlap), and it matches or beats the accurate-off
+setting (19.83) without its live-lock path. With the FIFO lock-ignore on top,
+21.10 FPS at 5.21 cores, plus 10 percent of frames and minus 13 percent of cores
+against the round's controls. The p95 frame time fell from 73 to 88 ms to 62 ms
+in the first arm: the render thread no longer parks a fifth of its time.
+
+Both ship as defaults for BLUS30357 in commit f3be9b863 (`SPUThread.cpp`,
+`RSXFIFO.cpp`; the property set to 0 turns either off; other titles unchanged),
+pending the ten-minute combat soak in round S. The freeze repro was not run on
+this path: the owner stopped intro testing, and the path keeps the compare and
+the compare-exchange that the accurate-off fast path drops.
