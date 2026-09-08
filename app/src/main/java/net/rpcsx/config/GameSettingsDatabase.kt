@@ -247,6 +247,25 @@ object GameSettingsDatabase {
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
+              # Relaxed ZCULL Sync: true. +5.6% FPS in restored 3D combat, MEASURED
+              # 2026-09-07: three arms at 19.27, 19.46 and 19.57 against four
+              # controls at 18.21, 18.31, 18.53 and 18.57, on two cores, same
+              # savestate, coresBusy > 4.5, screenshots with identical geometry.
+              # The ranges do not overlap and CPU is unchanged. Accurate ZCULL
+              # stats off with it, so an occlusion query result never stalls
+              # rsx::thread on the GPU; Unreal Engine 3 uses those queries and
+              # the PPU census shows the render thread polling in
+              # sys_timer_usleep for 82% of its samples.
+              #
+              # RISK, stated: upstream's tooltip says relaxed ZCULL "can greatly
+              # improve performance in some games or completely break others",
+              # and RPCS3 issue 12972 lists titles it drops to 1-2 FPS. Three
+              # combat arms saw nothing missing. If objects vanish or pop, or a
+              # scene stalls, set these two back to false / true first.
+              #
+              # Scoped to THIS TITLE. Eternal Sonata keeps both at their defaults.
+              Relaxed ZCULL Sync: true
+              Accurate ZCULL stats: false
               # 0 us - the upstream default. +2.8% FPS, MEASURED, and the
               # stability worry that motivated 50 does not reproduce at 0.
               #
