@@ -98,6 +98,30 @@ public:
 		std::fill(std::begin(m_timestamps), std::end(m_timestamps), 0);
 	}
 
+	// Sample only when the report is on.
+	//
+	// Ported from ARMSX3 2f0ce7786 (2026-08-30). restart() is rx::get_tsc(),
+	// which on ARM64 is `mrs cntvct_el0`: a system-register read of tens of
+	// cycles that does not pipeline, measured at 38 ns on the Thor. The
+	// destructor discards the sample unless g_cfg.core.perf_report is set, and
+	// that defaults off. So a path that builds one of these per guest atomic or
+	// per DMA command pays the read and throws it away every time.
+	//
+	// Use this where the meter is read only by the destructor, or only on a
+	// path that is itself guarded. operator bool() stays honest: it reports
+	// false, the same as perf_meter(int).
+	FORCE_INLINE SAFE_BUFFERS() perf_meter(std::nullptr_t) noexcept
+	{
+		if (g_cfg.core.perf_report) [[unlikely]]
+		{
+			restart();
+		}
+		else
+		{
+			std::fill(std::begin(m_timestamps), std::end(m_timestamps), 0);
+		}
+	}
+
 	FORCE_INLINE SAFE_BUFFERS(operator bool)() const noexcept
 	{
 		return m_timestamps[0] != 0;

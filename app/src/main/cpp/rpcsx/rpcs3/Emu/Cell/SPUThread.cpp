@@ -4916,7 +4916,11 @@ void spu_thread::push_snr(u32 number, u32 value)
 
 void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8* ls)
 {
-	perf_meter<"DMA"_u32> perf_;
+	// One per DMA transfer. Only the destructors read it, and only under
+	// perf_report; the ADMA_GET, ADMA_PUT and DMA_PUT sub-meters copy the first
+	// timestamp, so a disabled parent gives disabled children, which is what
+	// perf_report=off already produced. See perf_meter(std::nullptr_t).
+	perf_meter<"DMA"_u32> perf_(nullptr);
 
 	const bool is_get = (args.cmd & ~(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK)) == MFC_GET_CMD;
 	record_thor_es_dma(_this, args.cmd, args.lsa, args.eal, args.size, thor_es_dma_list_active(_this));
@@ -5745,7 +5749,8 @@ bool spu_thread::do_dma_check(const spu_mfc_cmd& args)
 
 bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 {
-	perf_meter<"MFC_LIST"_u64> perf0;
+	// Destructor-only. See perf_meter(std::nullptr_t).
+	perf_meter<"MFC_LIST"_u64> perf0(nullptr);
 
 	thor_es_dma_list_scope thor_es_dma_scope{*this};
 
@@ -6351,7 +6356,11 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 
 bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 {
-	perf_meter<"PUTLLC-"_u64> perf0;
+	// One per conditional store. perf2's in-function read below feeds only a
+	// perf_report-guarded warning, so a disabled meter cannot be observed. The
+	// STORE128 meter in do_cell_atomic_128_store is deliberately NOT changed:
+	// its value is read to time the suspend_all path. See perf_meter(std::nullptr_t).
+	perf_meter<"PUTLLC-"_u64> perf0(nullptr);
 	perf_meter<"PUTLLC+"_u64> perf1 = perf0;
 
 	// Store conditionally
