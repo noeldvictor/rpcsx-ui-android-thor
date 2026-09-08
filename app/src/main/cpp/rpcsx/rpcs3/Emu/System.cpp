@@ -1737,6 +1737,66 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				}
 			}
 
+			// VIDEO OVERRIDES for the Transformers frame-pacing round, 2026-09-07.
+			//
+			// WHY PROPERTIES. The debug-boot path applies the managed profile and
+			// rewrites the per-title config, so a key edited between arms does not
+			// survive the boot. A property is read here, after the profile.
+			//
+			// WHY THESE. The game's own overlay reports RSX at about 3% while
+			// rsx::thread burns as much CPU as a whole SPU, and the FIFO park
+			// explained none of it. Unreal Engine 3 on PS3 uses ZCULL occlusion
+			// queries, and a ZCULL hard sync stalls rsx::thread on the GPU. The
+			// vblank rate decides the penalty of a missed 33 ms frame when a title
+			// waits for vblank: 16.7 ms at 60 Hz, 8.3 ms at 120 Hz. Neither had
+			// been measured on BLUS30357 before. Upstream warns that a vblank rate
+			// other than 60 can change game speed, so it is an experiment lever
+			// and not a profile value.
+			//
+			//   debug.rpcsx.thor.relaxed_zcull_sync    = 0 | 1   ("Relaxed ZCULL Sync")
+			//   debug.rpcsx.thor.precise_zpass_count   = 0 | 1   ("Accurate ZCULL stats")
+			//   debug.rpcsx.thor.disable_zcull_queries = 0 | 1   ("Disable ZCull Occlusion Queries")
+			//   debug.rpcsx.thor.vblank_rate           = 1..6000
+			//   debug.rpcsx.thor.vblank_ntsc           = 0 | 1
+			//
+			// Unset leaves the configured value untouched. Every applied override
+			// logs its name and the value read back, so a run can prove it engaged.
+			{
+				const auto force_bool = [](const char* prop, cfg::_bool& node, const char* label)
+				{
+					char value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get(prop, value) > 0 && value[0])
+					{
+						const bool want = !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+						node.set(want);
+						sys_log.error("Thor: %s forced to %s (now %s)", label, want ? "true" : "false", node.to_string());
+					}
+				};
+
+				force_bool("debug.rpcsx.thor.relaxed_zcull_sync", g_cfg.video.relaxed_zcull_sync, "Relaxed ZCULL Sync");
+				force_bool("debug.rpcsx.thor.precise_zpass_count", g_cfg.video.precise_zpass_count, "Accurate ZCULL stats");
+				force_bool("debug.rpcsx.thor.disable_zcull_queries", g_cfg.video.disable_zcull_queries, "Disable ZCull Occlusion Queries");
+				force_bool("debug.rpcsx.thor.vblank_ntsc", g_cfg.video.vblank_ntsc, "Vblank NTSC Fixup");
+
+				char vb_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.vblank_rate", vb_value) > 0 && vb_value[0])
+				{
+					const long parsed = std::strtol(vb_value, nullptr, 10);
+
+					if (parsed >= 1 && parsed <= 6000)
+					{
+						g_cfg.video.vblank_rate.set(parsed);
+						sys_log.error("Thor: Vblank Rate forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.video.vblank_rate);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring Vblank Rate '%s' (expected 1..6000)", vb_value);
+					}
+				}
+			}
+
 			// SPU GETLLAR BUSY WAITING, which defaults to 100 percent.
 			//
 			// This title spends ~29% of all cycles in VM locking
