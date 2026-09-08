@@ -1200,3 +1200,29 @@ What follows from it, in order of size:
 
 30 FPS needs a 35 percent cut in cost per draw. No setting does that. The
 shipped state is 19.4 FPS with Relaxed ZCULL Sync, up from 18.4.
+
+## Round G: the system Qualcomm driver cannot run this renderer
+
+Selected through the app's preferences (`selected_gpu_driver=Default`,
+`gpu_driver_path` empty), confirmed in the log as `Adreno (TM) 740` on driver
+`512.676.53`. Three boots, three RSX thread deaths before combat:
+
+    SIG: Thread terminated due to fatal error: Assertion Failed!
+    Vulkan API call failed with unrecoverable error: Unknown Code (FFFFFFF3h, -13)
+
+Two boots died in the menus and one during the restore. No frame rate exists
+for the system driver, and this is the reason Turnip is installed. Turnip stays
+selected. The 17.6 percent of the RSX thread that Turnip's CPU side costs is
+therefore not recoverable by a driver swap on this device today.
+
+## The next code step, sized from the FIFO recovery path
+
+`RSX FIFO Accuracy: Fast` is plus 2.3 percent and hangs the boot because a torn
+read under Fast yields an invalid command, `recover_fifo` resets the queue, and
+twenty recoveries inside two seconds throw `Dead FIFO commands queue state`.
+The Atomic mode avoids the tear by taking a reservation lock per 128-byte line
+on every fetch, which is the 17 percent spin. A hybrid that fetches Fast and
+re-reads the line atomically only when the command decodes as invalid would
+keep the spin off the common path and the recovery off the boot. It is a
+bounded change in `FIFO_control::fetch_u32` and `run_FIFO`, and it is the one
+per-draw cost in `rsx::thread` with a measured upper bound.
