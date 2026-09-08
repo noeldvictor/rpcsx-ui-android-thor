@@ -1531,3 +1531,27 @@ the non-RTM DMA PUT path that locks and bumps a reservation per 128-byte chunk,
 the `PUTLLC` writer_lock that waits for the PPU threads, the reservation-table
 aliasing above, and the SPU JIT's own quality. PhysX and FMOD are tasksets on
 the same six SPUs.
+
+### Round N, the rest: the backoff is not the cost, and the last placement arm
+
+| arm | fps | cores | retries/10 s | stalls/10 s | yields/10 s |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.80 | 5.97 | 85,500 | 909 | 17,200 |
+| retry log + SPURS census | 20.07 | 5.77 | | | |
+| `rsx_fifo_retry_ticks=2` | 20.00 | 5.75 | **4,400,000** | 885 | 15,900 |
+| `rsx_fifo_retry_ticks=20` | 19.83 | 5.86 | | | |
+| `rsx_fifo_retry_ticks=50` | 20.07 | 5.83 | | | |
+| 2 ticks + 4 KB refill + GET lag | 20.07 | 5.69 | | | |
+| RSX thread alone on the X3 | **13.37** | 4.42 | | | |
+| control, second | 19.80 | 5.81 | | | |
+
+With a 0.1 us backoff the loop spins fifty times as often and falls to
+`cpu_wait` just as often: the same 880 episodes a frame-window, the same 16,000
+yields. The wait is the lifetime of the aliased lock, about a millisecond, and no
+backoff shortens it. The property stays for reference and the default stays 200.
+
+The RSX thread alone pinned to the X3 runs at 13.4 FPS with 4.4 cores busy: the
+scheduler still places other threads on cpu7, the pinned thread cannot leave, and
+it gets about half a core. 37 ms of RSX CPU per frame at half a core is 13 FPS,
+so when the RSX thread is starved the frame follows it exactly. Placement is
+closed on every variant tried: four pins, all worse than the scheduler.
