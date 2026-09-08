@@ -144,7 +144,7 @@ if audit:
         else: print('     ', l[-200:])
 print(f"   Frames lines={len(frames)}; last 6:")
 for l in frames[-6:]:
-    m=re.search(r'Frames:.*', l); print("     ", m.group(0)[:230] if m else l[-200:])
+    m=re.search(r'Frames:.*', l); print("     ", m.group(0)[:340] if m else l[-200:])
 # PPU census summary, combat window only: from the first Frames line whose
 # interval median is 44 ms or more (the menu before the restore runs at 33 ms).
 def tsec(l):

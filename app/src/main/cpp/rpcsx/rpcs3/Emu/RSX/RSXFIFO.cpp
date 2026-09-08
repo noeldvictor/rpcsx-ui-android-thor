@@ -235,6 +235,55 @@ namespace rsx
 			return enabled;
 		}
 
+		// Thor: the retry backoff in generic-timer ticks. busy_wait(200) on this
+		// fork is 200 ticks of the 19.2 MHz timer, 10.4 us, where upstream's 200
+		// x86 cycles were about 60 ns; a reservation lock is held for far less.
+		//   debug.rpcsx.thor.rsx_fifo_retry_ticks = <n>   (default 200)
+		static u32 thor_fifo_retry_ticks()
+		{
+			static const u32 ticks = []() -> u32
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_retry_ticks", value) > 0 && value[0])
+				{
+					const unsigned long parsed = std::strtoul(value, nullptr, 0);
+
+					if (parsed >= 1 && parsed <= 100000)
+					{
+						rsx_log.error("Thor: RSX FIFO retry wait %lu ticks", parsed);
+						return static_cast<u32>(parsed);
+					}
+				}
+#endif
+				return 200;
+			}();
+
+			return ticks;
+		}
+
+		// Thor: sampled diagnosis of the retry. Every 1024th retry logs the line's
+		// guest address, its distance from PUT and the reservation word.
+		//   debug.rpcsx.thor.rsx_fifo_retry_log = 1
+		static bool thor_fifo_retry_log_enabled()
+		{
+			static const bool enabled = []() -> bool
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_retry_log", value) > 0 && value[0])
+				{
+					return value[0] != '0';
+				}
+#endif
+				return false;
+			}();
+
+			return enabled;
+		}
+
 		std::pair<bool, u32> FIFO_control::fetch_u32_refill(u32 addr)
 		{
 			if (addr - m_cache_addr >= m_cache_size)
@@ -284,6 +333,13 @@ namespace rsx
 
 					if (thor_fifo_trim_fix_enabled())
 					{
+						static atomic_t<bool> s_logged{false};
+
+						if (!s_logged.exchange(true))
+						{
+							rsx_log.error("Thor: RSX FIFO trim fix active");
+						}
+
 						// Thor (2026-09-08): rebuild the mask after the trim. The mask
 						// above still holds the line at PUT, so the double read below
 						// verified bytes at and after PUT, which are exactly the bytes
@@ -316,6 +372,7 @@ namespace rsx
 					// If a reservation is being updated, try to load another
 					const auto& res = vm::reservation_acquire(addr1 + i * 128);
 					const u64 time0 = res;
+					u32 thor_cause = 0; // 1 locked, 2 changed, 3 mismatch
 
 					if (!(time0 & 127))
 					{
@@ -326,6 +383,15 @@ namespace rsx
 						const bool same = is_tail
 							? std::memcmp(&m_cache[i], &src[i], tail_bytes) == 0
 							: cmp_rdata(m_cache[i], src[i]);
+
+						if (time0 != res)
+						{
+							thor_cause = 2;
+						}
+						else if (!same)
+						{
+							thor_cause = 3;
+						}
 
 						if (time0 == res && same)
 						{
@@ -342,8 +408,34 @@ namespace rsx
 						}
 					}
 
+					if (!thor_cause)
+					{
+						thor_cause = 1;
+					}
+
+					switch (thor_cause)
+					{
+					case 1: ::thor::rsx_counters::g_fifo_retry_locked++; break;
+					case 2: ::thor::rsx_counters::g_fifo_retry_changed++; break;
+					default: ::thor::rsx_counters::g_fifo_retry_mismatch++; break;
+					}
+
+					if (thor_fifo_retry_log_enabled())
+					{
+						static atomic_t<u32> s_retry_sample{0};
+
+						if ((s_retry_sample++ & 1023) == 0)
+						{
+							const u32 line_ea = m_cache_addr + i * 128;
+							rsx_log.error("Thor FIFO retry: cause=%u line=0x%08x put=0x%08x put-line=%d get=0x%08x res=0x%llx lines=%u size=%u",
+								thor_cause, line_ea, put, static_cast<s32>(put - line_ea), addr, time0, m_cache_size / 128, m_cache_size);
+						}
+					}
+
 					if (!start_time)
 					{
+						::thor::rsx_counters::g_fifo_stalls++;
+
 						if (bytes_read >= 256 && !force_cache_fill)
 						{
 							// Cut our losses if we have something to work with.
@@ -363,6 +455,7 @@ namespace rsx
 							return {};
 						}
 
+						::thor::rsx_counters::g_fifo_cpu_waits++;
 						m_thread->cpu_wait({});
 
 						const auto then = std::exchange(now, get_system_time());
@@ -372,7 +465,7 @@ namespace rsx
 					else
 					{
 						::thor::rsx_counters::g_fifo_retries++;
-						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, 200);
+						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, thor_fifo_retry_ticks());
 					}
 
 					if (strict_fetch_ordering)
