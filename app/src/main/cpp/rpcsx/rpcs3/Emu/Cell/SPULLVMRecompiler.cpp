@@ -422,6 +422,13 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// Next opcode
 	u32 m_next_op = 0;
 
+	// For thor_dead_dec_read_shape(): the program being compiled, its first pc,
+	// and the basic block being emitted.
+	const std::vector<u32>* m_thor_data = nullptr;
+	u32 m_thor_start = 0;
+	u32 m_thor_bb_start = 0;
+	u32 m_thor_bb_size = 0;
+
 	// Current function (chunk)
 	llvm::Function* m_function{};
 
@@ -2042,6 +2049,9 @@ public:
 		const u32 start = m_pos;
 		const u32 end = start + m_size;
 
+		m_thor_data = &func.data;
+		m_thor_start = start;
+
 		m_pp_id = 0;
 
 		std::string function_log;
@@ -2906,6 +2916,8 @@ public:
 				auto& bb = ::at32(m_bbs, baddr);
 				bool need_check = false;
 				m_block->bb = &bb;
+				m_thor_bb_start = baddr;
+				m_thor_bb_size = bb.size;
 
 				if (!bb.preds.empty())
 				{
@@ -4858,6 +4870,165 @@ public:
 		return rval;
 	}
 
+	// THE DEAD DECREMENTER READ.
+	//
+	// Transformers' SPURS consumer backs off between queue polls with a counted
+	// loop that reads the decrementer every iteration and discards the value:
+	//
+	//     ai   r4, r4, 1
+	//     rdch r3, SPU_RdDec
+	//     ceq  r40, r4, r5
+	//     brz  r40, <loop head>
+	//
+	// 2399 of the 2400 reads are dead: r3 is overwritten before anything reads
+	// it, and the exit condition depends only on r4 and r5. Each read is an
+	// `mrs cntvct_el0` at 38 ns on the Thor, so the 1.5 us hardware delay takes
+	// 92 us, and chunk-0x0f3c4 is 97% of CellSpursKernel0 with reduced loops on
+	// or off (measured 2026-09-07; the reduced-loop emitter never matched it).
+	//
+	// The transformation reads the counter only in the iteration that exits.
+	// Nothing observable changes: the last read is real, and no instruction in
+	// the block reads the destination before the next RDCH overwrites it. Time
+	// is never served stale, which is what deadlocked the cached-read attempt
+	// (spu_dec_cache): a guest that waits for the decrementer to ADVANCE still
+	// sees it advance, because the read it keeps is real.
+	//
+	//   debug.rpcsx.thor.spu_dec_dead_read = 1     (default 0, off)
+	//
+	// Matched shape, every condition required:
+	//   * the RDCH is the third-from-last instruction of its basic block
+	//   * next is CEQ rC, rX, rY or CEQI rC, rX, imm, with rX, rY, rC != rD
+	//   * last is BRZ rC back to the block start (loop while not equal)
+	//   * every earlier instruction in the block is plain register arithmetic
+	//     or an immediate load that does not name rD
+	struct thor_dead_dec_read_t
+	{
+		bool ok = false;
+		bool imm = false;
+		u32 rx = 0;
+		u32 ry = 0;
+		s32 si10 = 0;
+	};
+
+	thor_dead_dec_read_t thor_dead_dec_read_shape(spu_opcode_t op) const
+	{
+		thor_dead_dec_read_t r{};
+
+		if (!m_thor_data || m_thor_bb_size < 3)
+		{
+			return r;
+		}
+
+		const u32 bb_end = m_thor_bb_start + m_thor_bb_size * 4;
+		const u32 data_end = m_thor_start + ::size32(*m_thor_data) * 4;
+
+		if (m_pos + 12 != bb_end || m_pos + 12 > data_end || m_pos < m_thor_bb_start)
+		{
+			return r;
+		}
+
+		const auto word = [&](u32 pc) -> spu_opcode_t
+		{
+			return spu_opcode_t{std::bit_cast<be_t<u32>>((*m_thor_data)[(pc - m_thor_start) / 4])};
+		};
+
+		const spu_opcode_t cmp = word(m_pos + 4);
+		const spu_opcode_t br = word(m_pos + 8);
+		const u32 rd = op.rt;
+
+		if (g_spu_itype.decode(br.opcode) != spu_itype::BRZ || br.rt != cmp.rt || spu_branch_target(m_pos + 8, br.i16) != m_thor_bb_start)
+		{
+			return r;
+		}
+
+		if (cmp.rt == rd)
+		{
+			return r;
+		}
+
+		switch (g_spu_itype.decode(cmp.opcode))
+		{
+		case spu_itype::CEQ:
+		{
+			if (cmp.ra == rd || cmp.rb == rd)
+			{
+				return r;
+			}
+
+			r.rx = cmp.ra;
+			r.ry = cmp.rb;
+			break;
+		}
+		case spu_itype::CEQI:
+		{
+			if (cmp.ra == rd)
+			{
+				return r;
+			}
+
+			r.imm = true;
+			r.rx = cmp.ra;
+			r.si10 = cmp.si10;
+			break;
+		}
+		default:
+		{
+			return r;
+		}
+		}
+
+		for (u32 pc = m_thor_bb_start; pc < m_pos; pc += 4)
+		{
+			const spu_opcode_t pre = word(pc);
+
+			switch (g_spu_itype.decode(pre.opcode))
+			{
+			case spu_itype::AI:
+			case spu_itype::AHI:
+			case spu_itype::SFI:
+			case spu_itype::ORI:
+			case spu_itype::ANDI:
+			case spu_itype::IL:
+			case spu_itype::ILA:
+			case spu_itype::ILH:
+			case spu_itype::ILHU:
+			case spu_itype::IOHL:
+			{
+				if (pre.rt == rd || pre.ra == rd)
+				{
+					return r;
+				}
+
+				break;
+			}
+			case spu_itype::A:
+			case spu_itype::SF:
+			case spu_itype::OR:
+			case spu_itype::AND:
+			{
+				if (pre.rt == rd || pre.ra == rd || pre.rb == rd)
+				{
+					return r;
+				}
+
+				break;
+			}
+			case spu_itype::NOP:
+			case spu_itype::LNOP:
+			{
+				break;
+			}
+			default:
+			{
+				return r;
+			}
+			}
+		}
+
+		r.ok = true;
+		return r;
+	}
+
 	void RDCH(spu_opcode_t op) //
 	{
 		value_t<u32> res;
@@ -4922,6 +5093,43 @@ public:
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
+				// THE DEAD DECREMENTER READ. See thor_dead_dec_read_shape(). When the
+				// shape matches, the real read below runs only in the iteration that
+				// leaves the loop; every other iteration keeps the previous value,
+				// which nothing reads.
+				llvm::BasicBlock* dead_entry = nullptr;
+				llvm::BasicBlock* dead_join = nullptr;
+				llvm::Value* dead_prev = nullptr;
+
+				if (spu_dec_dead_read_enabled())
+				{
+					if (const auto shape = thor_dead_dec_read_shape(op); shape.ok)
+					{
+						// get_vr takes a register FIELD, so name the compare operands through
+						// opcode shells, the way the reduced-loop emitter does. get_scalar is
+						// the preferred slot, which is what BRZ tests.
+						spu_opcode_t reg_x{};
+						spu_opcode_t reg_y{};
+						reg_x.rt = shape.rx;
+						reg_y.rt = shape.ry;
+						llvm::Value* x_val = get_scalar(get_vr<u32[4]>(reg_x.rt)).eval(m_ir);
+						llvm::Value* y_val = shape.imm
+							? static_cast<llvm::Value*>(m_ir->getInt32(static_cast<u32>(shape.si10)))
+							: get_scalar(get_vr<u32[4]>(reg_y.rt)).eval(m_ir);
+						dead_prev = get_scalar(get_vr<u32[4]>(op.rt)).eval(m_ir);
+						dead_entry = m_ir->GetInsertBlock();
+
+						const auto read_bb = llvm::BasicBlock::Create(m_context, "dec_dead_read", m_function);
+						dead_join = llvm::BasicBlock::Create(m_context, "dec_dead_join", m_function);
+						m_ir->CreateCondBr(m_ir->CreateICmpEQ(x_val, y_val), read_bb, dead_join);
+						m_ir->SetInsertPoint(read_bb);
+
+						// Compile-time, once per compiled block: the engagement proof.
+						spu_log.error("Thor DEC DEAD-READ: pc=0x%05x block=0x%05x size=%u rt=%u rx=%u %s",
+							m_pos, m_thor_bb_start, m_thor_bb_size, static_cast<u32>(op.rt), shape.rx, shape.imm ? "imm" : "reg");
+					}
+				}
+
 				const auto timebase_offs = load_timebase_offs();
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, ch_dec_value)));
@@ -4994,6 +5202,18 @@ public:
 				const auto delta = m_ir->CreateTrunc(m_ir->CreateSub(tsctb, timestamp), get_type<u32>());
 				const auto deltax = m_ir->CreateSelect(frzev, delta, m_ir->getInt32(0));
 				res.value = m_ir->CreateSub(dec_value, deltax);
+
+				if (dead_join)
+				{
+					const auto read_end = m_ir->GetInsertBlock();
+					m_ir->CreateBr(dead_join);
+					m_ir->SetInsertPoint(dead_join);
+					const auto phi = m_ir->CreatePHI(get_type<u32>(), 2);
+					phi->addIncoming(res.value, read_end);
+					phi->addIncoming(dead_prev, dead_entry);
+					res.value = phi;
+				}
+
 				break;
 			}
 #endif

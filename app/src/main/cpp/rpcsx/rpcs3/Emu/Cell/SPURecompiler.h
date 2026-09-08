@@ -77,6 +77,10 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept;
 #endif
 
 u32 spu_reduced_loop_unroll_factor() noexcept;
+
+// debug.rpcsx.thor.spu_dec_dead_read: read the SPU decrementer only in the exit
+// iteration of a counted delay loop. See SPULLVMRecompiler.cpp, thor_dead_dec_read_shape.
+bool spu_dec_dead_read_enabled() noexcept;
 #if defined(ANDROID) && !defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 inline constexpr bool spu_reduced_loop_reuse_enabled() noexcept
 {

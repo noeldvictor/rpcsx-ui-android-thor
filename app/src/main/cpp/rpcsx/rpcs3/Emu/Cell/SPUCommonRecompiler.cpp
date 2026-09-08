@@ -597,6 +597,26 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+bool spu_dec_dead_read_enabled() noexcept
+{
+	// Default off. It changes SPU codegen, so it also keys the SPU cache file
+	// ("-thor-ddr"), and the first boot with it recompiles.
+	static const bool s_value = []() noexcept
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_dec_dead_read", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 bool spu_reduced_loop_reuse_enabled() noexcept
 {
@@ -1563,7 +1583,8 @@ void spu_cache::initialize(bool build_existing_cache)
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
 		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u-v2", thor_reduced_loop_unroll) : "") +
 		(use_thor_reduced_loop_reuse ? "-reuse1" : "") +
-		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + thor_arm_feature_cache + "-v1-tane.dat";
+		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") +
+		(spu_dec_dead_read_enabled() ? "-thor-ddr" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
