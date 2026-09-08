@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 
 #include "Emu/System.h"
 #include "RSXFIFO.h"
@@ -177,6 +178,7 @@ namespace rsx
 				}
 
 				m_cache_addr = addr & -128;
+				::thor::rsx_counters::g_fifo_refills++;
 
 				const u32 addr1 = m_iotable->get_addr(m_cache_addr);
 
@@ -272,6 +274,7 @@ namespace rsx
 					}
 					else
 					{
+						::thor::rsx_counters::g_fifo_retries++;
 						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, 200);
 					}
 

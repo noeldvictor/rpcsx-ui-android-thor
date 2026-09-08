@@ -3605,7 +3605,14 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		if (__system_property_get("debug.rpcsx.thor.cpu_affinity_mask", value) > 0 && value[0])
+		// Per-class mask first (2026-09-08), then the shared one. The shared mask
+		// moved every guest thread to cpu3-7 at once and lost 4 FPS on Transformers
+		// by putting six polling SPUs on five big cores; the split keeps the PPU
+		// chain threads on the big cores and parks the SPUs elsewhere.
+		//   debug.rpcsx.thor.ppu_affinity_mask = 0x..   (PPU threads only)
+		//   debug.rpcsx.thor.cpu_affinity_mask = 0x..   (fallback, PPU and SPU)
+		for (const char* prop : {"debug.rpcsx.thor.ppu_affinity_mask", "debug.rpcsx.thor.cpu_affinity_mask"})
+		if (__system_property_get(prop, value) > 0 && value[0])
 		{
 			const unsigned long parsed = std::strtoul(value, nullptr, 0);
 
@@ -3626,6 +3633,12 @@ void ppu_thread::cpu_task()
 	if (const u64 thor_mask = get_thor_cpu_affinity_mask())
 	{
 		thread_ctrl::set_thread_affinity_mask(thor_mask);
+
+		static atomic_t<bool> s_thor_mask_logged{false};
+		if (!s_thor_mask_logged.exchange(true))
+		{
+			ppu_log.error("Thor: PPU affinity mask 0x%llx applied", thor_mask);
+		}
 	}
 
 	std::fesetround(FE_TONEAREST);

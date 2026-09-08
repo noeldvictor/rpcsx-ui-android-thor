@@ -1,5 +1,6 @@
 #ifdef ANDROID
 #include <sys/system_properties.h>
+#include "Emu/RSX/thor_rsx_counters.h"
 #endif
 #include "stdafx.h"
 #include "../Overlays/overlay_compile_notification.h"
@@ -1740,6 +1741,7 @@ void VKGSRender::clear_surface(u32 mask)
 				pass_clear_values.push_back(depth_stencil_clear_values);
 			}
 
+			::thor::rsx_counters::g_render_passes++;
 			vk::begin_renderpass(
 				*m_current_command_buffer, get_render_pass(), m_draw_fbo->value,
 				{positionu{0u, 0u}, sizeu{m_draw_fbo->width(), m_draw_fbo->height()}},

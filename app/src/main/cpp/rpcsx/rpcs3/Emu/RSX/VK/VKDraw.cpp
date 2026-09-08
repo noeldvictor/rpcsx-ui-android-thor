@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "../Common/BufferUtils.h"
 #include "../rsx_methods.h"
 
@@ -109,6 +110,7 @@ namespace vk
 
 void VKGSRender::begin_render_pass()
 {
+	::thor::rsx_counters::g_render_passes++;
 	vk::begin_renderpass(
 		*m_current_command_buffer,
 		get_render_pass(),

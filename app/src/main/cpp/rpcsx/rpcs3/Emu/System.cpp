@@ -1810,6 +1810,80 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 					}
 				}
 
+				// STRUCTURAL SWITCHES, 2026-09-08. Three emulator-architecture facts the
+				// Transformers rounds never measured:
+				//
+				//   debug.rpcsx.thor.ppu_threads        = 1..8      PPU Threads. RPCS3 runs at
+				//     most this many PPU threads at once, emulating the Cell's two hardware
+				//     threads; every other runnable PPU thread waits for a slot under the
+				//     global lv2 mutex. On an 8-core host that is a serialisation the
+				//     hardware did not have.
+				//   debug.rpcsx.thor.vk_async_scheduler = safe|fast   Asynchronous Queue
+				//     Scheduler; fast runs compute tasks on a second queue. The forced-safe
+				//     guard in VKGSRender applies to NVIDIA only.
+				//   debug.rpcsx.thor.sleep_timers       = as_host|usleep|all   Sleep Timers
+				//     Accuracy, now that the timer slack is 1 ns.
+				{
+					char pt_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.ppu_threads", pt_value) > 0 && pt_value[0])
+					{
+						const long parsed = std::strtol(pt_value, nullptr, 10);
+
+						if (parsed >= 1 && parsed <= 8)
+						{
+							g_cfg.core.ppu_threads.set(parsed);
+							sys_log.error("Thor: PPU Threads forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.core.ppu_threads);
+						}
+						else
+						{
+							sys_log.error("Thor: ignoring PPU Threads '%s' (expected 1..8)", pt_value);
+						}
+					}
+
+					char as_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.vk_async_scheduler", as_value) > 0 && as_value[0])
+					{
+						const std::string want(as_value);
+						const char* canon = (want == "fast" || want == "Fast") ? "Fast" : (want == "safe" || want == "Safe") ? "Safe" : "";
+
+						if (!*canon)
+						{
+							sys_log.error("Thor: ignoring Asynchronous Queue Scheduler '%s' (expected safe|fast)", want);
+						}
+						else if (g_cfg.video.vk.asynchronous_scheduler.from_string(canon))
+						{
+							sys_log.error("Thor: Asynchronous Queue Scheduler forced to %s (now %s)", canon, g_cfg.video.vk.asynchronous_scheduler.to_string());
+						}
+						else
+						{
+							sys_log.error("Thor: FAILED to set Asynchronous Queue Scheduler '%s'", canon);
+						}
+					}
+
+					char st_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.sleep_timers", st_value) > 0 && st_value[0])
+					{
+						const std::string want(st_value);
+						const char* canon = (want == "usleep") ? "Usleep Only" : (want == "as_host") ? "As Host" : (want == "all") ? "All Timers" : "";
+
+						if (!*canon)
+						{
+							sys_log.error("Thor: ignoring Sleep Timers Accuracy '%s' (expected as_host|usleep|all)", want);
+						}
+						else if (g_cfg.core.sleep_timers_accuracy.from_string(canon))
+						{
+							sys_log.error("Thor: Sleep Timers Accuracy forced to %s (now %s)", canon, g_cfg.core.sleep_timers_accuracy.to_string());
+						}
+						else
+						{
+							sys_log.error("Thor: FAILED to set Sleep Timers Accuracy '%s'", canon);
+						}
+					}
+				}
+
 				char fifo_mode[PROP_VALUE_MAX]{};
 
 				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_accuracy", fifo_mode) > 0 && fifo_mode[0])

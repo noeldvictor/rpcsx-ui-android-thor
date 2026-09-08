@@ -20,6 +20,7 @@
 #include "Emu/thor_thermal_guard.h"
 #include "Emu/thor_device_stats.h"
 #include "Emu/RSX/thor_frametime.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -198,6 +199,7 @@ void perf_monitor::operator()()
 					// 50 ms" from "frames spread 35 to 70 ms", and the two call for
 					// different work. See Emu/RSX/thor_frametime.h.
 					thor::frametime::report(msg);
+					::thor::rsx_counters::report(msg);
 
 					// Publish for the control API, so a tool can read speed, heat and
 					// power without grepping the log. Frames go with the CPU number on

@@ -54,6 +54,13 @@ freq_(){ sh_ "for p in /sys/devices/system/cpu/cpufreq/policy*; do f=\$(cat \$p/
 gpu_zero_(){ sh_ "cat /sys/class/kgsl/kgsl-3d0/gpubusy" >/dev/null 2>&1; }
 gpu_busy_(){ sh_ "b=\$(cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null); set -- \$b; [ -n \"\$2\" ] && [ \"\$2\" -gt 0 ] && echo \"gpu_busy=\$((100*\$1/\$2))% gpu_clk=\$(( \$(cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null || echo 0) / 1000000 ))MHz\" || echo gpu_busy=na"; }
 fan_(){ sh_ "settings get system fan_mode"; }
+# Core residency of the chain threads: field 39 of /proc/PID/task/T/stat, ten
+# samples 200 ms apart, printed as a per-thread core histogram. A placement arm
+# whose pinned thread is not 100 percent inside its mask is void.
+resid_(){
+  local pid="$1"
+  sh_ "for i in 1 2 3 4 5 6 7 8 9 10; do for t in /proc/$pid/task/*; do n=\$(cat \$t/comm 2>/dev/null); case \"\$n\" in rsx::thread|PPU\[0x100000b\]*|PPU\[0x1000000\]*|SPU\[0x0000100\]*|SPU\[0x1000100\]*) echo \"\$n \$(awk '{print \$39}' \$t/stat 2>/dev/null)\";; esac; done; sleep 0.2; done"   | awk '{k=$1; c=$2; h[k" cpu"c]++; n[k]++} END {for (x in h) {split(x, a, " "); printf "%s %s=%d%% ", a[1], a[2], 100*h[x]/n[a[1]]}; print ""}' | tr -s ' '
+}
 api(){
   local out i
   for i in 1 2 3; do
@@ -123,7 +130,7 @@ lines=txt.splitlines()
 fatal=[l for l in lines if re.search(r'fatal error|Dead FIFO|Access violation|SPU trap|ENGAGED|thermal abort', l, re.I)]
 print(f"   log lines={len(lines)} fatal/guard hits={len(fatal)}")
 for l in fatal[:6]: print("     !", l[-160:])
-forced=[l for l in lines if 'Thor:' in l and ('forced' in l or 'set to' in l or 'ignoring' in l)]
+forced=[l for l in lines if 'Thor:' in l and ('forced' in l or 'set to' in l or 'ignoring' in l or 'applied' in l)]
 for l in forced[:12]: print("     lever:", l.split('Thor:',1)[1].strip()[:140])
 frames=[l for l in lines if 'Frames:' in l]
 print(f"   Frames lines={len(frames)}; last 6:")
@@ -242,6 +249,7 @@ one_run(){
   echo "   $(score_shot "$OUTDIR/scene_$tag.png")"
 
   local fs=0 cs=0 n=0 s C
+  local PIDNOW; PIDNOW=$(sh_ "pidof $PKG"); [ -n "$PIDNOW" ] && echo "   residency: $(resid_ "$PIDNOW")"
   gpu_zero_
   for s in 1 2 3; do
     sh_ "sleep $((PLAY/3))" >/dev/null

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
 #endif
@@ -891,6 +892,7 @@ namespace rsx
 
 		in_begin_end = false;
 		m_frame_stats.draw_calls++;
+		::thor::rsx_counters::g_draws++;
 
 		// DOES ANY GEOMETRY REACH THE RSX AT ALL.
 		//
@@ -1319,6 +1321,27 @@ namespace rsx
 		{
 			thread_ctrl::set_thread_affinity_mask(thread_ctrl::get_affinity_mask(thread_class::rsx));
 		}
+
+#ifdef __ANDROID__
+		// Thor: place the RSX thread by property, independent of the scheduler mode.
+		// The PPU render thread and rsx::thread are the frame's chain; the August
+		// census put chain threads on a Cortex-A510 a quarter of the time.
+		//   debug.rpcsx.thor.rsx_affinity_mask = 0x..   (0x80 = the X3 alone)
+		{
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.rsx_affinity_mask", value) > 0 && value[0])
+			{
+				const unsigned long parsed = std::strtoul(value, nullptr, 0);
+
+				if (parsed != 0 && parsed <= 0xffull)
+				{
+					thread_ctrl::set_thread_affinity_mask(parsed);
+					rsx_log.error("Thor: RSX affinity mask 0x%lx applied", parsed);
+				}
+			}
+		}
+#endif
 
 		while (!test_stopped())
 		{

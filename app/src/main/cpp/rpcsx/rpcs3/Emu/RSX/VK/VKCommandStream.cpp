@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "VKCommandStream.h"
 #include "vkutils/descriptors.h"
 #include "vkutils/sync.h"
@@ -51,6 +52,7 @@ namespace vk
 	void queue_submit(const queue_submit_t& submit_info, VkBool32 flush)
 	{
 		rsx::get_current_renderer()->get_stats().submit_count++;
+		::thor::rsx_counters::g_submits++;
 
 		// Access to this method must be externally synchronized.
 		// Offloader is guaranteed to never call this for async flushes.
