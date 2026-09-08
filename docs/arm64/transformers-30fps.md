@@ -1468,3 +1468,66 @@ which is where part of the GPU's 55 percent busy goes with a 2005-era workload.
 What ends each pass is counted next (barrier, texture operation, subpass switch,
 query scope, flush, compute, label write), from the twenty-one sites that call
 `vk::end_renderpass`.
+
+## Round N, first two arms: what the FIFO fetch waits on, and what the SPUs do
+
+Capture `debug-captures/20260908-131234-transformers-diag-round`, core
+`AE9107B9` (commit 2c6d71f01: retry causes, retry-wait property, sampled retry
+log, SPURS workload census). Control 19.80 FPS, 5.97 cores; the retry-log arm
+20.07.
+
+**Every retry is a reservation lock that has nothing to do with the FIFO.** Per
+ten seconds at 19.8 FPS: 909 stall episodes (4.6 a frame), 103,190 loop
+iterations with the reservation word's lock bits set, 18 with the timestamp
+moved, 0 with the two reads differing, 17,159 falls to `cpu_wait`, which is a
+`sched_yield`. One episode is about 95 spins of 10.4 us and 19 yields, so the
+lock lives about a millisecond. The sampled log (842 samples) shows in every one
+`res & 0x7f == 0x40`, the unique lock bit, on a line 0.1 to 1.9 MB away from PUT
+in both directions, so no writer is near it. The line addresses repeat their low
+16 bits: `0x7a80`, `0xe600`, `0x4c00`, `0xd680`, `0xc280`, `0xdf00`. The
+CellSpurs instance is at `0x01e97a80`.
+
+`vm::reservation_acquire` indexes `g_reservations` by `addr & 0xff80`: one
+64-bit word serves every 128-byte line whose address agrees in the low 16 bits,
+so 32 lines of the 2 MiB ring alias each SPURS control line. Under Accurate SPU
+Reservations (on in this profile, reverted to on 2026-08-23) an SPU `PUTLLC`
+takes the unique lock on its line and then `vm::writer_lock`, which marks every
+PPU thread `cpu_flag::memory` and waits for each to park. That wait is the
+millisecond. The RSX fetch reads the aliased word, sees the lock and waits for a
+store to a different address. On x86 the same aliasing exists and the lock is
+held for nanoseconds, so nobody saw it. 4.6 ms a frame of the RSX thread's 37 is
+this.
+
+The double read (`cmp_rdata` after `mov_rdata`) is what protects a FIFO line
+against a torn read, not the lock bit, and nothing stores atomically into the
+ring. The next core ignores lock bits on FIFO fetches behind
+`debug.rpcsx.thor.rsx_fifo_ignore_res_lock=1` and keeps the timestamp check.
+ARMSX3 hit the same table aliasing from the other side (`ed6941519`, PUTLLC
+failures).
+
+**The SPU work is GCMX: RSX command generation on the SPUs.** The workload
+census (`debug.rpcsx.thor.spurs_wkl_census=1`, instance `0x01e97a80`, six
+SPUs):
+
+| wid | class | instance | ready | contention | priority |
+| --- | --- | --- | --- | --- | --- |
+| 0 | System Workload | Default System Workload | 0 | 0/1 | 00000100 |
+| 1 | taskset | edgeZlibTaskSet | 0 | 0/8 | ffffff00 |
+| 2 | **JobQueue** | **GCMX JobQueue** | **5** | **4/5** | 07777777 |
+| 3 | taskset | GCMX | 1 | 1/1 | 10000000 |
+| 4 | JobChain | SpursManager | 0 | 0/6 | 77777777 |
+| 5 | JobChain | SpursManager | 0 | 0/6 | 77777777 |
+| 6 | taskset | PhysX | 0 | 0/6 (1 pending) | 44444444 |
+| 7 | JobChain | (unnamed) | 0 | 0/5 | 44444444 |
+| 9 | taskset | FMOD | 1 | 1/1 | 01111000 |
+
+GCMX is the SPU-side command generation library: the PPU render thread queues
+jobs, four to five SPUs build the draw commands and DMA them into the 2 MiB
+ring, the render thread polls a word for completion (`0x00fdcba0`,
+`sys_timer_usleep(30)`), and the RSX thread parses what the SPUs wrote. That is
+why parking the SPUs on the little cores took the frame from 19.8 to 6.4 FPS
+with the same 1,500 draws, and why every SPU-side cost on ARM64 is on the frame:
+the non-RTM DMA PUT path that locks and bumps a reservation per 128-byte chunk,
+the `PUTLLC` writer_lock that waits for the PPU threads, the reservation-table
+aliasing above, and the SPU JIT's own quality. PhysX and FMOD are tasksets on
+the same six SPUs.
