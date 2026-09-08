@@ -42,3 +42,6 @@ build-thor.log
 _research/spurs/*.lsdump.txt
 _research/spurs/*/spu-hot-window-image.bin
 _research/spurs/*/ghidra-headless.log
+
+# Decrypted guest executables pulled for Ghidra. Game data, never committed.
+_research/transformers-ppu/
