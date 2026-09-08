@@ -1788,6 +1788,28 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				//   debug.rpcsx.thor.rsx_fifo_accuracy  = fast | atomic | ordered
 				force_bool("debug.rpcsx.thor.multithreaded_rsx", g_cfg.video.multithreaded_rsx, "Multithreaded RSX");
 
+				// Resolution Scale, 25..800. The GPU measured 50 to 62 percent busy at
+				// 550 of 680 MHz in combat; a lower internal resolution says whether the
+				// frame is waiting on it.
+				//
+				//   debug.rpcsx.thor.resolution_scale = 25..800
+				char rs_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.resolution_scale", rs_value) > 0 && rs_value[0])
+				{
+					const long parsed = std::strtol(rs_value, nullptr, 10);
+
+					if (parsed >= 25 && parsed <= 800)
+					{
+						g_cfg.video.resolution_scale_percent.set(parsed);
+						sys_log.error("Thor: Resolution Scale forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.video.resolution_scale_percent);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring Resolution Scale '%s' (expected 25..800)", rs_value);
+					}
+				}
+
 				char fifo_mode[PROP_VALUE_MAX]{};
 
 				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_accuracy", fifo_mode) > 0 && fifo_mode[0])

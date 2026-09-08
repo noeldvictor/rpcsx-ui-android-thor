@@ -37,6 +37,10 @@ ISO="/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
 REPO=/c/Users/leanerdesigner/Documents/ps3-thor/rpcsx-ui-android
 PLAY=${PLAY:-60}
 COOL=${COOL:-55}
+# Scene gate on coresBusy. 4.5 separates combat from the movies; an arm that
+# removes work (disabled occlusion queries ran at 4.0) needs a lower gate and a
+# screenshot check instead.
+GATE_CORES=${GATE_CORES:-4.5}
 OUTDIR=${OUTDIR:-$REPO/debug-captures/$(date +%Y%m%d-%H%M%S)-transformers-diag-round}
 mkdir -p "$OUTDIR"
 
@@ -226,9 +230,9 @@ one_run(){
     ST=$(api status)
     VID=$(printf '%s' "$ST" | grep -oE '"videoDecoding":[a-z]+' | cut -d: -f2)
     OPEN=$(printf '%s' "$ST" | grep -oE '"videoFilesOpen":[0-9]+' | cut -d: -f2)
-    if [ "$(awk -v c="$CORES" 'BEGIN{print (c>4.5)?1:0}')" = "1" ] && [ "${VID:-true}" = "false" ] && [ "${OPEN:-1}" = "0" ]; then break; fi
+    if [ "$(awk -v c="$CORES" -v g="$GATE_CORES" 'BEGIN{print (c>g)?1:0}')" = "1" ] && [ "${VID:-true}" = "false" ] && [ "${OPEN:-1}" = "0" ]; then break; fi
   done
-  if [ "$(awk -v c="$CORES" 'BEGIN{print (c>4.5)?1:0}')" != "1" ] || [ "${VID:-true}" != "false" ] || [ "${OPEN:-1}" != "0" ]; then
+  if [ "$(awk -v c="$CORES" -v g="$GATE_CORES" 'BEGIN{print (c>g)?1:0}')" != "1" ] || [ "${VID:-true}" != "false" ] || [ "${OPEN:-1}" != "0" ]; then
     echo "   $tag INVALID (not 3D combat: cores=$CORES videoDecoding=${VID:-?} videoFilesOpen=${OPEN:-?})"; pull_log "$tag"; return
   fi
   echo "   in 3D combat after ${w}s: cores=$CORES temp=$(t_)C"
