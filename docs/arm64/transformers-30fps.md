@@ -1157,3 +1157,46 @@ The resolution arms were void because the reinstalled thortest APK did not
 honour the dev-core override; only the `debug` build type set that flag. Fixed
 in `app/build.gradle.kts` the same night, and logcat now shows `Using Thor dev
 core override` on boot.
+
+## Round F: the frame is draw-call bound
+
+Dev core `EBC18A6C` on the APK that honours the override (logcat: `Using Thor
+dev core override`), shipped profile, scene gate 3.0.
+
+| arm | fps (three 20 s samples) | cores | CPU | GPU busy | screenshot |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.43 (19.50, 19.30, 19.50) | 5.45 | 72.2% | 48 to 56% | full scene, 18,252 colours |
+| queries disabled, report **visible** (`zcull_visible_value=1`) | **9.48** (9.60, 9.50, 9.33) | 5.21 | 60.8% | 42 to 48% | full scene, 17,930 colours |
+| same, second | **9.07** (9.00, 9.00, 9.20) | 5.14 | 64.5% | 40 to 43% at 680 MHz | full scene, 18,437 colours |
+| `resolution_scale=50` | **20.85** (20.75, 21.20, 20.60) | 5.71 | 64.8% | 46 to 53% | full scene at 640x360, 12,057 colours |
+
+**The discriminator answered.** Report "occluded" for every query and the title
+draws almost nothing: 29.6 FPS. Report "visible" for every query and it draws
+everything: 9.5 FPS, with the GPU still under half busy. Let the queries work
+and it draws what the queries admit: 19.4 FPS. The frame cost follows the
+number of draws the title issues, not the query round-trips, and not pixel
+work: halving the internal resolution moved GPU busy by nothing and the frame
+rate by 7 percent. **The occlusion queries are saving half the frame, and the
+emulator's cost per draw is the limit.**
+
+That is also why every earlier lever was null. SPU work, PPU waits, the
+decrementer loop, timer slack and counter reads are not on the per-draw path.
+The per-draw path is: the render PPU thread building commands, `rsx::thread`
+fetching them through the Atomic FIFO (17 percent of its time in the
+reservation spin), the texture and program caches, the vertex and index
+uploads (`memcpy_opt` 7 percent), Turnip's CPU side (17.6 percent of the RSX
+thread), and the Adreno's own per-draw cost, which is what keeps GPU busy at
+half with pixel count irrelevant.
+
+What follows from it, in order of size:
+
+1. **The system Qualcomm Vulkan driver against Turnip**, per draw. Never
+   measured on this scene; Turnip is 17.6 percent of the RSX thread's cycles.
+2. **FIFO Fast**, plus 2.3 percent, if the dead-FIFO boot hang can be fixed.
+3. **Resolution Scale 50**, plus 7 percent, at a visible cost. A user choice,
+   not a profile default.
+4. Per-draw overhead inside `rsx::thread`: the FIFO reservation spin, the
+   per-draw program analysis and cache lookups, the index and vertex copies.
+
+30 FPS needs a 35 percent cut in cost per draw. No setting does that. The
+shipped state is 19.4 FPS with Relaxed ZCULL Sync, up from 18.4.

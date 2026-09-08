@@ -239,9 +239,13 @@ system-register read on this chip. Every PPU thread is inside a wait at nearly
 every sample. Frame intervals spread from 45 to 100 ms with no vblank
 clustering. So the frame is a chain of handoffs, not a saturated core. Removing
 the dead decrementer reads (`debug.rpcsx.thor.spu_dec_dead_read=1`) frees half of
-that SPU and moves no frames. The render thread waits for space in a full 1 MiB
-command ring, and the RSX thread spends a sixth of its time in the Atomic FIFO
-fetch's reservation spin. `Relaxed ZCULL Sync: true` is the one setting that survived a
+that SPU and moves no frames. **The frame is draw-call bound**: report every
+occlusion query as occluded and the title hits its cap drawing nothing; report
+every query as visible and it falls to 9.5 FPS drawing everything; let the
+queries work and it sits at 19.4. Halving the internal resolution buys 7 percent
+and moves GPU busy time by nothing. The limit is the emulator's cost per draw:
+the RSX thread, the Vulkan driver's CPU side and the Adreno's per-draw work.
+`Relaxed ZCULL Sync: true` is the one setting that survived a
 repeat: three arms at 19.27 to 19.57 FPS against four controls at 18.21 to
 18.57, same CPU, identical screenshots. It is still an experiment property, not
 a profile value, because upstream documents titles it breaks.
