@@ -601,12 +601,22 @@ static bool thor_spu_putllc16_nobarrier() noexcept
 
 			if (on)
 			{
-				spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock");
+				spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock (property)");
 			}
 
 			return on;
 		}
 #endif
+		// Default on for Transformers (BLUS30357) since 2026-09-08: round R measured
+		// 20.30 and 20.43 FPS against controls of 19.20 and 19.09 with 8 to 11
+		// percent fewer cores, Accurate SPU Reservations on, screenshots drawn.
+		// Every other title keeps upstream's heavyweight path until measured.
+		if (Emu.GetTitleID() == "BLUS30357")
+		{
+			spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock (BLUS30357 default)");
+			return true;
+		}
+
 		return false;
 	}();
 

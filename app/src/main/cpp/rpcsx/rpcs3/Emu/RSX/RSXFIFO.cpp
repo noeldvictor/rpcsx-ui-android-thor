@@ -302,12 +302,28 @@ namespace rsx
 #ifdef __ANDROID__
 				char value[PROP_VALUE_MAX]{};
 
-				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_ignore_res_lock", value) > 0 && value[0] && value[0] != '0')
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_ignore_res_lock", value) > 0 && value[0])
 				{
-					rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits");
-					return true;
+					const bool on = value[0] != '0';
+
+					if (on)
+					{
+						rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits (property)");
+					}
+
+					return on;
 				}
 #endif
+				// Default on for Transformers (BLUS30357) since 2026-09-08: rounds O
+				// and R showed retries 80,000 to 13 per 10 s, yields to 0, mismatches 0
+				// in every window, no frame change; an RSX CPU and power lever. Other
+				// titles keep upstream's lock check until measured.
+				if (Emu.GetTitleID() == "BLUS30357")
+				{
+					rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits (BLUS30357 default)");
+					return true;
+				}
+
 				return false;
 			}();
 

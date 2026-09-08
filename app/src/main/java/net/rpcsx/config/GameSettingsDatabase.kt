@@ -164,6 +164,15 @@ object GameSettingsDatabase {
               RSX FIFO Accuracy: Atomic
               # Accurate SPU Reservations stays ON. Reverted 2026-08-23.
               #
+              # 2026-09-08: two code defaults for this title live in the core, not here,
+              # because they are not config keys. A PUTLLC confined to one 16-byte chunk
+              # commits without vm::writer_lock (SPUThread.cpp, ARMSX3 813774767; round R:
+              # 20.30 and 20.43 FPS against 19.20 and 19.09, 8 to 11 percent fewer cores),
+              # and the RSX FIFO fetch ignores reservation lock bits that alias its lines
+              # (RSXFIFO.cpp; retries 80,000 to 13 per 10 s, no frame change, a power lever).
+              # debug.rpcsx.thor.spu_putllc16_nobarrier=0 and rsx_fifo_ignore_res_lock=0
+              # turn them off. See docs/arm64/transformers-30fps.md, rounds N to R.
+              #
               # This title HALTS ITS OWN SPU inside CellSpursKernel0, and disabling
               # accurate reservations is documented upstream as causing exactly this
               # class of failure, a freeze shortly after the intro, in other titles.
