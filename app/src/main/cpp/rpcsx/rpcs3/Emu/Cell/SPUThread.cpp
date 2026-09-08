@@ -1,6 +1,7 @@
 ﻿#include "rx/align.hpp"
 #include "Emu/CPU/thor_spu_prof.h"
 #include "stdafx.h"
+#include "Emu/thor_mem_watch.h"
 #include "util/JIT.h"
 #include "util/date_time.h"
 #include "Emu/Memory/vm.h"
@@ -6324,6 +6325,12 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 			transfer.lsa = arg_lsa | (addr & 0xf);
 			transfer.size = size;
 
+			// Thor MEMWATCH: a list PUT element that covers the watched word.
+			if (thor::mem_watch::armed() && (transfer.cmd & MFC_PUT_CMD) && !(transfer.cmd & MFC_GET_CMD)) [[unlikely]]
+			{
+				thor::mem_watch::on_range("SPU PUTL element", addr, size, +id, pc);
+			}
+
 			arg_lsa += rx::alignUp<u32>(size, 16);
 			do_dma_transfer(this, transfer, ls);
 		}
@@ -8592,6 +8599,13 @@ bool spu_thread::process_mfc_cmd()
 						static_cast<s32>(tail - head), pc);
 				}
 			}
+		}
+
+		// Thor MEMWATCH: a plain PUT that covers the watched word. List DMA
+		// (PUTL and friends) is not decoded here; the census counts its opcodes.
+		if (thor::mem_watch::armed() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTF_CMD) [[unlikely]]
+		{
+			thor::mem_watch::on_range("SPU PUT", ch_mfc_cmd.eal, ch_mfc_cmd.size, +id, pc);
 		}
 
 		if (get_thor_put_census() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTRF_CMD) [[unlikely]]

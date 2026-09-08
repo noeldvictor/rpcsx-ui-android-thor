@@ -16,6 +16,7 @@
 #include "Emu/Cell/thor_spu_ls_dump.h"
 #include "Emu/Cell/thor_spu_pc_census.h"
 #include "Emu/Cell/thor_spurs_wkl_census.h"
+#include "Emu/thor_mem_watch.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
@@ -225,6 +226,12 @@ void perf_monitor::operator()()
 			//
 			//   debug.rpcsx.thor.ppu_pc_census = 1
 #ifdef __ANDROID__
+			// Thor MEMWATCH: the watched word's value each tick. See thor_mem_watch.h.
+			if (thor::mem_watch::armed())
+			{
+				perf_log.error("Thor MEMWATCH: word 0x%08x = 0x%08x", thor::mem_watch::ea(), thor::mem_watch::read_word());
+			}
+
 			// SPURS workload table, every fifth tick. See thor_spurs_wkl_census.h.
 			//   debug.rpcsx.thor.spurs_wkl_census = 1
 			if (thor::spurs_wkl_census::enabled())
