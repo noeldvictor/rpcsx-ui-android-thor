@@ -6356,7 +6356,7 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 			// Thor MEMWATCH: a list PUT element that covers the watched word.
 			if (thor::mem_watch::armed() && (transfer.cmd & MFC_PUT_CMD) && !(transfer.cmd & MFC_GET_CMD)) [[unlikely]]
 			{
-				thor::mem_watch::on_range("SPU PUTL element", addr, size, +id, pc);
+				thor::mem_watch::on_range("SPU PUTL element", addr, size, index, pc);
 			}
 
 			arg_lsa += rx::alignUp<u32>(size, 16);
@@ -6415,7 +6415,7 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 	// Thor MEMWATCH: a conditional store on the line that holds the watched word.
 	if (thor::mem_watch::armed()) [[unlikely]]
 	{
-		thor::mem_watch::on_range("SPU PUTLLC", addr, 128, +id, pc);
+		thor::mem_watch::on_range("SPU PUTLLC", addr, 128, index, pc);
 	}
 
 	if ([&]()
@@ -8658,7 +8658,7 @@ bool spu_thread::process_mfc_cmd()
 		// (PUTL and friends) is not decoded here; the census counts its opcodes.
 		if (thor::mem_watch::armed() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTF_CMD) [[unlikely]]
 		{
-			thor::mem_watch::on_range("SPU PUT", ch_mfc_cmd.eal, ch_mfc_cmd.size, +id, pc);
+			thor::mem_watch::on_range("SPU PUT", ch_mfc_cmd.eal, ch_mfc_cmd.size, index, pc);
 		}
 
 		if (get_thor_put_census() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTRF_CMD) [[unlikely]]
