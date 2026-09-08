@@ -1026,3 +1026,46 @@ word at r28 and r30 for every sample, so the next run names the address.
 
 The levers that follow from that: `Multithreaded RSX`, `RSX FIFO Accuracy: Fast`
 and `Disable ZCull Occlusion Queries`, each now behind a property.
+
+## Round D: the GPU is not idle, and the render thread waits for ring space
+
+Shipped profile (Relaxed ZCULL Sync now on), core `3B1E2217`, and the harness
+now reads `/sys/class/kgsl/kgsl-3d0/gpubusy` over each window.
+
+| arm | fps (three 20 s samples) | cores | CPU | GPU busy | GPU clock |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.53 (20.00, 19.30, 19.30) | 5.57 | 70.8% | 52 to 62% | 550 MHz |
+| `Multithreaded RSX: true` | **13.77** (14.10, 13.20, 14.00) | 6.33 | 78.8% | 29 to 44% | 550 MHz |
+| `RSX FIFO Accuracy: Fast` | 19.97 (20.00, 19.80, 20.10) | 5.54 | 69.5% | 55 to 57% | 550 MHz |
+| `Disable ZCull Occlusion Queries` | INVALID, scene gate failed at 4.0 cores | | | | |
+| control, second | 19.53 (19.60, 19.60, 19.40) | 5.45 | 68.8% | 50 to 57% | 550 MHz |
+
+**"The GPU is idle" was a CPU-side statement, and it was wrong as a GPU-side
+one.** The Vulkan driver is 2.3 percent of CPU cycles and the guest's overlay
+reports RSX at 3 to 7 percent, but the Adreno itself is busy 50 to 62 percent
+of the time, at 550 MHz of a 680 MHz maximum. It is not saturated. It is not
+idle either. The devfreq governor is `msm-adreno-tz`, and its clock is
+root-only, so the clock cannot be pinned from the harness.
+
+**Multithreaded RSX is rejected**: minus 30 percent, with GPU busy falling to
+29 to 44 percent because the RSX thread fed it less. **FIFO Fast** reads plus
+2.3 percent on one arm at equal CPU. It stays out of the profile: with `Fast`
+the boot hung twice with a dead FIFO 35 seconds in, and the savestate route
+skips exactly that phase.
+
+**The render thread's poll, named.** With the census printing r27, r28, the
+word at r28 and r30, the loop at `0x00fdcba0` reads:
+
+    while (*(u32*)0x01f94998 + 0x4000 > 0x100000) sys_timer_usleep(30);
+
+The word sits at 0xfc400 while it waits. The render thread wants 16 KiB of a
+1 MiB ring that has 15 KiB free, and it waits 30 us at a time for the consumer
+to drain it. The main thread meanwhile waits on the render thread in
+`sys_cond_wait`. The consumer is what advances the RSX side of that ring:
+`rsx::thread`, which the census puts at about 0.7 of a core, and whatever it in
+turn waits for on the GPU. That is the chain: PPU render thread, a 1 MiB ring,
+rsx::thread, Vulkan, a half-busy GPU at a mid clock.
+
+The next instrument is a host profile of `rsx::thread` alone in combat, to
+split its 0.7 core between FIFO work and waits on the GPU. The next levers are
+whatever that profile names.
