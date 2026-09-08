@@ -3,6 +3,7 @@
 #include <sys/system_properties.h>
 #endif
 #include "Emu/thor_thermal_guard.h"
+#include "Emu/RSX/thor_frametime.h"
 #include "RSXThread.h"
 
 #include "Capture/rsx_capture.h"
@@ -2664,6 +2665,10 @@ namespace rsx
 		if (info.emu_flip)
 		{
 			performance_counters.sampled_frames++;
+
+			// Frame interval for the Transformers frame-pacing question. See
+			// Emu/RSX/thor_frametime.h; reported on the perf_monitor "Frames:" line.
+			thor::frametime::on_flip(get_system_time());
 
 			if (m_pause_after_x_flips && m_pause_after_x_flips-- == 1)
 			{

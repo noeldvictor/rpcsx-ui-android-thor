@@ -19,6 +19,7 @@
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
 #include "Emu/thor_device_stats.h"
+#include "Emu/RSX/thor_frametime.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
@@ -191,6 +192,12 @@ void perf_monitor::operator()()
 
 					fmt::append(msg, ", Frames: %llu in %.2fs (%.2f FPS)", frames,
 						window_us / 1000000.0, frames * 1000000.0 / window_us);
+
+					// Frame INTERVAL distribution since the previous report: percentiles
+					// and buckets. An average of 20 FPS cannot separate "every frame is
+					// 50 ms" from "frames spread 35 to 70 ms", and the two call for
+					// different work. See Emu/RSX/thor_frametime.h.
+					thor::frametime::report(msg);
 
 					// Publish for the control API, so a tool can read speed, heat and
 					// power without grepping the log. Frames go with the CPU number on
