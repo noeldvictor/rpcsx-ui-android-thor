@@ -1329,3 +1329,43 @@ config values and can go into the title profile; the dead decrementer read is a
 codegen property that keys the SPU cache. Shipping them means accepting up to a
 few percent of frame rate for about an eighth of the CPU. That trade is the
 owner's call and is recorded here rather than made.
+
+# 2026-09-08: the 30 FPS programme, stage 0 and 1
+
+Plan: `~/.claude/plans/bubbly-foraging-ladybug.md` (the owner's copy). Core
+`A88B3EA9` with the structural switches, per-class affinity masks and the RSX
+counters (`Emu/RSX/thor_rsx_counters.h`) on the Frames line.
+
+## Round K: the structural switches
+
+| arm | fps | cores | CPU | verdict |
+| --- | --- | --- | --- | --- |
+| control | 20.33 (cold start 37 C) | 5.70 | 67.5% | |
+| `PPU Threads: 4` | **16.50** | 6.05 | 76.5% | minus 19 percent |
+| `PPU Threads: 8` | **15.90** | 6.31 | 81.8% | minus 22 percent |
+| `Asynchronous Queue Scheduler: Fast` | 19.83 | 5.75 | 68.0% | null |
+| `Sleep Timers Accuracy: Usleep Only` | 19.93 | 5.81 | 70.0% | null |
+| chain on cpu3-7, SPUs on cpu0-2, RSX f8 | scene gate refused at 3.94 cores | | | rerun with gate 3.0 |
+| chain on cpu3-7, SPUs on cpu0-2, RSX on the X3 | scene gate refused at 3.82 cores | | | rerun with gate 3.0 |
+| same pin plus Multithreaded RSX | **6.63** | 4.91 | 61.5% | dead; GPU busy 25% |
+| control, second | 19.97 | 5.79 | 68.8% | |
+
+**The two-slot PPU limit is doing real work.** Letting four or eight PPU
+threads run at once costs a fifth of the frame rate and adds half a core. The
+twenty guest PPU threads then compete with the render thread for cores and for
+the lv2 mutex; the Cell's two hardware threads were a throttle the game was
+written against, and the emulator's copy of it is not the serialisation. The
+question is closed.
+
+The async compute scheduler and the timer mode are nothing on this scene.
+Multithreaded RSX with the chain pinned is a slideshow: its offload thread is not
+covered by the RSX mask and lands wherever the scheduler puts it, and the
+handoff between the two RSX threads is on the frame's path. Rejected twice now,
+in two configurations.
+
+The placement arms were refused by the scene gate because parking six SPUs on
+three little cores lowers total cores busy by design; that gate compares
+against 4.5. They run again with the gate at 3.0. The residency sampler's PPU
+and SPU rows read the wrong stat column for thread names with a space, fixed the
+same round; the RSX row already showed `rsx::thread` on cpu2, a little core, 10
+percent of the time under the OS scheduler.
