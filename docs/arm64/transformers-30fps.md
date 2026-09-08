@@ -1683,3 +1683,34 @@ Reservations on; round R measures it against the accurate-off arm.
 
 The hook printed the SPU `id` field rather than its index, so which of the six
 SPUs ran the drain is not in this log; the stage 2 profile has the per-SPU split.
+
+## Stage 2 profile: where the SPU and PPU time goes
+
+Capture `debug-captures/20260908-150448-transformers-stage2-profile`, core
+`7D621ADC`, restored combat, 25 s at 18.7 FPS, 152,146 samples at 1 kHz with call
+graphs, `rsx_fifo_ignore_res_lock=1` set. Shares of all samples by thread: SPU0
+19.1 percent, SPU2 11.1, SPU1 10.8, SPU4 10.8, SPU3 10.6, SPU5 8.7, `rsx::thread`
+8.9, `RenderingThread` 7.2, `main_thread` 6.8. The six SPUs are 71 percent of the
+process.
+
+| thread | symbol | share of the thread |
+| --- | --- | --- |
+| SPU0 | `vm::writer_lock::writer_lock` | **23.3%** |
+| SPU0 | one JIT block (`+7229b8acb0`) | 19.7% |
+| SPU0 | one JIT block (`+7229847790`) | 8.3% |
+| SPU0 | `spu_thread::process_mfc_cmd` | 5.4% |
+| SPU1 | `vm::writer_lock::writer_lock` | **15.1%** |
+| SPU1 | kernel | 8.6% |
+| SPU1 | `spu_thread::process_mfc_cmd` | 4.9% |
+| `RenderingThread` | `vm::passive_lock` | **19.6%** |
+| `main_thread` | `vm::passive_lock` | **18.9%** |
+
+`vm::writer_lock`'s constructor is the wait for every PPU thread to park;
+`vm::passive_lock` is the PPU thread parking. The SPU conditional stores stop the
+PPU side, and both sides pay: a fifth of the render thread's time and a quarter
+of the busiest SPU's. This is the cost the accurate-off arms removed and the
+reason they moved the frame; it is the round Q line and every other `PUTLLC` under
+Accurate SPU Reservations. The barrier-free 16-byte commit (commit 1ba97a16d,
+`spu_putllc16_nobarrier=1`) removes it while keeping the setting on; round R
+measures it. The JIT map (2.2 million symbols) did not resolve in the report, so
+the SPU hot blocks are unnamed here; the two together are 28 percent of SPU0.
