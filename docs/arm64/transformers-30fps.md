@@ -1602,3 +1602,38 @@ and DMAs them into the ring; on ARM64 every 128-byte DMA chunk locks a
 reservation and takes a range lock, and every conditional store outside the
 SPURS lines takes the writer_lock that parks the PPU threads. That is the
 structural cost between 20 and 30 FPS, and it is SPU-side, not RSX-side.
+
+## Round P: the two halves of Accurate SPU Reservations off
+
+Capture `debug-captures/20260908-141354-transformers-diag-round`, core `0A7B3A58` (commit 49d1bae8a:
+`debug.rpcsx.thor.spu_putllc16`). The device ran at 92 to 96 C all afternoon;
+this round's controls sit lower than the morning's and agree with each other to
+0.03 FPS.
+
+| arm | fps | cores | verdict |
+| --- | --- | --- | --- |
+| control | 19.27 | 5.68 | |
+| `spu_accurate_reservations=0` | 20.00 | 5.55 | |
+| `spu_accurate_reservations=0`, `spu_putllc16=0` | 19.97 | 5.59 | same as without the patterns |
+| `spu_putllc16=1` (accurate on, patterns installed) | 19.47 | 5.55 | null |
+| control, second | 19.27 | 5.83 | |
+| `spu_accurate_reservations=0`, repeat | 19.73 | 5.56 | |
+| `spu_accurate_reservations=0`, `spu_putllc16=0`, repeat | 20.33 | 5.60 | |
+| control, third | 19.30 | 5.73 | |
+
+**Claim: Accurate SPU Reservations off is worth 3.7 percent of frame rate here**
+(four arms 19.73 to 20.33 against three controls 19.27 to 19.30, no overlap; round
+O had it at 20.67 and 20.96 against 19.83 and 19.37) **and 2 to 10 percent of
+cores.** The inline PUTLLC16 patterns are not where the speed comes from: with
+them refused the arms read the same, and with them installed under accurate
+reservations nothing moved. The speed is `do_putllc` and `do_putlluc` skipping
+`vm::writer_lock` for the SPURS instance lines and the atomic 128-byte stores,
+which is where the SPU-side range-locking cycles were.
+
+The property `spu_putllc16=0` engaged: the SPU object cache gained
+`spu-mega-thor-p16off-v1-tane.dat`. So the live-lock question from
+`spurs-halt.md` can now be asked with the speed kept: eight cold boots with
+`spu_accurate_reservations=0` and `spu_putllc16=0`. If the freeze stays with the
+patterns, the setting ships for this title with the patterns refused; if it
+stays without them, the writer_lock skip itself is unsafe here and the ARMSX3
+route (a whitelisted 16-byte commit, `813774767`) is the one left.
