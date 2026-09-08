@@ -15,6 +15,7 @@
 #include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
 #include "Emu/Cell/thor_spu_pc_census.h"
+#include "Emu/Cell/thor_spurs_wkl_census.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
@@ -224,6 +225,27 @@ void perf_monitor::operator()()
 			//
 			//   debug.rpcsx.thor.ppu_pc_census = 1
 #ifdef __ANDROID__
+			// SPURS workload table, every fifth tick. See thor_spurs_wkl_census.h.
+			//   debug.rpcsx.thor.spurs_wkl_census = 1
+			if (thor::spurs_wkl_census::enabled())
+			{
+				static u32 s_wkl_tick = 0;
+
+				if ((s_wkl_tick++ % 5) == 0)
+				{
+					std::string wkl;
+
+					if (thor::spurs_wkl_census::report(wkl))
+					{
+						perf_log.error("%s", wkl);
+					}
+					else
+					{
+						perf_log.error("Thor SPURS WKL: no kernel thread with a SPURS instance yet");
+					}
+				}
+			}
+
 			{
 				static const bool s_explicit_pc_census = []() noexcept
 					{
