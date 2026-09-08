@@ -58,7 +58,7 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
 - Refresh vendored core with `tools/sync_rpcsx_core.ps1`.
 - Hydrate core deps with `tools/hydrate_rpcsx_core_deps.ps1`.
 - Normal debug build: `.\gradlew.bat :app:assembleDebug`.
-- Measurement APK: `.\gradlew.bat :app:assembleThortest -PrpcsxThorDebuggable=1`. Without the property the APK is not debuggable: `run-as` fails, the control API on port 8099 is absent, and the dev-core override cannot be verified. An install without it cost one device round on 2026-09-07.
+- Measurement APK: `.\gradlew.bat :app:assembleThortest -PrpcsxThorDebuggable=1`. Without the property the APK is not debuggable: `run-as` fails, the control API on port 8099 is absent, and the dev-core override cannot be verified. Since 2026-09-07 the debuggable thortest APK also honours `files/dev-core/active-core.path`; before that only the `debug` build type did, and a thortest install ran the bundled core while the pushes went nowhere. Check logcat for `Using Thor dev core override` after any reinstall.
 - Fast native-core hot swap: `.\tools\build_push_thor_core.ps1 -Label NAME`.
 - Reset hot swap: `.\tools\build_push_thor_core.ps1 -ResetToBundled`.
 

@@ -266,6 +266,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += listOf("release")
             buildConfigField("Boolean", "THOR_DEBUG_TOOLS", "true")
+            // The debuggable measurement APK honours the dev-core override, so a
+            // RelWithDebInfo core pushed with build_push_thor_core.ps1 is what runs.
+            // Without this only the `debug` build type read active-core.path, and
+            // a thortest install on 2026-09-07 silently ran the bundled core instead.
+            buildConfigField("Boolean", "THOR_DEV_CORE_OVERRIDE", if (rpcsxThorDebuggable) "true" else "false")
         }
     }
 
