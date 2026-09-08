@@ -585,6 +585,34 @@ static bool get_thor_spurs_always_notify() noexcept
 // thermally bound. This toggle changes ONE thing: it takes vm::writer_lock
 // around those two copies and nothing else. If the halt rate falls with this
 // and not with the other levers, the tear is the cause.
+// Round Q's answer to "who frees the GCMX ring" is SPU PUTLLC on one line from
+// the job code, with the render thread's stwcx on the same line. See the note in
+// do_putllc. Read once.
+static bool thor_spu_putllc16_nobarrier() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_putllc16_nobarrier", value) > 0 && value[0])
+		{
+			const bool on = value[0] != '0';
+
+			if (on)
+			{
+				spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock");
+			}
+
+			return on;
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
 static bool get_thor_spurs_store_exclusive() noexcept
 {
 	static const bool s_value = []() -> bool
@@ -6570,6 +6598,25 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 			auto& super_data = *vm::get_super_ptr<spu_rdata_t>(addr);
 			const bool success = [&]()
 			{
+				// Thor (2026-09-08), ARMSX3 813774767: a store confined to one aligned
+				// 16-byte chunk commits with a 16-byte compare-exchange and no
+				// vm::writer_lock. The writer_lock is not a lock on this address: it
+				// sets a bit in the global range-lock word, marks every PPU thread
+				// cpu_flag::memory and spins until each has parked, while this
+				// thread holds the line's unique reservation lock, so every other
+				// SPU's PUTLLC on the line fails and every GETLLAR spins. Transformers
+				// hammers one such line, the GCMX ring counter, about 250 times a
+				// frame from five SPUs and the render thread (memory watch, round Q).
+				// The trade: the other 112 bytes are compared but not excluded from
+				// plain stores and DMA for a window of tens of nanoseconds, which is
+				// what the inline PUTLLC16 path and the PPU's 8-byte stwcx already do.
+				//   debug.rpcsx.thor.spu_putllc16_nobarrier = 1
+				if (diff16_pos != umax && thor_spu_putllc16_nobarrier())
+				{
+					return cmp_rdata(rdata, super_data) &&
+						atomic_storage<u128>::compare_exchange(reinterpret_cast<u128*>(super_data)[diff16_pos], reinterpret_cast<u128*>(rdata)[diff16_pos], reinterpret_cast<const u128*>(to_write)[diff16_pos]);
+				}
+
 				// Full lock (heavyweight)
 				// TODO: vm::check_addr
 				vm::writer_lock lock(addr, range_lock);
