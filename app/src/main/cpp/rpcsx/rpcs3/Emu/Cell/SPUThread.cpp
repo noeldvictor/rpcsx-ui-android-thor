@@ -9563,7 +9563,15 @@ s64 spu_thread::get_ch_value(u32 ch)
 				{
 					if (u32 work_count = g_spu_work_count)
 					{
-						const u32 true_free = rx::sub_saturate<u32>(utils::get_thread_count(), 10);
+						// Upstream's `thread_count - 10` is 0 on every 8-core device, so
+						// while ANY SPU block compiles, a random reservation waiter sleeps
+						// 200 us. ARMSX3 (00f0d2e38, 2026-08-30) measured 2179 ms frames at
+						// the tail of a 1723-block compile burst with that formula and
+						// kept the half-the-cores form below. With the native SPU object
+						// cache off by default here, every boot is a cold burst, so the
+						// throttle is live through the whole warm-up.
+						const u32 hw_threads = utils::get_thread_count();
+						const u32 true_free = hw_threads > 10 ? (hw_threads - 10) : (hw_threads / 2);
 
 						if (work_count > true_free)
 						{
