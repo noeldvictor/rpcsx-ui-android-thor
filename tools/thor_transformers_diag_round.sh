@@ -59,7 +59,7 @@ fan_(){ sh_ "settings get system fan_mode"; }
 # whose pinned thread is not 100 percent inside its mask is void.
 resid_(){
   local pid="$1"
-  sh_ "for i in 1 2 3 4 5 6 7 8 9 10; do for t in /proc/$pid/task/*; do n=\$(cat \$t/comm 2>/dev/null); case \"\$n\" in rsx::thread|PPU\[0x100000b\]*|PPU\[0x1000000\]*|SPU\[0x0000100\]*|SPU\[0x1000100\]*) echo \"\$n \$(awk '{print \$39}' \$t/stat 2>/dev/null)\";; esac; done; sleep 0.2; done"   | awk '{k=$1; c=$2; h[k" cpu"c]++; n[k]++} END {for (x in h) {split(x, a, " "); printf "%s %s=%d%% ", a[1], a[2], 100*h[x]/n[a[1]]}; print ""}' | tr -s ' '
+  sh_ "for i in 1 2 3 4 5 6 7 8 9 10; do for t in /proc/$pid/task/*; do n=\$(cat \$t/comm 2>/dev/null); case \"\$n\" in rsx::thread|PPU\[0x100000b\]*|PPU\[0x1000000\]*|SPU\[0x0000100\]*|SPU\[0x1000100\]*) echo \"\$n \$(sed 's/^.*) //' \$t/stat 2>/dev/null | awk '{print \$37}')\";; esac; done; sleep 0.2; done"   | awk '{k=$1; c=$2; h[k" cpu"c]++; n[k]++} END {for (x in h) {split(x, a, " "); printf "%s %s=%d%% ", a[1], a[2], 100*h[x]/n[a[1]]}; print ""}' | tr -s ' '
 }
 api(){
   local out i
@@ -133,6 +133,15 @@ for l in fatal[:6]: print("     !", l[-160:])
 forced=[l for l in lines if 'Thor:' in l and ('forced' in l or 'set to' in l or 'ignoring' in l or 'applied' in l)]
 for l in forced[:12]: print("     lever:", l.split('Thor:',1)[1].strip()[:140])
 frames=[l for l in lines if 'Frames:' in l]
+audit=[l for l in lines if 'Thor RSX Auditor: frames=' in l]
+if audit:
+    print(f"   RSX auditor lines={len(audit)}; last 2 (per report interval):")
+    for l in audit[-2:]:
+        m=re.search(r'frames=(\d+) submits=(\d+).*?rp_begin=(\d+) rp_end=(\d+) rp_break=(\d+) rp_break\(g/b/i/t\)=(\S+) barriers\(g/b/i/t/all\)=(\S+)', l)
+        if m:
+            f=int(m.group(1)) or 1
+            print(f"     frames={f} rp/frame={int(m.group(3))/f:.1f} submits/frame={int(m.group(2))/f:.2f} breaks/frame={int(m.group(5))/f:.1f} break(g/b/i/t)={m.group(6)} barriers(g/b/i/t/all)={m.group(7)}")
+        else: print('     ', l[-200:])
 print(f"   Frames lines={len(frames)}; last 6:")
 for l in frames[-6:]:
     m=re.search(r'Frames:.*', l); print("     ", m.group(0)[:230] if m else l[-200:])

@@ -110,7 +110,6 @@ namespace vk
 
 void VKGSRender::begin_render_pass()
 {
-	::thor::rsx_counters::g_render_passes++;
 	vk::begin_renderpass(
 		*m_current_command_buffer,
 		get_render_pass(),

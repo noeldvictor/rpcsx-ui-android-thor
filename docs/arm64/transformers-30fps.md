@@ -1345,9 +1345,9 @@ counters (`Emu/RSX/thor_rsx_counters.h`) on the Frames line.
 | `PPU Threads: 8` | **15.90** | 6.31 | 81.8% | minus 22 percent |
 | `Asynchronous Queue Scheduler: Fast` | 19.83 | 5.75 | 68.0% | null |
 | `Sleep Timers Accuracy: Usleep Only` | 19.93 | 5.81 | 70.0% | null |
-| chain on cpu3-7, SPUs on cpu0-2, RSX f8 | scene gate refused at 3.94 cores | | | rerun with gate 3.0 |
-| chain on cpu3-7, SPUs on cpu0-2, RSX on the X3 | scene gate refused at 3.82 cores | | | rerun with gate 3.0 |
-| same pin plus Multithreaded RSX | **6.63** | 4.91 | 61.5% | dead; GPU busy 25% |
+| chain on cpu3-7, SPUs on cpu0-2, RSX f8 | **6.5** (gate refused at 3.94 cores; the log shows the scene) | 3.94 | | dead |
+| chain on cpu3-7, SPUs on cpu0-2, RSX on the X3 | **6.6** (gate refused at 3.82) | 3.82 | | dead |
+| same pin plus Multithreaded RSX | **6.63** | 4.91 | 61.5% | dead, same as without |
 | control, second | 19.97 | 5.79 | 68.8% | |
 
 **The two-slot PPU limit is doing real work.** Letting four or eight PPU
@@ -1358,14 +1358,53 @@ written against, and the emulator's copy of it is not the serialisation. The
 question is closed.
 
 The async compute scheduler and the timer mode are nothing on this scene.
-Multithreaded RSX with the chain pinned is a slideshow: its offload thread is not
-covered by the RSX mask and lands wherever the scheduler puts it, and the
-handoff between the two RSX threads is on the frame's path. Rejected twice now,
-in two configurations.
 
-The placement arms were refused by the scene gate because parking six SPUs on
-three little cores lowers total cores busy by design; that gate compares
-against 4.5. They run again with the gate at 3.0. The residency sampler's PPU
-and SPU rows read the wrong stat column for thread names with a space, fixed the
-same round; the RSX row already showed `rsx::thread` on cpu2, a little core, 10
-percent of the time under the OS scheduler.
+**Parking the SPUs on the three little cores kills the frame.** All three
+pinned arms ran the combat scene (the Frames lines show the same 1,500 draws per
+frame as the control) at 6.5 FPS, frame time p50 153 ms, whether the RSX thread
+sat on cpu3-7 or on the X3 alone and with or without Multithreaded RSX. The
+scene gate refused two of them only because total cores busy fell with the SPUs
+on 2.0 GHz cores. The SPU census from the earlier sessions called the five
+non-kernel SPUs idle pollers "not on the frame's path"; this round says the
+opposite. Six SPU threads on three Cortex-A510 cores, five of them spinning for
+work, leave the SPU that has the frame's job a quarter of a slow core, and the
+render thread waits for that job. Which job is stage 2's question now, next to
+the render thread's own 30 ms. Placement is proven from `/proc/<pid>/task/*/stat`
+sampled by hand: PPU chain threads on cpu3-6, every SPU on cpu0-2, `rsx::thread`
+on cpu7.
+
+The residency sampler's PPU and SPU rows read the wrong stat column for thread
+names with a space, fixed after round L; the RSX row already showed
+`rsx::thread` on cpu2, a little core, 10 percent of the time under the OS
+scheduler.
+
+## Round L: the placement arms with the gate at 3.0
+
+Capture `debug-captures/20260908-121516-transformers-diag-round`, same core.
+
+| arm | fps | cores | verdict |
+| --- | --- | --- | --- |
+| control | 19.80 | 5.80 | |
+| PPU f8, SPU 07, RSX f8 | **6.40** | 3.8 | dead; frame time p50 153 ms |
+| PPU f8, SPU 07, RSX on the X3 | **6.46** | 3.85 | dead; `rsx::thread` on cpu7 all the time |
+| PPU f8, SPU 0f (cpu0-3), RSX f8 | **13.10** | 4.93 | half the control |
+| control, second | 19.67 | 5.85 | |
+
+Three little cores for six SPU threads: a third of the frame rate. Three little
+cores and one A710: two thirds. Unpinned: all of it. The frame rate follows the
+CPU the SPUs get, which puts SPU work on the frame's chain as firmly as the
+render thread's own code. The draws per frame are identical across the arms
+(1,480 to 1,500), so the scene is the same and only its speed changed.
+
+Two consequences. First, the SPU side is not a power-only concern: the five SPUs
+the idle profile called pollers include the ones the render thread waits for, and
+anything that slows an SPU (little cores, the clamp, the dead-read elision's
+sibling changes) has to be measured as a frame-rate lever, not just a cores
+lever. Second, the interesting placement arm is the one that never touches the
+SPUs: PPU chain threads on cpu3-7 and `rsx::thread` on the X3, SPUs free. That
+is round M's `chain_only`.
+
+What the SPUs do for this frame is now stage 2's second question. The render
+thread's poll at `0x00fdcba0` waits on a word at `0x01f94998`; if an SPU job
+writes it, the chain is PPU render thread, SPU job, RSX thread, GPU, and the
+Ghidra decompile of that loop names the job.
