@@ -1069,3 +1069,60 @@ rsx::thread, Vulkan, a half-busy GPU at a mid clock.
 The next instrument is a host profile of `rsx::thread` alone in combat, to
 split its 0.7 core between FIFO work and waits on the GPU. The next levers are
 whatever that profile names.
+
+## The RSX thread, profiled alone in combat
+
+`simpleperf` through `run-as`, 25 s, 151,097 samples, 0 lost, restored combat
+at 19.6 FPS on the shipped profile. Symbols resolved with `llvm-addr2line`
+against the unstripped RelWithDebInfo library of the same build.
+
+| thread | share of all cycles |
+| --- | --- |
+| `SPU[0x0000100]` CellSpursKernel0 | 19.7% |
+| four other SPUs | 10.6 to 10.7% each |
+| `rsx::thread` | **9.2%**, about 0.73 of a core |
+| `SPU[0x5000100]` | 8.5% |
+| `PPU[0x100000b]` RenderingThread | 7.2% |
+| `PPU[0x1000000]` main_thread | 6.9% |
+
+Inside `rsx::thread`:
+
+| share | where |
+| --- | --- |
+| 58.6% | `librpcsx-android.so` |
+| **17.6%** | `libvulkan_freedreno.so`, the Turnip driver's CPU side |
+| 10.7% | kernel |
+| 9.6% | libc, of which `memcpy_opt` is 7.2% |
+
+| share of rsx::thread | symbol |
+| --- | --- |
+| **16.6%** | `rx::pause()`, called from `FIFO_control::read` (RSXFIFO.cpp:471, :521) and `read_unsafe` (:360) |
+| 7.2% | `memcpy_opt` |
+| 2.4% | `cpu_thread::test_stopped()` |
+| 2.3% | `rsx::thread::end()` |
+| 0.8% | `upload_untouched_naive<u16>`, index upload |
+| 0.75% | `analyse_fragment_program` |
+| 0.5% | `ZCULL_control::set_active`, `query_pool_manager::poke_query` |
+
+**The spin is the Atomic FIFO fetch.** `FIFO_control::fetch_u32` takes a
+`rsx::reservation_lock` per 128-byte line of the command buffer and pauses while
+a reservation on that line is being updated, which is the PPU writing the very
+buffer the RSX is reading. That is 17 percent of the RSX thread's time, and it
+is exactly what `RSX FIFO Accuracy: Fast` skips: Fast measured plus 2.3 percent.
+Fast is not shipped because it hung the boot twice with a dead FIFO. The
+question that follows is whether the Atomic fetch can be cheaper, or whether the
+dead-FIFO hang under Fast can be fixed on its own.
+
+The core that ran here was the APK's bundled core, not the dev-core override:
+the reinstalled APK carries the same build, so the numbers stand, but a session
+that expects the override must check which library `simpleperf` names.
+
+## Where this leaves the frame, 2026-09-07
+
+- Shipped: `Relaxed ZCULL Sync`, plus 5.6 percent, seven arms, two cores.
+- Neutral: three ARMSX3 ports, the dead decrementer read (half of SPU0 freed).
+- Rejected: Multithreaded RSX at minus 30 percent, reduced loops, `lv2_spin=50`.
+- Open, sized: Atomic FIFO fetch at 17 percent of the RSX thread (Fast is +2.3
+  percent); Turnip's CPU side at 17.6 percent of the RSX thread; the GPU at 50
+  to 62 percent busy at 550 of 680 MHz; the render thread's 1 MiB ring wait.
+- Not the cause: PhysX compute, SPU throughput, CPU throttling, vblank pacing.

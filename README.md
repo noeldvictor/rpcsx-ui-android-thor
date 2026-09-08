@@ -231,14 +231,17 @@ on: this title halts its own SPU on rare boots, and the off path relies on
 catching nearly all writes to the SPURS block.
 
 **Where the frame goes.** Twelve settings measured null on the combat scene.
-The GPU is idle at 3 percent. Five of six SPUs are 91 percent idle. The sixth
+The GPU is busy 50 to 60 percent of the time at 550 of 680 MHz, so it is neither
+idle nor saturated. Five of six SPUs are 91 percent idle. The sixth
 spends 97 percent of its time in a 2400-iteration delay loop inside the SPURS
 runtime, reading the decrementer once per iteration, and each read is a 38 ns
 system-register read on this chip. Every PPU thread is inside a wait at nearly
 every sample. Frame intervals spread from 45 to 100 ms with no vblank
-clustering. So the frame is a chain of handoffs, not a saturated core, and the
-one code change with a mechanism is to stop emitting the dead decrementer reads
-in that loop. `Relaxed ZCULL Sync: true` is the one setting that survived a
+clustering. So the frame is a chain of handoffs, not a saturated core. Removing
+the dead decrementer reads (`debug.rpcsx.thor.spu_dec_dead_read=1`) frees half of
+that SPU and moves no frames. The render thread waits for space in a full 1 MiB
+command ring, and the RSX thread spends a sixth of its time in the Atomic FIFO
+fetch's reservation spin. `Relaxed ZCULL Sync: true` is the one setting that survived a
 repeat: three arms at 19.27 to 19.57 FPS against four controls at 18.21 to
 18.57, same CPU, identical screenshots. It is still an experiment property, not
 a profile value, because upstream documents titles it breaks.
