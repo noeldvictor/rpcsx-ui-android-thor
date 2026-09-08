@@ -1408,3 +1408,63 @@ What the SPUs do for this frame is now stage 2's second question. The render
 thread's poll at `0x00fdcba0` waits on a word at `0x01f94998`; if an SPU job
 writes it, the chain is PPU render thread, SPU job, RSX thread, GPU, and the
 Ghidra decompile of that loop names the job.
+
+## Round M: the FIFO levers, chain-only placement, and what a render pass count is
+
+Capture `debug-captures/20260908-123633-transformers-diag-round`, core
+`A5358CDF` (commit 86b53e1e8: the trim fix, the ARMSX3 FIFO bundle, the
+render-pass counter moved to the real `vkCmdBeginRenderPass`).
+
+| arm | fps | cores | refills/frame | retries/frame | verdict |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.83 | 5.85 | 820 | 390 | |
+| `rsx_fifo_trim_fix=1` | 20.05 | 5.83 | 820 | 400 | null; retries unchanged |
+| `rsx_fifo_4k=1` | 20.13 | 5.67 | **215** | 380 | engaged; null on frames |
+| `rsx_fifo_get_lag=1` | 19.90 | 5.79 | 820 | 400 | null |
+| all three | 19.93 | 5.90 | 215 | 400 | null |
+| PPU on cpu3-7, RSX on the X3, SPUs free | **13.2** (gate refused at 3.98 cores) | 3.98 | | 380 | dead |
+| `rsx_auditor=60` | 19.55 | 5.95 | | | void: the auditor is a compile-time option, off in this build |
+| control, second | 19.93 | 5.83 | 820 | 400 | |
+
+**The retries are not the PUT line and not the refill.** The trim fix removed
+the one mechanism the code read named, and the retry count did not move. The 4 KB
+refill cut refills by four and the retry count did not move either. About 400
+times a frame the fetch finds a line it cannot take on the first try, whatever
+the fetch size and whatever the PUT distance. The loop has three exits into the
+retry: the reservation word has lock bits set, the reservation timestamp moved
+between the copy and the compare, or the two reads of the line differ. The next
+core counts each, logs every 1024th retry with the line address, PUT distance and
+the reservation word, and makes the backoff a property.
+
+**The backoff is 10.4 us per retry on this fork and about 0.1 us upstream.**
+`busy_wait(200)` at the retry site is upstream's number. Upstream's ARM64
+`busy_wait` divides by 100 and multiplies by a timer scale that resolves to 1 on
+a 19.2 MHz counter, so their 200 is two ticks; this fork removed the division on
+2026-08-05 after a lock convoy on contended reservations and the note said every
+hot site had been retuned by hand, but this site kept 200. Four hundred retries
+at 10.4 us are 4 ms of the RSX thread's 37 per frame. ARMSX3 measured the same
+spin at 0.006 ms per frame. Round N measures 2, 20 and 50 ticks.
+
+**Who bumps reservations on FIFO lines.** SPU DMA. `do_dma_transfer` on ARM64
+has no TSX, so every MFC PUT into main memory takes the non-RTM path: per
+128-byte chunk it sets the reservation's low bit, takes the range lock, copies,
+advances the timestamp by 128 and releases. An RSX fetch that lands on such a
+line during the copy sees "locked"; one that lands after sees "changed". The
+retry log will say whether the lines are the ring the SPUs write.
+
+**Placement is closed.** Pinning the PPU threads to cpu3-7 and the RSX thread to
+the X3 with the SPUs free ran the scene at 13.2 FPS with total cores busy down to
+4.0. With the SPUs on the little cores, 6.4 and 6.5; with one mid core added,
+13.1. Every explicit placement measured today lost to the OS scheduler. Round N
+carries the one placement that cannot oversubscribe, the RSX thread alone on the
+X3, and then the question is done.
+
+**98 render passes a frame, not 1,550.** The Round K counter sat before the
+same-pass early-out in `vk::begin_renderpass` and counted calls; moved after it,
+the count is 19,600 per ten seconds at 20 FPS, about 98 passes for 1,500 draws,
+some 15 draws per pass. On a tiler each pass is a load and a store of colour and
+depth at 720p; 98 of them is about 1.4 GB of GMEM traffic per frame at 20 FPS,
+which is where part of the GPU's 55 percent busy goes with a 2005-era workload.
+What ends each pass is counted next (barrier, texture operation, subpass switch,
+query scope, flush, compute, label write), from the twenty-one sites that call
+`vk::end_renderpass`.
