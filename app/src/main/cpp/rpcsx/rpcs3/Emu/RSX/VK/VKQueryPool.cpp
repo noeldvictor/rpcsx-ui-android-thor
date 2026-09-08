@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "vkutils/query_pool.hpp"
 #include "VKHelpers.h"
 #include "VKQueryPool.h"
@@ -289,6 +290,7 @@ namespace vk
 			// TODO: Alternatively, use VK_EXT_host_pool_reset to reset an old pool with no references and swap that in
 			if (vk::is_renderpass_open(cmd))
 			{
+				::thor::rsx_counters::g_rp_end_query++;
 				vk::end_renderpass(cmd);
 			}
 

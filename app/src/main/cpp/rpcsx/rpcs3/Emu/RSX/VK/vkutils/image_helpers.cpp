@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "image_helpers.h"
 #include "image.h"
 #include "../VKRenderPass.h"
@@ -39,6 +40,7 @@ namespace vk
 	{
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_barrier++;
 			vk::end_renderpass(cmd);
 		}
 

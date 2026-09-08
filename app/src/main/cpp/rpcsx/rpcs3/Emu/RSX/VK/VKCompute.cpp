@@ -1,4 +1,5 @@
 #include "VKCompute.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include <cstdlib>
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
@@ -227,6 +228,7 @@ namespace vk
 		// CmdDispatch is outside renderpass scope only
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_compute++;
 			vk::end_renderpass(cmd);
 		}
 

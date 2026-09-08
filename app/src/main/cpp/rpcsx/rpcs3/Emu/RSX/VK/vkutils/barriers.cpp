@@ -1,4 +1,5 @@
 #include "barriers.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "commands.h"
 #include "image.h"
 #include "thor_rsx_auditor.h"
@@ -21,6 +22,7 @@ namespace vk
 
 		if (breaks_renderpass)
 		{
+			::thor::rsx_counters::g_rp_end_barrier++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -51,6 +53,7 @@ namespace vk
 
 		if (breaks_renderpass)
 		{
+			::thor::rsx_counters::g_rp_end_barrier++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -78,6 +81,7 @@ namespace vk
 
 		if (breaks_renderpass)
 		{
+			::thor::rsx_counters::g_rp_end_barrier++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -104,6 +108,7 @@ namespace vk
 
 		if (breaks_renderpass)
 		{
+			::thor::rsx_counters::g_rp_end_barrier++;
 			vk::end_renderpass(cmd);
 		}
 

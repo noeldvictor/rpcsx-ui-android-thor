@@ -119,6 +119,7 @@ void VKGSRender::begin_render_pass()
 
 void VKGSRender::close_render_pass()
 {
+	::thor::rsx_counters::g_rp_end_flush++;
 	vk::end_renderpass(*m_current_command_buffer);
 
 	// Drop a folded colour clear once its pass is over.
@@ -848,6 +849,7 @@ void VKGSRender::emit_geometry(u32 sub_index)
 		if (vk::use_strict_query_scopes() &&
 			vk::is_renderpass_open(*m_current_command_buffer))
 		{
+			::thor::rsx_counters::g_rp_end_query++;
 			vk::end_renderpass(*m_current_command_buffer);
 			emergency_query_cleanup(m_current_command_buffer);
 		}
@@ -939,6 +941,7 @@ void VKGSRender::emit_geometry(u32 sub_index)
 			if (pass)
 			{
 				// Subpass mismatch, end it before proceeding
+				::thor::rsx_counters::g_rp_end_subpass++;
 				vk::end_renderpass(cmd);
 			}
 

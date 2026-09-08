@@ -394,6 +394,7 @@ namespace vk
 		}
 		else if (renderpass_info.pass != VK_NULL_HANDLE)
 		{
+			::thor::rsx_counters::g_rp_end_switch++;
 			end_renderpass(cmd);
 		}
 

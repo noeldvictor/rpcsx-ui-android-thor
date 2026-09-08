@@ -1842,6 +1842,7 @@ bool VKGSRender::release_GCM_label(u32 address, u32 args)
 	{
 		if (vk::is_renderpass_open(*m_current_command_buffer))
 		{
+			::thor::rsx_counters::g_rp_end_label++;
 			vk::end_renderpass(*m_current_command_buffer);
 		}
 
@@ -3015,6 +3016,7 @@ void VKGSRender::end_occlusion_query(rsx::reports::occlusion_query_info* query)
 		if (vk::use_strict_query_scopes() &&
 			vk::is_renderpass_open(*m_current_command_buffer))
 		{
+			::thor::rsx_counters::g_rp_end_query++;
 			vk::end_renderpass(*m_current_command_buffer);
 		}
 
