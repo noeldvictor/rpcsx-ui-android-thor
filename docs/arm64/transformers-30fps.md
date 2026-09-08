@@ -832,3 +832,197 @@ one codegen does not restore usefully under another.
 And per the warning already in `SPUCommonRecompiler.cpp`: **test correctness
 before speed.** The recorded failure is state corruption at a fixed SPU PC, not a
 crash, so a run that boots proves nothing on its own.
+
+# 2026-09-07: the frame is a continuous spread, every PPU thread waits, and reduced loops never touched the hot block
+
+Restored 3D combat, `tools/thor_transformers_diag_round.sh`, one boot per arm.
+Every arm pushed the savestate while stopped, got `loadstate ok:true`, passed
+`coresBusy > 4.5` with no video decoding, and had its screenshot scored DRAWN
+(2.25 to 2.27 MB, 17,800 to 18,700 distinct colours). The device changed its own
+fan mode from Smart to Sport between the second and third arm; nothing in the
+harness touches it.
+
+## Frame intervals: throughput, not pacing
+
+`perf_monitor` now appends the frame interval distribution to its Frames line
+(`Emu/RSX/thor_frametime.h`). Control arm, six consecutive 10 s windows:
+
+| window | fps | p50 ms | p95 ms | p99 ms | 36-45 | 45-55 | 55-70 | >70 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 18.44 | 52.0 | 70.6 | 85.0 | 2 | 105 | 49 | 10 |
+| 2 | 18.50 | 51.3 | 71.9 | 93.2 | 0 | 124 | 49 | 12 |
+| 3 | 18.30 | 52.8 | 69.0 | 82.2 | 0 | 110 | 64 | 9 |
+| 4 | 18.50 | 51.0 | 71.4 | 93.4 | 2 | 119 | 51 | 13 |
+| 5 | 18.10 | 52.6 | 72.3 | 97.4 | 1 | 110 | 53 | 17 |
+| 6 | 18.20 | 53.1 | 72.7 | 84.5 | 1 | 111 | 59 | 11 |
+
+A title locked to vblank shows tight clusters at 50.0 and 66.7 ms and nothing
+between them. This is a smooth spread from 45 to 100 ms with a tail. So 20 FPS
+is a throughput gap of about 35 percent and not a pacing artefact, and a higher
+vblank rate cannot help. The pre-load menu in the same log ran at a flat 33.4 ms.
+
+## The PPU census: every PPU thread waits, at every sample
+
+`debug.rpcsx.thor.ppu_pc_census=1` on LLE combat: 340 samples over 20 threads in
+the combat window, one per thread per perf tick. State `0x224` is
+`wait | suspend | memory`; state `0` is running. The code dump names the syscall
+where it had a slot: `li r11, N; sc`.
+
+| thread | where it sits | samples |
+| --- | --- | --- |
+| main_thread | `0x00b56de0` (lr `0x00ae0da8`), a wait wrapper it shares with the PhysX thread | 8 of 17 |
+| main_thread | `0x009e4ba4`: `li r11, 141; sc` = `sys_timer_usleep`, with a 30 us floor | 6 of 17 |
+| main_thread | running | 1 of 17 |
+| RenderingThread | `0x00fdcba0..a4` (lr `0x00fddf08`), one wait site | 14 of 17 |
+| RenderingThread | running | 1 of 17 |
+| PPU PhysX thread | `0x022a6e7c` inside libsre (lr `0x00a94678`), a SPURS wait | 9 of 17 |
+| PPU PhysX thread | `0x00b56de0`, the wrapper shared with main_thread | 8 of 17 |
+| SpursHdlr0, SpursHdlr1, SystemWorkload, gcm_intr, printf | `sys_event_queue_receive` (130) or `sys_spu_thread_group_join` (178) | 17 of 17 |
+| twelve FMOD, Bink, pool and IO threads | parked in event queue waits | 17 of 17 |
+
+Nothing on the PPU is busy. The main thread polls with `sys_timer_usleep(30)`
+for a third of its samples and waits on one synchronisation object for half.
+The rendering thread waits at one site for 82 percent of its samples. The frame
+is a chain of handoffs between these two threads, SPU0's SPURS consumer and the
+RSX, and the wall clock is the sum of the waits.
+
+The `usleep` finding gives the timer slack port (ARMSX3 `67c2763b9`, see
+[`upstream-survey-2026-09-07.md`](upstream-survey-2026-09-07.md)) a direct
+mechanism: with Android's default 50,000 ns slack every one of those 30 us polls
+took at least 80 us. The census now also prints `func=`, the syscall name, so
+the two unnamed wait sites above are named on the next run.
+
+## Cluster clocks under load: no throttling
+
+Sampled in every measured window at 88 to 96 C:
+
+    policy0 (A510 x3) 2016 MHz   policy3 (A710/A715 x4) 2707 MHz   policy7 (X3) 3187 MHz
+
+All three clusters at their maximum. The 15.32 FPS result for the big-core pin
+was work placement, not heat.
+
+## Levers, same session, same savestate, dev core `366BAD26`
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| control | 18.31 (18.44, 18.30, 18.20) | 5.44 | 68.5% | 92 C |
+| `lv2_spin=50` | 18.86 (19.07, 18.60, 18.90) | 5.91 | 72.8% | 94 C |
+| `relaxed_zcull_sync=1`, `precise_zpass_count=0` | **19.57** (19.50, 19.70, 19.50) | 5.56 | 69.5% | 94 C |
+| `spu_reduced_loop_emit=1` + `spu_prof=1`, warm-up | 17.66 | 5.74 | 68.8% | 92 C |
+| `spu_reduced_loop_emit=1` + `spu_prof=1` | 17.39 (17.47, 17.40, 17.30) | 5.65 | 70.5% | 93 C |
+| control, second | 18.53 (18.60, 18.50, 18.50) | 5.39 | 67.0% | 96 C |
+
+The two controls agree to 1.2 percent. Relaxed ZCULL Sync is 6.2 percent above
+their mean at the same CPU, and the two screenshots show identical geometry with
+no missing objects. That is one arm; the repeat on the ported core is in the
+next table. The lv2 spin restore buys 2.4 percent for 9 percent more CPU, which
+is the trade the default was set to avoid. The reduced-loop arm carries the SPU
+profiler's sampling hooks, so its frame rate is not comparable.
+
+## Reduced loops never touched chunk 0x0f3c4
+
+This is the finding that changes the plan. With `spu_reduced_loop_emit=1`
+engaged, the SPU profiler's per-block chart for `CellSpursKernel0` reads:
+
+    [chunk-0x0f3c4]: 97.1382% (135838 of 139840)   2.55% idle, 98.84% reservation
+
+The same 96.8 percent as with reduced loops OFF. The +0.5 percent "null" recorded
+in `SPUCommonRecompiler.cpp` proved that the emitter engaged somewhere, not that
+it transformed this loop. It did not. Across all six SPU threads the same chunk
+is 64.3 percent of every SPU sample.
+
+So the delay loop is still open, and it now has a mechanism as well as a cost.
+The web search found it is a libspurs pattern: Red Dead Redemption runs the same
+2400-iteration `RdDec` loop (RPCS3 PR #14469), upstream's own task for it (issue
+#16834, draft PR #17172) is open and does not work, and nobody has replaced such
+a loop with a shorter one. On hardware the loop is 1.5 us; here it is 92 us, so
+SPU0 notices new work sixty times later than a PS3 does, and the PPU census says
+the PPU spends the frame waiting on exactly such handoffs.
+
+The safe transformation is unchanged from the section above: every read but the
+last is dead and the exit condition is the counter alone, so emit the counter
+loop without the reads and one real read at the exit. The cached-read attempt
+deadlocked because it served stale time; this shape serves no stale time.
+
+## The ported core, measured against the same controls
+
+Three ARMSX3 changes were ported this session: no counter read per guest atomic
+and DMA (`2f0ce7786`), `prctl(PR_SET_TIMERSLACK, 1)` (`67c2763b9`) and the
+SPU-compile waiter throttle formula (`00f0d2e38`). Core `E55E20FD`.
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| control, ported core | 18.57 (18.50, 18.40, 18.80) | 5.58 | 71.2% | 94 C |
+| Relaxed ZCULL Sync, ported core | **19.46** (19.78, 19.60, 19.00) | 5.76 | 73.5% | 93 C |
+| control, ported core, second | 18.21 (18.23, 17.90, 18.50) | 5.43 | 67.0% | 95 C |
+| Relaxed ZCULL Sync, ported core, second | **19.27** (19.50 window mean) | 5.69 | 68.8% | 93 C |
+
+**The three ports are neutral on this scene.** Controls on the ported core read
+18.57 and 18.21 against 18.31 and 18.53 without it, and CPU is inside the same
+band. They remove wasted work, and this frame is not bound by that work.
+
+**Relaxed ZCULL Sync is a result.** Three arms across two cores read 19.57,
+19.46 and 19.27 against four controls at 18.31, 18.53, 18.57 and 18.21. The
+ranges do not overlap, the mean gain is 5.6 percent at the same CPU, and the
+screenshots show identical geometry. It is the first setting-level lever on this
+title that survived a repeat. Upstream warns that relaxed ZCULL can break titles
+that read occlusion results, so it stays an experiment lever until a longer play
+session, with a save and a load, shows nothing missing; RPCS3 issue #12972 lists
+titles it drops to 1 or 2 FPS.
+
+The named census on the ported core confirmed the two unnamed waits: the main
+thread's shared wrapper at `0x00b56de0` is `sys_cond_wait`, and the rendering
+thread's dominant site at `0x00fdcba0` is `sys_timer_usleep`. Both threads poll
+or wait; neither computes.
+
+## What the dead-read elision measured
+
+`debug.rpcsx.thor.spu_dec_dead_read=1`, implemented in `SPULLVMRecompiler.cpp`
+(`thor_dead_dec_read_shape`), keys the SPU cache as `-thor-ddr`, and logs
+`Thor DEC DEAD-READ: pc=...` for every block it transforms at compile time.
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| `spu_dec_dead_read=1`, warm-up | 18.20 | 5.73 | 70.8% | 94 C |
+| `spu_dec_dead_read=1` | 18.17 (18.10, 18.20, 18.20) | 5.42 | 69.0% | 94 C |
+| control, same core | 18.23 | 5.48 | 70.8% | 94 C |
+| `spu_dec_dead_read=1` + Relaxed ZCULL Sync | 19.33 (19.40, 19.30, 19.30) | 5.96 | 75.5% | 95 C |
+| `spu_dec_dead_read=1` + `spu_prof=1` | 17.33 | 5.69 | 71.0% | 93 C |
+
+**It engaged, and it worked on the SPU.** The compile log names the hot block
+among the transformed ones (`Thor DEC DEAD-READ: pc=0x0f3d4 block=0x0f3d0
+size=4 rt=3 rx=4`), plus ten more delay loops of the same shape in libspurs. The
+SPU profiler on `CellSpursKernel0` went from 2.5 percent idle with
+chunk-0x0f3c4 at 97.1 percent of samples to **57.9 percent idle with the chunk at
+43.7 percent**. SPU0 no longer burns a core counting.
+
+**And the frame rate did not move.** 18.17 against 18.23 on the same core, the
+same savestate, back to back. The reservation failure rate stayed at about
+36,000 per second. So SPU0's backoff latency is not on the frame's critical
+path, and the twelve levers plus this one all agree: the frame is produced on
+the PPU side and the RSX, and the SPUs wait for it, not the other way round.
+The property stays default off. It is worth keeping for heat: it frees half a
+core that did nothing.
+
+## What the render thread polls
+
+The census code dump at the render thread's site decodes to:
+
+    0xfdcb88  lwz   r0, 0(r28)          load a word
+    0xfdcb8c  add   r0, r27, r0
+    0xfdcb90  cmpld cr7, r0, r30
+    0xfdcb94  ble   cr7, exit           leave when *r28 + r27 <= r30
+    0xfdcb98  li    r3, 30
+    0xfdcb9c  li    r11, 141            sys_timer_usleep(30)
+    0xfdcba0  sc
+    0xfdcba4  lwz   r29, 0(r28)         re-read, loop while *r28 + r27 > r30
+
+and the main thread's shared site is `while (!*(u8*)r30) sys_cond_wait(*(r30+4))`.
+The render thread waits, 30 us at a time, for a word that something else
+advances past a threshold, and the main thread waits on an event the render
+thread raises. Everything measured says that word is advanced by rsx::thread's
+command processing or by the GPU behind it. The census now prints r27, r28, the
+word at r28 and r30 for every sample, so the next run names the address.
+
+The levers that follow from that: `Multithreaded RSX`, `RSX FIFO Accuracy: Fast`
+and `Disable ZCull Occlusion Queries`, each now behind a property.

@@ -216,38 +216,38 @@ runtime codes stay listed but greyed out until native validation exists.
 
 ## Transformers: War for Cybertron
 
-It was not slow, it was hanging. With the default RSX FIFO setting the RSX thread
-died about 35 seconds in and the emulator kept burning ~90% CPU at 87-94 C with a
-frozen picture. Its profile now sets `RSX FIFO Accuracy: Atomic`, which runs past
-that point and reaches the menus, plus a 30 FPS cap and Async with Shader
-Interpreter for the compile stutter.
+State on 2026-09-07: boots, reaches its menus, and plays. Restored 3D combat
+holds about 18.5 FPS against the game's own 30 FPS cap. Lighter scenes reach the
+cap. The full account is `docs/arm64/transformers-30fps.md`.
 
-Profiling then showed VM range locking at **29.1% of all cycles**, so its profile
-also sets `Accurate SPU Reservations: false`: **-8.4% CPU at identical frames**,
-measured on a state reachable identically every run.
+**What the profile sets, and why.** `RSX FIFO Accuracy: Atomic`, because with
+the default `Fast` the RSX thread died about 35 seconds in and the emulator kept
+burning 90 percent CPU at 94 C with a frozen picture. `Frame limit: 30`, for
+heat. `Shader Mode: Async with Shader Interpreter`, so a missing shader does
+not freeze the frame. `XFloat Accuracy: Inaccurate` (+16 percent, screenshot
+verified), `SPU Block Size: Mega` (+2 percent, −6 percent CPU) and `Driver
+Wake-Up Delay: 0` (+3 percent, boot-tested). `Accurate SPU Reservations` stays
+on: this title halts its own SPU on rare boots, and the off path relies on
+catching nearly all writes to the SPURS block.
 
-The driver wake-up delay is **50 us** alongside Atomic FIFO, which is what the
-RPCS3 community recommends for this engine, and it measured free here (0.4% CPU,
-overlapping ranges, same frame rate) despite upstream warning that raising it can
-be costly.
+**Where the frame goes.** Twelve settings measured null on the combat scene.
+The GPU is idle at 3 percent. Five of six SPUs are 91 percent idle. The sixth
+spends 97 percent of its time in a 2400-iteration delay loop inside the SPURS
+runtime, reading the decrementer once per iteration, and each read is a 38 ns
+system-register read on this chip. Every PPU thread is inside a wait at nearly
+every sample. Frame intervals spread from 45 to 100 ms with no vblank
+clustering. So the frame is a chain of handoffs, not a saturated core, and the
+one code change with a mechanism is to stop emitting the dead decrementer reads
+in that loop. `Relaxed ZCULL Sync: true` is the one setting that survived a
+repeat: three arms at 19.27 to 19.57 FPS against four controls at 18.21 to
+18.57, same CPU, identical screenshots. It is still an experiment property, not
+a profile value, because upstream documents titles it breaks.
 
-It still crashes occasionally, and the delay is NOT the reason it crashes less.
-A controlled test finished at 0 faults in 12 boots at 20 us against 0 in 15 at
-50 us: no difference. A second test cleared the FIFO setting as well, at 0 faults
-in 10 boots on `Fast` against 0 in 27 on `Atomic`. That is **37 consecutive clean
-boots**, so no setting explains the fault.
-
-The underlying fault is a rare SPU halt inside the game's own SPURS kernel: the
-game checks something, does not like the answer, and stops its own SPU. It is
-**not fixed**. **64 controlled boots** across four conditions have not
-reproduced it once: both FIFO settings, both wake-up delays, a deliberately hot
-device at 94-97 C, and heavy CPU starvation. No setting explains it, and neither
-does heat or a loaded machine.
-
-What did change is that it now explains itself. When it happens the log names the
-trap, the SPU program counter, and the state of the SPURS scheduler, instead of
-printing an address. If you hit it, the lines beginning `SPU trap` are the ones
-worth reporting.
+**Known issues.** A rare SPU halt inside the game's own SPURS kernel, not
+reproduced in 64 controlled boots; the log names the trap when it happens. HLE
+SPURS does not render this title because the SPURS queue API is unimplemented;
+seven HLE defects were fixed on the way and are recorded in `AGENTS.md`. Do not
+spend device time on HLE for frame rate.
 
 ## A 10% CPU saving you can try, but it is off by default for a reason
 
@@ -286,6 +286,11 @@ optimized native core. As of 2026-05-17:
 
 This is a **single-game canary**. It says nothing about broad compatibility, and
 there is no 30 FPS guarantee for any other title.
+
+The second measured title is Transformers: War for Cybertron (`BLUS30357`). As of
+2026-09-07, restored 3D combat holds 18.3 to 18.5 FPS against its 30 FPS cap,
+measured in two same-session controls that agree to 1 percent. See the section
+above for where the frame goes.
 
 Recent hands-on testing after the August 2026 ARM64 work reports more titles
 running well, but no FPS figures or compatibility matrix have been captured for
@@ -623,41 +628,3 @@ file carries its own license.
     <img src="docs/images/fork-it-button.png" alt="Fork and build yourself - no APK support queue" width="620">
   </a>
 </p>
-
-## Transformers: War for Cybertron (BLUS30357) on AYN Thor — 2026-08-26
-
-Frame rate in restored 3D combat went **16.23 → 19.87 FPS (+22.4%)**, verified
-end to end with the shipped profile and no debug property overrides:
-
-    "spuBlockSize":"Mega"  "driverWakeUpDelay":"0"  "rsxFifoAccuracy":"Atomic"
-    mean fps = 19.87 over 6 samples, coresBusy 4.52
-
-Three settings, each measured interleaved against its own control on the same
-savestate, gated on `coresBusy > 4.5` so only real gameplay counts:
-
-| setting | gain | note |
-|---|---|---|
-| `XFloat Accuracy: Inaccurate` | +16.2% | lossy mode, verified by screenshot that the picture is unchanged |
-| `SPU Block Size: Mega` | +2.2% | also −5.6% CPU, which matters on a device that runs in the nineties Celsius |
-| `Driver Wake-Up Delay: 0` | +2.8% | boot-tested 5×, 0 crashes, because the old value was chosen for stability |
-
-**Two of the three had never actually applied.** `cfg::_enum::from_string` matches
-the enum's own capitalisation, so `spu_block_size=mega` failed silently while the
-code logged "forced to mega" — every `/diag` reported `Safe`. Same trap as
-`XFloat`'s `Inaccurate`. Any setting that claims to be applied needs an
-engagement proof; the SPU object cache growing (3794 → 4556 on the first Mega
-arm) is the one used here.
-
-### HLE SPURS: seven defects fixed, and a hard blocker found
-
-SPURS went from six SPUs parked on `wid=32` for weeks to dispatching the taskset
-and executing guest task code. Ghidra on the real kernel's local store supplied
-the decisive reads — `rotm` semantics proving `0x8000 >> 32` must clear nothing,
-and `ceqi r7,r20,0x20` at LS `0x290` proving hardware branches on
-`wklCurrentId == 32` where the port tested the wrong operand.
-
-It still renders nothing, and the reason is not a bug: **the entire SPURS queue
-API is unimplemented.** All eleven functions are bare stubs that declare no
-parameters and return `CELL_OK`. The title pushes work, nothing is queued, and it
-waits forever at emulated 0:00:09. `CellSpursQueue` is not even defined in the
-tree. See `AGENTS.md` for the full list of fixes and the handoff.

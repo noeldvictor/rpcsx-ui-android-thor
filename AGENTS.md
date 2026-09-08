@@ -21,7 +21,8 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/spin.md` — where the CPU time goes, and the one untested lever
 - `docs/arm64/instruments.md` — what each measuring tool can and cannot answer
 - `docs/arm64/thermal.md` — sensors and the thermal guard
-- `docs/arm64/transformers-30fps.md` — where the 18.7 FPS goes, and what 30 FPS would really cost
+- `docs/arm64/transformers-30fps.md` — where the Transformers frame goes, and what 30 FPS would really cost
+- `docs/arm64/upstream-survey-2026-09-07.md` — the latest ARMSX3 and RPCS3 survey: ports, rejections, queue
 - `docs/arm64/gpu-drivers.md` — driver swaps measured; why a GPU driver cannot help a CPU-bound scene
 - `docs/arm64/spurs-halt.md` — WHICH check the SPURS kernel refuses, and why every timing injection missed it
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
@@ -105,13 +106,8 @@ Obey these rules for it:
 
 ## PS3 Sprint Gate
 
-- Active goal: make Eternal Sonata `BLUS30161` stable and faster on AYN Thor while preserving correct field, title Options/menu, first-battle visuals, and bounded thermals.
-- The clean-current-upstream Windows 200% gate is cleared. Thor work is permitted only as one short, temperature-guarded validation per cool round; do not heat-soak or immediately repeat a route.
-- Protect the Thor fan during each device run. Do not select or keep a sustained maximum-fan setting. Record `fan_mode` before launch, preserve Smart or another bounded automatic mode, and stop the run if fixed silicon reaches `70 C`. Do not increase the fan to extend a run. Stop immediately if the fan makes abnormal noise or vibration. A Transformers slice route can launch below `70 C`, but each guest slice must start below `68 C`. Its independent watchdog must hold the process at `68 C` and keep the `72 C` hard stop. The measured jump from `69.5 C` to `75.1 C` between 250 ms samples proves that a `70 C` early hold has too little margin.
-- On the installed Thor firmware, `fan_mode=4` is Smart, `fan_mode=5` is Sport, and `fan_mode=6` is Custom. Treat `fan_mode=6` with `fan_speed=100` as a maximum custom request. The device guard must change this request to Smart or stop RPCSX before the run continues.
-- `fan_speed` is the saved Custom-mode slider. It is not a measured fan speed or the current Smart-mode duty. Do not report it as RPM or as proof of the current fan load.
-- Keep RPCS3 gameplay on screen 1 with `-WindowsGameScreen 1`.
-- Use repo-local skills only: `codex-goal-loop`, `ps3-debug-knowledge`, `ps3-speed-proof-gate`, `ps3-rsx-experiment-gate`, `ps3-continual-harness-refiner`, `ps3-spu-contract-compiler`, and `thor-measurement-validity`.
+- Active goal, since 2026-08-22: take Transformers `BLUS30357` restored 3D combat from about 18.5 FPS to its own 30 FPS cap. Eternal Sonata `BLUS30161` stays the stability canary: correct field, title Options/menu, first-battle visuals, bounded thermals.
+- Transformers state on 2026-09-07: frame intervals spread 45 to 100 ms (throughput, not pacing), every PPU thread waits at nearly every census sample, five of six SPUs idle, SPU0 97 percent inside the libspurs 2400-iteration `RdDec` delay loop, and reduced loops do not touch that loop. Relaxed ZCULL Sync measured +5.6 percent over three arms and four controls with non-overlapping ranges; it stays a property until a longer play session proves the picture. The next code step is the dead-read elision of that loop; see `docs/arm64/transformers-30fps.md`, section dated 2026-09-07. Do not spend device time on HLE SPURS for frame rate.
 - `thor-measurement-validity` gates any number taken off the device. Read it before you quote cores, FPS, power, or a crash rate from Thor, and before you read a `simpleperf` capture.
 - Always start by checking for an active meaningful run/edit. Do not duplicate live work.
 - Newest failed visual/log/window/route evidence overrides older opportunities.
@@ -3898,6 +3894,8 @@ stands on its own and this file is the map.
 | [`docs/arm64/adreno-tiler.md`](docs/arm64/adreno-tiler.md) | **The one place the code is still written for the wrong hardware.** Every render pass unresolves and resolves both attachments, and `LOAD_OP_CLEAR` is used zero times. |
 | [`docs/arm64/instruments.md`](docs/arm64/instruments.md) | The measuring tools, what each can and cannot answer, and the mistakes made building them. **Frame timing: `dumpsys SurfaceFlinger --latency` on the `(BLAST)` layer gives per-frame present timestamps — a real distribution, no build flag, no code.** |
 | [`docs/arm64/thermal.md`](docs/arm64/thermal.md) | Junction versus package sensors, and the guard that compared a limit against the wrong one. |
+| [`docs/arm64/transformers-30fps.md`](docs/arm64/transformers-30fps.md) | **Where the Transformers frame goes.** Twelve setting levers null, then the 2026-09-07 round: frame intervals are a continuous 45 to 100 ms spread, every PPU thread waits at every sample, clocks stay at maximum at 95 C, and reduced loops never touched the 97 percent delay loop. Relaxed ZCULL Sync is the one lever that moved. |
+| [`docs/arm64/upstream-survey-2026-09-07.md`](docs/arm64/upstream-survey-2026-09-07.md) | The ARMSX3 eighth pass and RPCS3 master: three ports, the rejected list with ARMSX3's own reverts, the adaptation queue, and the web findings on the `RdDec` delay loop. |
 | [`docs/arm64/ledger.md`](docs/arm64/ledger.md) | The audit ledger: every `ARCH_X64` block accounted for, the open opportunities, and the subsystems that needed nothing. |
 | [`docs/hardware/`](docs/hardware/) | Vendored vendor docs: Arm's Cortex-X3, A715 and A710 optimization guides, plus Qualcomm's 200-page Adreno guide — and why the GPU one opens a review axis nothing here has started. |
 
