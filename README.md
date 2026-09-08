@@ -250,6 +250,19 @@ repeat: three arms at 19.27 to 19.57 FPS against four controls at 18.21 to
 18.57, same CPU, identical screenshots. It is still an experiment property, not
 a profile value, because upstream documents titles it breaks.
 
+**Power.** Five of the six SPU threads poll for work at full speed while the
+guest calls them idle, about three cores at 20 FPS. Clamping SPURS to four
+running threads, sleeping the reservation wait and skipping the dead decrementer
+reads together cut cores busy by 12 percent for at most a few percent of frame
+rate, measured on 2026-09-08. They are properties, not profile defaults, until the
+frame-rate cost is resolved:
+
+```
+adb shell setprop debug.rpcsx.thor.spurs_max_run_clamp 4
+adb shell setprop debug.rpcsx.thor.spu_getllar_busy 0
+adb shell setprop debug.rpcsx.thor.spu_dec_dead_read 1
+```
+
 **Known issues.** A rare SPU halt inside the game's own SPURS kernel, not
 reproduced in 64 controlled boots; the log names the trap when it happens. HLE
 SPURS does not render this title because the SPURS queue API is unimplemented;

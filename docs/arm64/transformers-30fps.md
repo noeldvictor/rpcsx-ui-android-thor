@@ -1302,3 +1302,30 @@ The dead decrementer read is the other half: SPU0's poll backoff is a real
 delay that the elision makes cheap, and the same shape appears in eleven
 blocks of libsre. Neither is on the frame's critical path, which is why both
 are power levers rather than frame levers.
+
+## Round J: the power stack
+
+`spurs_max_run_clamp=4` + `spu_dec_dead_read=1` + `spu_getllar_busy=0`, twice,
+against a same-round control.
+
+| arm | fps | cores | CPU | GPU busy | Tend |
+| --- | --- | --- | --- | --- | --- |
+| control | 20.68 (20.93, 20.50, 20.60) | 5.91 | 74.5% | 58 to 60% | 91 C |
+| power stack | 19.73 (19.38, 19.80, 20.00) | **5.15** | **65.2%** | 58 to 59% | 95 C |
+| power stack, second | 19.53 (19.20, 19.50, 19.90) | **5.20** | **69.2%** | 55 to 60% | 93 C |
+
+Cores fall from 5.9 to 5.2, about 12 percent, and CPU from 74.5 to 65 to 69
+percent. Every control today sat between 5.39 and 5.91 cores; both power arms
+sit below all of them. Frame rate reads 19.5 to 19.7 against a control at 20.7,
+which is inside the day's control band of 19.43 to 20.73, so the cost in frames
+is between zero and five percent and is not resolved by two arms. The GPU is
+unchanged, as expected: the saving is SPU cores that were polling for work.
+
+The A510 cluster dipped to 1459 MHz in three samples at 92 to 95 C; the two big
+clusters held their maximum in every sample of every round.
+
+**What to ship for power.** The clamp and the sleeping reservation wait are
+config values and can go into the title profile; the dead decrementer read is a
+codegen property that keys the SPU cache. Shipping them means accepting up to a
+few percent of frame rate for about an eighth of the CPU. That trade is the
+owner's call and is recorded here rather than made.
