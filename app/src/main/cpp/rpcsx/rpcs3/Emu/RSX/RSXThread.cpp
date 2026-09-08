@@ -2721,7 +2721,30 @@ namespace rsx
 
 	void thread::get_zcull_stats(u32 type, vm::addr_t sink)
 	{
-		u32 value = 0;
+		// With ZCULL queries disabled, upstream reports 0 pixels for every query,
+		// which a title reads as "fully occluded" and culls. Transformers combat
+		// then runs at its 30 FPS cap because it draws almost nothing (2026-09-07:
+		// 29.6 FPS, the interior, both robots and the floor gone). A nonzero
+		// value reports "visible" instead, so the title draws everything and
+		// pays no query round-trip. That is the discriminating test between "the
+		// culled geometry is the cost" and "the query stalls are the cost".
+		//
+		//   debug.rpcsx.thor.zcull_visible_value = <u32>   (default 0, upstream)
+		static const u32 s_thor_zcull_visible_value = []() -> u32
+		{
+#ifdef __ANDROID__
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.zcull_visible_value", value) > 0 && value[0])
+			{
+				const unsigned long parsed = std::strtoul(value, nullptr, 0);
+				return static_cast<u32>(std::min<unsigned long>(parsed, 0xffffffffull));
+			}
+#endif
+			return 0;
+		}();
+
+		u32 value = s_thor_zcull_visible_value;
 		if (!g_cfg.video.disable_zcull_queries)
 		{
 			switch (type)
