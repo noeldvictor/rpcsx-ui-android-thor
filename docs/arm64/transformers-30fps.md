@@ -1273,3 +1273,32 @@ The sleeping arm reads about 6 points less CPU at the same frame rate, one arm,
 inside the noise. Power on this scene is set by the same per-draw work as the
 frame rate, plus whatever the idle SPUs execute while "waiting", and the next
 measurement is a per-thread host profile of one idle SPU to name that code.
+
+## The idle SPUs are not idle on the host
+
+From the same 151,097-sample capture, thread `SPU[0x1000100]` (CellSpursKernel1),
+which the guest-side profiler calls 88 percent idle:
+
+| share of the thread's host cycles | where |
+| --- | --- |
+| **62.1%** | JIT-generated guest code, the SPURS kernel's own scheduler loop |
+| 24.0% | `librpcsx-android.so`, of which `vm::writer_lock` (vm.cpp:712) is about 15% and `process_mfc_cmd` 2.6% |
+| 10.1% | kernel |
+| 3.4% | libc, `memcpy_opt` |
+
+Its guest-side chart spreads over `chunk-0x00cc8` (14%), `0x3c3d8` (11%),
+`0x01a50` and `0x09590`: the SPURS kernel polling for work, selecting a
+workload and finding none, at full issue rate. "Idle" in the guest profiler
+means the SPU is between jobs. On the host it means a core running the poll.
+Five such threads cost about three cores at 20 FPS, which is the power story of
+this scene in one line.
+
+A sleeping GETLLAR wait did not give those cores back (round I) because the
+loop is guest instructions, not the emulator's reservation wait. What has
+measured against it is the SPURS thread clamp: `max_run` 4 cut CPU from 64.5 to
+59.8 percent for 0.5 percent of frame rate, and 3 cut it to 59.0 percent
+(2026-08-24, this file). Fewer kernels polling means fewer cores spent polling.
+The dead decrementer read is the other half: SPU0's poll backoff is a real
+delay that the elision makes cheap, and the same shape appears in eleven
+blocks of libsre. Neither is on the frame's critical path, which is why both
+are power levers rather than frame levers.
