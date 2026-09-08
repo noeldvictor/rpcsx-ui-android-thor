@@ -1226,3 +1226,29 @@ re-reads the line atomically only when the command decodes as invalid would
 keep the spin off the common path and the recovery off the boot. It is a
 bounded change in `FIFO_control::fetch_u32` and `run_FIFO`, and it is the one
 per-draw cost in `rsx::thread` with a measured upper bound.
+
+## Round H: FIFO Fast, three cold boots
+
+| arm | fps (valid 20 s samples) | cores | CPU | GPU busy | boot |
+| --- | --- | --- | --- | --- | --- |
+| Fast, boot 1 | 20.17 (20.11, 20.20, 20.20) | 5.71 | 74.2% | 56 to 59% | clean |
+| Fast, boot 2 | 19.65 (19.89, 19.40; one window was the restore stall) | 5.76 | 67.0% | 51 to 58% | clean |
+| Fast, boot 3 | 19.92 (19.87, 20.00, 19.90) | 5.72 | 73.2% | 52 to 60% | clean, restore took two tries |
+
+Four Fast boots today (round D plus these three) and no dead FIFO. The two
+hangs of 2026-08-22 were on a core several hundred commits older, and the
+`abort` lines in every log are the savestate restore tearing down the running
+title, present in the Atomic arms too. Against the same-day shipped-profile
+controls at 19.43 to 19.73, Fast reads 19.65 to 20.17: about plus 2 percent,
+inside the day's control spread. It is not shipped. The gain is too small to
+carry a setting whose failure mode is a dead RSX thread, and the hybrid fetch in
+the section above is the way to take the spin off the common path without that
+risk.
+
+## Where the day ends
+
+19.4 FPS shipped, from 18.4. Every setting-level lever is now measured on this
+scene, and the frame is bound by the emulator's cost per draw. The remaining
+work is code: the Fast-with-atomic-fallback FIFO fetch, then the per-draw path
+in `rsx::thread` and the driver's CPU side, which no driver swap can reach on
+this device because the system driver does not run this renderer.
