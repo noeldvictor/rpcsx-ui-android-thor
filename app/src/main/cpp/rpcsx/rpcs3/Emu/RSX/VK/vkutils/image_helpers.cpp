@@ -40,7 +40,20 @@ namespace vk
 	{
 		if (vk::is_renderpass_open(cmd))
 		{
-			::thor::rsx_counters::g_rp_end_barrier++;
+			// Thor: a layout change that ends a pass. Round O control: 59 of the 98
+			// pass ends a frame came through the barrier sites; this names the
+			// transitions. Every 512th is logged.
+			::thor::rsx_counters::g_rp_end_layout++;
+
+			static atomic_t<u32> s_layout_sample{0};
+
+			if ((s_layout_sample++ & 511) == 0)
+			{
+				rsx_log.error("Thor RP-break layout: image=0x%llx %d -> %d aspect=0x%x levels=%u layers=%u src_access=0x%x dst_access=0x%x",
+					reinterpret_cast<unsigned long long>(image), static_cast<int>(current_layout), static_cast<int>(new_layout),
+					range.aspectMask, range.levelCount, range.layerCount, src_access_mask_bits, dst_access_mask_bits);
+			}
+
 			vk::end_renderpass(cmd);
 		}
 
