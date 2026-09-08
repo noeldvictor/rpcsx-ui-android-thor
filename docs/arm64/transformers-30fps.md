@@ -1252,3 +1252,24 @@ scene, and the frame is bound by the emulator's cost per draw. The remaining
 work is code: the Fast-with-atomic-fallback FIFO fetch, then the per-draw path
 in `rsx::thread` and the driver's CPU side, which no driver swap can reach on
 this device because the system driver does not run this renderer.
+
+## Round I: power proxies, and the sleeping reservation wait does not free cores
+
+The goal became frames up AND power down. The charger-input meter is valid only
+with the battery near full and not charging, and the cell was at 63 percent on
+the charger, so cores busy, CPU percent and end temperature stand in.
+
+| arm | fps | cores | CPU | GPU busy | Tend |
+| --- | --- | --- | --- | --- | --- |
+| control (cold start, 33 C) | 20.73 (20.60, 21.00, 20.60) | 5.67 | 74.8% | 55 to 59% | 95 C |
+| `spu_getllar_busy=0`, reservation waits sleep | 20.17 (19.80, 20.60, 20.10) | 5.56 | 68.2% | 57 to 61% | 90 C |
+| `spu_dec_dead_read=1` + `spu_getllar_busy=0` | 20.21 (20.42, 20.10, 20.10) | 5.87 | 75.2% | 55 to 60% | 94 C |
+| `spu_dec_dead_read=1` | 20.05 (19.44, 20.60, 20.10) | 5.67 | 72.2% | 53 to 59% | 94 C |
+
+Cores stay at 5.6 to 5.9 whatever the SPU waits do. The five SPUs the profiler
+calls 91 percent idle still cost about 0.6 of a core each, and a futex sleep on
+the GETLLAR wait does not give that back, so that is not where they spend it.
+The sleeping arm reads about 6 points less CPU at the same frame rate, one arm,
+inside the noise. Power on this scene is set by the same per-draw work as the
+frame rate, plus whatever the idle SPUs execute while "waiting", and the next
+measurement is a per-thread host profile of one idle SPU to name that code.
