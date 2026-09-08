@@ -33,6 +33,7 @@ hardstop(){ for _h in 1 2 3 4 5; do sh_ "am force-stop $PKG" >/dev/null 2>&1; P=
 
 cleanup(){
   hardstop
+  for kv in $(printf '%s' "${EXTRA:-}" | tr ';' ' '); do sh_ "setprop debug.rpcsx.thor.${kv%%=*} ''" >/dev/null; done
   sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations ''; setprop debug.rpcsx.thor.spu_putllc16 ''; setprop debug.rpcsx.thor.spurs_always_notify ''; setprop debug.rpcsx.thor.thermal_abort_c ''; svc power stayon false" >/dev/null 2>&1
   echo "cleanup: temp=$(t_)C rpcsx_in_top=$(sh_ "top -b -n 2 -d 2 -o %CPU 2>/dev/null | grep -ci rpcsx")"
 }
@@ -41,7 +42,7 @@ trap cleanup EXIT INT TERM
 BATT=$(sh_ "cat /sys/class/power_supply/battery/capacity")
 case "$BATT" in ''|*[!0-9]*) echo "ABORT: no battery read"; exit 1;; esac
 [ "$BATT" -lt 20 ] && { echo "ABORT: battery ${BATT}%"; exit 1; }
-echo "battery=${BATT}% temp=$(t_)C runs=$RUNS watch=${WATCH}s  accurate=OFF putllc16=${P16:-default} always_notify=${NOTIFY:-0} COLD BOOT"
+echo "battery=${BATT}% temp=$(t_)C runs=$RUNS watch=${WATCH}s  accurate=${ACC:-0} putllc16=${P16:-default} extra=${EXTRA:-none} always_notify=${NOTIFY:-0} COLD BOOT"
 sh_ "setprop debug.rpcsx.thor.thermal_abort_c 97" >/dev/null
 
 hits=0
@@ -51,9 +52,13 @@ for i in $(seq 1 "$RUNS"); do
   while [ -n "$T" ] && [ "$T" -ge "$COOL" ] && [ "$w" -lt 300 ]; do sh_ "sleep 15" >/dev/null; w=$((w+15)); T=$(t_); done
 
   sh_ "rm -f $R/cache/RPCSX.log" >/dev/null
-  sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations 0" >/dev/null
+  # Thor 2026-09-08: ACC=1 keeps Accurate SPU Reservations on (the property forces it), so the
+  # barrier-free PUTLLC16 commit and other accurate-mode levers can take the same eight boots.
+  sh_ "setprop debug.rpcsx.thor.spu_accurate_reservations ${ACC:-0}" >/dev/null
   # Thor 2026-09-08: P16=0 keeps the inline PUTLLC16 patterns out while accurate is off.
   sh_ "setprop debug.rpcsx.thor.spu_putllc16 ${P16:-}" >/dev/null
+  # EXTRA="prop=v;prop=v" sets further properties for the arm.
+  for kv in $(printf '%s' "${EXTRA:-}" | tr ';' ' '); do sh_ "setprop debug.rpcsx.thor.${kv%%=*} ${kv#*=}" >/dev/null; done
   sh_ "setprop debug.rpcsx.thor.spurs_always_notify ${NOTIFY:-0}" >/dev/null
   sh_ "input keyevent KEYCODE_WAKEUP; svc power stayon true" >/dev/null
   sh_ "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $PKG/net.rpcsx.MainActivity \
@@ -91,9 +96,20 @@ for i in $(seq 1 "$RUNS"); do
     # the stale128 reservation counter drops from ~12600 per 10 s to 10. So the
     # question is which threads are spending that CPU, and /threads answers it
     # by sampling /proc jiffies twice and differencing.
-    echo "---- /threads sample 1 ----"; api "threads" | head -c 3000; echo
-    sh_ "sleep 3" >/dev/null
-    echo "---- /threads sample 2 ----"; api "threads" | head -c 3000; echo
+    api "threads" > "${TMPDIR:-/tmp}/thr1.json"; sh_ "sleep 3" >/dev/null; api "threads" > "${TMPDIR:-/tmp}/thr2.json"
+    echo "---- busiest threads over 3 s (jiffies delta), then cumulative ----"
+    python - "${TMPDIR:-/tmp}/thr1.json" "${TMPDIR:-/tmp}/thr2.json" <<'PY'
+import sys, json
+try:
+    a={t['tid']:(t['name'],t['jiffies']) for t in json.load(open(sys.argv[1]))['threads']}
+    b={t['tid']:(t['name'],t['jiffies']) for t in json.load(open(sys.argv[2]))['threads']}
+except Exception as e:
+    print('threads parse failed:', e); sys.exit(0)
+d=sorted(((b[t][1]-a.get(t,(None,0))[1], b[t][0], t) for t in b), reverse=True)[:8]
+for dj,n,t in d: print(f"   +{dj:4d} jiffies  {n} (tid {t})")
+c=sorted(((v[1],v[0],t) for t,v in b.items()), reverse=True)[:6]
+print('   cumulative:', ', '.join(f"{n}={j}" for j,n,t in c))
+PY
     echo "---- /diag ----";   api diag   | head -c 2000; echo
     echo "---- /status ----"; api status | head -c 1200; echo
     echo "---- top ----"
@@ -105,4 +121,4 @@ for i in $(seq 1 "$RUNS"); do
     echo "############ saved halt_repro_$i.log ############"
   fi
 done
-echo "=== $hits reproductions in $RUNS runs, accurate=off, cold boot ==="
+echo "=== $hits reproductions in $RUNS runs, accurate=${ACC:-0} putllc16=${P16:-default} extra=${EXTRA:-none}, cold boot ==="

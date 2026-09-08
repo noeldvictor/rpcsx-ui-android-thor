@@ -1714,3 +1714,28 @@ Accurate SPU Reservations. The barrier-free 16-byte commit (commit 1ba97a16d,
 `spu_putllc16_nobarrier=1`) removes it while keeping the setting on; round R
 measures it. The JIT map (2.2 million symbols) did not resolve in the report, so
 the SPU hot blocks are unnamed here; the two together are 28 percent of SPU0.
+
+## Intro freeze repro, stopped by the owner after four boots
+
+`tools/thor_spurs_freeze_repro.sh`, eight cold boots planned with
+`spu_accurate_reservations=0` and `spu_putllc16=0`, core `7D621ADC`. Runs 1, 2 and
+4 were clean at 150 s (about 4,130 frames each). Run 3 froze at frame 305, 28 s
+into the boot, in the intro: frames 243 in the first window, 62 in the second,
+then zero, no trap, no dead FIFO, nothing logged, two threads at 100 and 97
+percent of a core in `top` and CPU at 31 percent overall
+(`debug-captures/20260908-freeze-repro-p16off-run3.log`). The tool's thread
+dump was truncated at 3,000 characters, so the two spinners are unnamed; the tool
+now saves both samples and prints the busiest threads by name, and takes `ACC=1`
+so the accurate-mode levers can use it.
+
+**The live-lock is not the inline PUTLLC16 patterns.** With them refused it
+reproduced at the same rate as before (one in four against the recorded one or
+two in eight). It belongs to what the setting changes in `do_putllc` and
+`do_putlluc`: the SPURS-instance-line fast path is a plain 128-byte overwrite
+with no compare of the reservation data, and the atomic 128-byte store drops the
+writer_lock. The barrier-free 16-byte commit keeps the compare and the
+compare-exchange, so it is not the same path.
+
+The owner stopped the repro at four boots: no more device time on the intro
+movie. Combat is the target, and the accurate-off arms ran six combat windows
+today without a freeze.
