@@ -85,6 +85,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/system_properties.h>
 #include <thread>
@@ -2363,6 +2364,23 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
   }
 
   g_initialized = true;
+
+  // Ask for precise timers, the way every other RPCS3 frontend does.
+  //
+  // Ported from ARMSX3 67c2763b9 (2026-08-29). rpcs3.cpp sets this in main()
+  // under __linux__ ("we value precise timers"), and lv2.cpp's wait path is
+  // written against it: with timer slack low, Linux is precise for every value
+  // above it, so sleep_timers_accuracy defaults to As Host and takes the plain
+  // wait_for() branch. The app dlopen()s this core and never runs that main(),
+  // so the process kept Android's default 50,000 ns slack while the sleep path
+  // assumed 1 ns, and every sys_timer_usleep overshot by up to 50 us.
+  //
+  // Set on the calling thread; threads created afterwards inherit it, which is
+  // how the desktop path reaches the emulation threads. Kept unconditional
+  // rather than behind a property: it restores the assumption the wait code
+  // already makes, and a run that wants the old behaviour can compare against
+  // a core built before this line.
+  prctl(PR_SET_TIMERSLACK, 1, 0, 0, 0);
 
 #ifdef ARCH_ARM64
   // Records this device's generic-timer frequency for diagnostics. busy_wait
