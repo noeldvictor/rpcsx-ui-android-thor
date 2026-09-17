@@ -4044,6 +4044,21 @@ public:
 			fpm.run(*f, fam);
 		}
 
+		// RPCS3 e826098bc: the state-check and null-dispatch helpers are emitted
+		// for every module. Drop them when no block calls them, so they are not
+		// compiled into the object.
+		if (m_test_state->use_empty())
+		{
+			m_test_state->eraseFromParent();
+			m_test_state = nullptr;
+		}
+
+		if (m_dispatch->use_empty())
+		{
+			m_dispatch->eraseFromParent();
+			m_dispatch = nullptr;
+		}
+
 		// Clear context (TODO)
 		m_blocks.clear();
 		m_block_queue.clear();
@@ -6233,7 +6248,25 @@ public:
 
 	void ABSDB(spu_opcode_t op)
 	{
+		// RPCS3 ca223f70b: when one operand is a compare result (all ones or all
+		// zeros per lane), |a - b| is a ^ b, because 0xff - x == ~x.
+		const auto matches_compare = [&](auto val, auto MP)
+		{
+			using VT = typename decltype(MP)::type;
+			auto [ok, x] = match_expr(val, sext<VT>(match<bool[std::extent_v<VT>]>()));
+			return ok;
+		};
+
 		const auto [a, b] = get_vrs<u8[16]>(op.ra, op.rb);
+
+		if (match_vr<s8[16], s16[8], s32[4], s64[2]>(op.ra, matches_compare) ||
+			match_vr<s8[16], s16[8], s32[4], s64[2]>(op.rb, matches_compare))
+		{
+			// 0xff - x = ~x
+			set_vr(op.rt, a ^ b);
+			return;
+		}
+
 		set_vr(op.rt, absd(a, b));
 	}
 
@@ -6798,7 +6831,17 @@ public:
 	template <typename TA>
 	static auto byteswap(TA&& a)
 	{
+#ifdef ARCH_ARM64
+		// RPCS3 ec4b1ae65 (Whatcookie). LLVM lowers the byteswap shufflevector to
+		// rev64 plus ext and never to one tbl, even in a loop where the extra
+		// constant would pay for itself (llvm/llvm-project#223597). Emit tbl1
+		// here. The call name matches what tbl() emits, so the byteswap(match<>)
+		// patterns in ROTQBY, ROTQBYI, SHUFB and the DMA paths still match.
+		const auto indices = build<u8[16]>(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+		return llvm_calli<u8[16], TA, decltype(indices)>{"llvm.aarch64.neon.tbl1.v16i8", {std::forward<TA>(a), indices}};
+#else
 		return zshuffle(std::forward<TA>(a), 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+#endif
 	}
 
 	static auto rotqby_reverse_base()
@@ -7864,6 +7907,41 @@ public:
 			case 2:
 			case 1:
 			{
+				// RPCS3 ca223f70b: match 8-bit addition and subtraction idioms. The SPU
+				// has no byte add, so games do a 16-bit add twice and select bytes.
+				const bool lhs_to_lo = mask == v128::from16p(0xff00);
+				if (lhs_to_lo || mask == v128::from16p(0x00ff))
+				{
+					const auto lhs = get_vr<u16[8]>(op.ra);
+					const auto rhs = get_vr<u16[8]>(op.rb);
+
+					const auto lo_op = lhs_to_lo ? lhs : rhs;
+					const auto hi_op = lhs_to_lo ? rhs : lhs;
+
+					// Fold: selb(add16(a, b & 0xff00), add16(a, b), low16_mask) => add8(a, b)
+					if (const auto [lo_match, add_a, add_b] = match_expr(lo_op, match<u16[8]>() + match<u16[8]>()); lo_match)
+					{
+						const auto [ab_hi_match] = match_expr(hi_op, add_a + (add_b & 0xff00));
+						const auto [ba_hi_match] = match_expr(hi_op, add_b + (add_a & 0xff00));
+
+						if (ab_hi_match || ba_hi_match)
+						{
+							set_vr(op.rt4, bitcast<u8[16]>(add_a) + bitcast<u8[16]>(add_b));
+							return;
+						}
+					}
+
+					// Fold: selb(sub16(a, b & 0xff00), sub16(a, b), low16_mask) => sub8(a, b)
+					if (const auto [lo_match, sub_a, sub_b] = match_expr(lo_op, match<u16[8]>() - match<u16[8]>()); lo_match)
+					{
+						if (const auto [hi_match] = match_expr(hi_op, sub_a - (sub_b & 0xff00)); hi_match)
+						{
+							set_vr(op.rt4, bitcast<u8[16]>(sub_a) - bitcast<u8[16]>(sub_b));
+							return;
+						}
+					}
+				}
+
 				set_vr(op.rt4, select(bitcast<s8[16]>(c) != 0, get_vr<u8[16]>(op.rb), get_vr<u8[16]>(op.ra)));
 				return;
 			}
@@ -7904,6 +7982,26 @@ public:
 
 					return false;
 				}))
+		{
+			return;
+		}
+
+		// RPCS3 ca223f70b: a control word from a compare holds only 0x00 and 0xff
+		// bytes. 0x00 selects byte 0 of ra, 0xff is the 0x80 constant.
+		if (match_vr<s8[16], s16[8], s32[4], s64[2]>(op.rc, [&](auto c, auto MP)
+		{
+			using VT = typename decltype(MP)::type;
+
+			// Indexes come from a compare
+			if (auto [ok, i] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
+			{
+				const auto a_splat = zshuffle(get_vr<u8[16]>(op.ra), 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15);
+				set_vr(op.rt4, select(bitcast<s8[16]>(c) != 0, splat<u8[16]>(0x80), a_splat));
+				return true;
+			}
+
+			return false;
+		}))
 		{
 			return;
 		}

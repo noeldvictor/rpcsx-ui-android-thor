@@ -6,6 +6,8 @@
 #include "surface_cache_dma.hpp"
 #include "../gcm_enums.h"
 #include "../rsx_utils.h"
+#include "../thor_rsx_counters.h"
+#include "../thor_surface_reuse.h"
 #include <list>
 
 #include "rx/align.hpp"
@@ -86,6 +88,41 @@ namespace rsx
 		surface_store(const surface_store&) = delete;
 
 	private:
+		// Port of RPCS3 a65980547 (pull request 19500). A clone in the split path
+		// may reuse a discarded surface with the same size, format, usage and
+		// sample count instead of creating an image. Only called with the gate
+		// thor::rsx_surface_reuse() on; see thor_surface_reuse.h.
+		surface_storage_type find_reusable_matching_surface(surface_type ref, u16 width, u16 height, surface_type excluded_surface)
+		{
+			const auto [new_w, new_h] = rsx::apply_resolution_scale<true>(width, height,
+				ref->template get_surface_width<rsx::surface_metrics::pixels>(),
+				ref->template get_surface_height<rsx::surface_metrics::pixels>());
+
+			for (auto it = invalidated_resources.begin(); it != invalidated_resources.end(); ++it)
+			{
+				auto& surface = *it;
+				if (surface.get() == ref || surface.get() == excluded_surface ||
+					surface->has_refs() || !surface->old_contents.empty())
+				{
+					continue;
+				}
+
+				if (surface->width() != new_w || surface->height() != new_h ||
+					surface->samples() != ref->samples() || surface->get_spp() != ref->get_spp() ||
+					surface->format_class() != ref->format_class() ||
+					!Traits::is_reusable_surface(surface.get(), ref))
+				{
+					continue;
+				}
+
+				auto result = std::move(surface);
+				invalidated_resources.erase(it);
+				return result;
+			}
+
+			return {};
+		}
+
 		template <bool is_depth_surface>
 		void split_surface_region(command_list_type cmd, u32 address, surface_type prev_surface, u16 width, u16 height, u8 bpp, rsx::surface_antialiasing aa)
 		{
@@ -130,6 +167,20 @@ namespace rsx
 				{
 					// Memory requirements can be altered when cloning
 					free_rsx_memory(Traits::get(sink));
+				}
+				else
+				{
+					// A clone with no sink creates an image. Count it. With the reuse
+					// gate on, try the discard list first (RPCS3 a65980547).
+					::thor::rsx_counters::g_surface_clones++;
+					if (::thor::rsx_surface_reuse())
+					{
+						sink = find_reusable_matching_surface(region.source, region.width, region.height, invalidated);
+						if (sink)
+						{
+							::thor::rsx_counters::g_surface_reuses++;
+						}
+					}
 				}
 
 				Traits::clone_surface(cmd, sink, region.source, new_address, region);

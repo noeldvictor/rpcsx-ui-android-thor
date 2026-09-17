@@ -46,6 +46,11 @@ namespace thor::rsx_counters
 	inline atomic_t<u32> g_rp_end_compute{0};  // a compute dispatch
 	inline atomic_t<u32> g_rp_end_label{0};    // a label write with unflushed texture loads
 	inline atomic_t<u32> g_rp_end_layout{0};   // vk::change_image_layout while a pass was open
+	// Surface splits (2026-09-17). A split clones a render target for each
+	// leftover region. A clone with no sink creates an image, unless the reuse
+	// port (thor_surface_reuse.h) serves it from the discard list.
+	inline atomic_t<u32> g_surface_clones{0};  // clones with no sink in the split path
+	inline atomic_t<u32> g_surface_reuses{0};  // clones served by a discarded surface
 
 	inline void report(std::string& out)
 	{
@@ -68,6 +73,8 @@ namespace thor::rsx_counters
 		const u32 e_co = g_rp_end_compute.exchange(0);
 		const u32 e_lab = g_rp_end_label.exchange(0);
 		const u32 e_lay = g_rp_end_layout.exchange(0);
+		const u32 s_cl = g_surface_clones.exchange(0);
+		const u32 s_re = g_surface_reuses.exchange(0);
 
 		if (!rp && !sub && !refills && !retries && !draws)
 		{
@@ -78,5 +85,6 @@ namespace thor::rsx_counters
 			rp, sub, refills, retries, stalls, locked, changed, mismatch, cpu_waits, draws);
 		fmt::append(out, " rp_end(switch/barrier/layout/tex/subpass/query/flush/compute/label)=%u/%u/%u/%u/%u/%u/%u/%u/%u",
 			e_sw, e_bar, e_lay, e_tex, e_sub, e_q, e_fl, e_co, e_lab);
+		fmt::append(out, " surf_clone=%u surf_reuse=%u", s_cl, s_re);
 	}
 } // namespace thor::rsx_counters

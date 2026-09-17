@@ -22,7 +22,7 @@ The detail behind it is split by topic, because a single file had grown past
 - `docs/arm64/instruments.md` — what each measuring tool can and cannot answer
 - `docs/arm64/thermal.md` — sensors and the thermal guard
 - `docs/arm64/transformers-30fps.md` — where the Transformers frame goes, and what 30 FPS would really cost
-- `docs/arm64/upstream-survey-2026-09-07.md` — the latest ARMSX3 and RPCS3 survey: ports, rejections, queue
+- `docs/arm64/upstream-survey-2026-09-17.md` — the latest ARMSX3 and RPCS3 survey: the NVIDIA surface-reuse item, ports, rejections, queue. The previous pass is `upstream-survey-2026-09-07.md`.
 - `docs/arm64/gpu-drivers.md` — driver swaps measured; why a GPU driver cannot help a CPU-bound scene
 - `docs/arm64/spurs-halt.md` — WHICH check the SPURS kernel refuses, and why every timing injection missed it
 - `docs/arm64/ledger.md` — the audit ledger and open opportunities
@@ -513,6 +513,38 @@ It does not touch Thor.
   the old layout `rpcs3/util/JIT*`. Current upstream uses `Utilities/JIT*`.
 - Record a survey that finds nothing. Write the date and the empty result.
 - A port needs the same proof as any other change. See `Speed Claim Rules`.
+
+### Last survey: 2026-09-17, ARMSX3 tenth pass and RPCS3 master
+
+RPCS3 is at `8db660b18`, 64 commits since `54014a7de`. ARMSX3 is at
+`23e119c0c`, releases 0.9.8 to 0.9.9, 135 commits since `6925a398e`. The full
+account is
+[`docs/arm64/upstream-survey-2026-09-17.md`](docs/arm64/upstream-survey-2026-09-17.md).
+**Four ports, none measured.**
+
+- **The "25 percent on NVIDIA" news is RPCS3 pull request 19500, `a65980547`**
+  (Yahfz with kd-11): a surface split reuses a discarded render target instead
+  of creating an image. +20 to +30 percent on NVIDIA in Red Dead Redemption,
+  Gran Turismo 5 and Saints Row; no change on AMD. Ported behind
+  `debug.rpcsx.thor.rsx_surface_reuse=1` (default off) with two Frames-line
+  counters, `surf_clone` and `surf_reuse`. On the Thor the create path is
+  Turnip, not the NVIDIA driver, and the Transformers scene is not RSX-thread
+  bound, so the expected frame change is zero unless `surf_clone` per frame is
+  large. Read that counter from a control run before any A/B.
+- **Three SPU LLVM ports, unconditional**: `ec4b1ae65` tbl1 for the ARM64
+  byteswap (Whatcookie; ARMSX3 0.9.9 ships it too), `e826098bc` drop the unused
+  per-module helper functions, `ca223f70b` 8-bit add/sub folds and compare fast
+  paths (Walter). Verify the first in the on-device SPU cache: `tbl` where
+  `rev64` plus `ext` was.
+- **Rejected**: `e13ee1579` CFLTS (this tree already emits `fptosi.sat`),
+  `41f0ecc17` x86 ifdefs (the AVX flags are false outside x86, so nothing
+  changes here at runtime), the ARMSX3 MUTABLE_FORMAT pair (this fork never
+  sets the bit on Turnip), and the ARMSX3 ISO, label and Kotlin UI commits (no
+  such code here).
+- **Queue**: the ARMSX3 graphics-pipe conversion series (`a2e025365`,
+  `669ad8ce2`, `85b7495b9`), their Adreno 830 hang fix and compute-dispatch
+  cut. Read `rp_end(... compute ...)` on the Frames line first. Near zero means
+  no reach on the tracked titles.
 
 ### Last survey: 2026-09-08, ARMSX3 ninth pass (head unchanged)
 
@@ -3158,6 +3190,20 @@ section `Write all documentation in ASD-STE100`.
 
 Do not rewrite old documents only to change their style. Convert a document when
 you change it for another reason.
+
+Since 2026-09-17 one more standard applies to all English written here:
+documentation, commit messages, code comments, ledger entries, and replies to
+the user. It adds to ASD-STE100. It does not replace it.
+
+- Use literal, plain, and direct language. State facts and concepts exactly as
+  they are.
+- Do not use metaphors, similes, analogies, or idioms. Examples of banned
+  words: "journey", "tapestry", "navigating", "beacon", "dive in",
+  "landscape".
+- Do not use AI buzzwords, hype, or flowery adjectives.
+- Keep sentences short. Put one idea in each sentence. Order the sentences so
+  that each one follows from the one before it.
+- Put clarity and precision before style.
 
 
 ---

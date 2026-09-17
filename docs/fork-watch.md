@@ -281,3 +281,32 @@ The full account, with the rejected list and the adaptation queue, is
 
 None of the three ports is measured yet. Each wants a device A/B against a core
 built before it.
+
+### 2026-09-17 — ARMSX3 tenth pass and RPCS3 master
+
+Fetched `armsx3/master` to `23e119c0c` (releases 0.9.8 to 0.9.9) and
+`origin/master` to `8db660b18`. Read by diff content against the vendored core.
+The full account, with the rejected list and the adaptation queue, is
+[`arm64/upstream-survey-2026-09-17.md`](arm64/upstream-survey-2026-09-17.md).
+
+The news item of the week is here too. The "25 percent on NVIDIA" reports are
+RPCS3 pull request 19500, `a65980547`: a surface split reuses a discarded
+render target instead of creating an image. On the Thor the create path is
+Turnip and the Transformers scene is not RSX-thread bound, so the expected frame
+change is zero. The port counts clones per frame so the device can say so.
+
+| Change | Verdict |
+| --- | --- |
+| RPCS3 `a65980547` reuse discarded render targets in a surface split | **Ported**, behind `debug.rpcsx.thor.rsx_surface_reuse=1` (default off), with `surf_clone` and `surf_reuse` on the Frames line. |
+| RPCS3 `ec4b1ae65` tbl1 for the ARM64 byteswap | **Ported.** ARMSX3 shipped the same as `86cb3402e` in 0.9.9. |
+| RPCS3 `e826098bc` drop the unused `spu_test_state` and `__spu-null` per module | **Ported.** |
+| RPCS3 `ca223f70b` 8-bit add/sub folds, ABSDB and SHUFB compare fast paths | **Ported.** Target independent. |
+| RPCS3 `e13ee1579` CFLTS saturation on ARM64 | Rejected. This tree already emits `fptosi.sat`. |
+| RPCS3 `41f0ecc17` x86-only ifdefs | Rejected. The AVX flags are false outside x86, so nothing changes at runtime here. |
+| ARMSX3 `5323f8c2e`, `9f7db99a4` MUTABLE_FORMAT on tilers | Rejected. This fork never sets the bit on Turnip. Their own result: no frame change. |
+| ARMSX3 `a2e025365`, `669ad8ce2`, `85b7495b9` byteswaps and D24S8 interleave on the graphics pipe | Adaptation queue. Read `rp_end(... compute ...)` per frame first; near zero means no reach. |
+| RPCS3 `12b4d3d50`, `bcd8a09f4` SDK below 2.00 memory layout | Queue. No tracked title is in the band. |
+| ARMSX3 ISO, SCV label, Kotlin UI; RPCS3 GFNI, AVX-512, sys_memory, alpha-test fp16, flush predictor | Not applicable here. Reasons in the survey document. |
+
+None of the four ports is measured. Each wants a device A/B against a core
+built before it.
