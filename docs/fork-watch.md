@@ -246,3 +246,67 @@ almost all merged). The findings are written up in `CLAUDE.md`, section
 
 Nothing was ported from this survey. `#19230` is the one actionable item and it
 changes SPU verification behaviour, so it wants a device round of its own.
+
+
+### 2026-09-08 — ARMSX3 ninth pass: head unchanged
+
+Fetched `armsx3/master`: still `6925a398e` (0.9.7.3, 2026-09-07), one branch, no
+tag past 0.9.7.3. Nothing new to read. Re-read against the day's finding (the
+RSX FIFO fetch retries 400 times a frame at 10.4 us each, see
+`arm64/transformers-30fps.md`): ARMSX3 measured the same spin at 0.006 ms a
+frame because upstream's `busy_wait(cycles)` on ARM64 is
+`(cycles / 100) * arm_timer_scale` ticks, so their `busy_wait(200)` is about two
+ticks of the 19.2 MHz timer where this fork's is two hundred. The fork dropped
+the scale on 2026-08-05 after a lock convoy on contended reservations; the FIFO
+fetch retry is a single reader re-reading a line, not a convoy, and is measured
+on its own (`debug.rpcsx.thor.rsx_fifo_retry_ticks`). Ported today, before this
+pass: the FIFO bundle `ccbcbce36`, `1c2f13fa5`, `5636c9f3f`, `8041edf5b`, each
+behind a property, unmeasured at the time of writing.
+
+### 2026-09-07 — ARMSX3 eighth pass and RPCS3 master
+
+Fetched `armsx3/master` to `6925a398e` (releases 0.9.5 to 0.9.7.3) and
+`origin/master` to `54014a7de`. Read by diff content against the vendored core.
+The full account, with the rejected list and the adaptation queue, is
+[`arm64/upstream-survey-2026-09-07.md`](arm64/upstream-survey-2026-09-07.md).
+
+| Change | Verdict |
+| --- | --- |
+| ARMSX3 `2f0ce7786` no `cntvct_el0` read per guest atomic and DMA | **Ported.** `perf_meter(std::nullptr_t)` at five hot sites. |
+| ARMSX3 `67c2763b9` `prctl(PR_SET_TIMERSLACK, 1)` in the core init | **Ported.** The Android core never ran the desktop `main()` that sets it. |
+| ARMSX3 `00f0d2e38` SPU-compile waiter throttle formula | **Ported.** Upstream's `thread_count - 10` is 0 on 8 cores. |
+| RPCS3 `2416d6526` SHUFB constant fast paths | Rejected. ARMSX3 reverted it on ARM64 after hangs and 403 ms frames. |
+| ARMSX3 sleeping reservation backoffs, FIFO spin removal, little-cluster affinity | Rejected. Each was reverted inside the same ARMSX3 release. |
+| ARMSX3 PUTLLC16 whitelist, `writer_lock` notify, cellSync notify, RPCS3 ZCULL report fixes | Adaptation queue. The fork's gates differ in shape. Read the fork's code first. |
+
+None of the three ports is measured yet. Each wants a device A/B against a core
+built before it.
+
+### 2026-09-17 — ARMSX3 tenth pass and RPCS3 master
+
+Fetched `armsx3/master` to `23e119c0c` (releases 0.9.8 to 0.9.9) and
+`origin/master` to `8db660b18`. Read by diff content against the vendored core.
+The full account, with the rejected list and the adaptation queue, is
+[`arm64/upstream-survey-2026-09-17.md`](arm64/upstream-survey-2026-09-17.md).
+
+The news item of the week is here too. The "25 percent on NVIDIA" reports are
+RPCS3 pull request 19500, `a65980547`: a surface split reuses a discarded
+render target instead of creating an image. On the Thor the create path is
+Turnip and the Transformers scene is not RSX-thread bound, so the expected frame
+change is zero. The port counts clones per frame so the device can say so.
+
+| Change | Verdict |
+| --- | --- |
+| RPCS3 `a65980547` reuse discarded render targets in a surface split | **Ported, on by default** at the owner's decision of 2026-09-17, unmeasured. The switch is the Video setting "Reuse Discarded Render Targets" (Advanced settings); `debug.rpcsx.thor.rsx_surface_reuse=0` overrides it for adb-driven A/B runs. `surf_clone` and `surf_reuse` on the Frames line. |
+| RPCS3 `ec4b1ae65` tbl1 for the ARM64 byteswap | **Ported.** ARMSX3 shipped the same as `86cb3402e` in 0.9.9. |
+| RPCS3 `e826098bc` drop the unused `spu_test_state` and `__spu-null` per module | **Ported.** |
+| RPCS3 `ca223f70b` 8-bit add/sub folds, ABSDB and SHUFB compare fast paths | **Ported.** Target independent. |
+| RPCS3 `e13ee1579` CFLTS saturation on ARM64 | Rejected. This tree already emits `fptosi.sat`. |
+| RPCS3 `41f0ecc17` x86-only ifdefs | Rejected. The AVX flags are false outside x86, so nothing changes at runtime here. |
+| ARMSX3 `5323f8c2e`, `9f7db99a4` MUTABLE_FORMAT on tilers | Rejected. This fork never sets the bit on Turnip. Their own result: no frame change. |
+| ARMSX3 `a2e025365`, `669ad8ce2`, `85b7495b9` byteswaps and D24S8 interleave on the graphics pipe | Adaptation queue. Read `rp_end(... compute ...)` per frame first; near zero means no reach. |
+| RPCS3 `12b4d3d50`, `bcd8a09f4` SDK below 2.00 memory layout | Queue. No tracked title is in the band. |
+| ARMSX3 ISO, SCV label, Kotlin UI; RPCS3 GFNI, AVX-512, sys_memory, alpha-test fp16, flush predictor | Not applicable here. Reasons in the survey document. |
+
+None of the four ports is measured. Each wants a device A/B against a core
+built before it.

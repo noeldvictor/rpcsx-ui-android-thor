@@ -40,8 +40,10 @@ $requiredFragments = @(
     @($inputMacroSource, '--es titleId $TitleId'),
     @($inputMacroSource, '--es thorDebugBootRequestId $debugBootRequestId'),
     @($inputMacroSource, 'Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId'),
-    @($inputMacroSource, '--ez thorRequireManagedProfile true'),
-    @($inputMacroSource, '--ez thorReplaceCustomProfile true')
+    @($inputMacroSource, '[string]$RequireManagedProfile = "on"'),
+    @($inputMacroSource, '[string]$ReplaceCustomProfile = "on"'),
+    @($inputMacroSource, '--ez thorRequireManagedProfile $requireManagedProfileValue'),
+    @($inputMacroSource, '--ez thorReplaceCustomProfile $replaceCustomProfileValue')
 )
 
 foreach ($entry in $requiredFragments) {
@@ -87,7 +89,7 @@ foreach ($pattern in $arm64ExtremaPatterns) {
     }
 }
 
-if ($threadSource -notmatch 'uses_hardware_ftz,[\s\S]*bitset_last = uses_hardware_ftz') {
+if ($threadSource -notmatch 'uses_hardware_ftz,[\s\S]*bitset_last = [a-z0-9_]+') {
     throw "PPU cache identity does not include the hardware-FTZ code-generation bit."
 }
 

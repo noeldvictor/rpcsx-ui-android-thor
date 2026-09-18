@@ -19,8 +19,11 @@
 
 #include "SPUThread.h"
 #include "SPUAnalyser.h"
+#include "SPUFailedBlocks.h"
 #include "SPUInterpreter.h"
 #include "SPUDisAsm.h"
+#include "thor_spurs_event_wait_probe.h"
+#include "thor_spu_pc_census.h"
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -28,6 +31,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <tuple>
 #include <unordered_set>
 
 #ifdef ANDROID
@@ -141,6 +145,281 @@ static spu_program analyse_spu_llvm_program(spu_recompiler_base& compiler, const
 	}
 
 	return compiler.analyse(ls.data(), program.entry_point);
+}
+
+static shared_mutex s_spu_failed_blocks_mutex;
+static spu_failed_block_set s_spu_failed_blocks;
+
+static void spu_reset_failed_blocks()
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+	s_spu_failed_blocks.clear();
+}
+
+static bool spu_block_compile_failed(u32 address)
+{
+	reader_lock lock(s_spu_failed_blocks_mutex);
+	return s_spu_failed_blocks.contains(address);
+}
+
+static void spu_mark_block_compile_failed(u32 entry_point, u32 lower_bound = 0, u32 size_bytes = 0)
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+
+	const u32 begin = size_bytes ? lower_bound : entry_point;
+	const u32 end = size_bytes ? lower_bound + size_bytes : entry_point + 4;
+
+	if (s_spu_failed_blocks.mark(begin, end))
+	{
+		spu_log.error("SPU block 0x%05x cannot be compiled on this backend. The thread uses the interpreter for this range.", entry_point);
+	}
+}
+
+static std::pair<u32, u32> spu_arm_interp_fallback(u32 pc, u32 lower_bound, u32 size_bytes)
+{
+	std::lock_guard lock(s_spu_failed_blocks_mutex);
+
+	if (const auto range = s_spu_failed_blocks.range_of(pc); range.second > range.first)
+	{
+		return range;
+	}
+
+	if (size_bytes && pc >= lower_bound && pc - lower_bound < size_bytes)
+	{
+		s_spu_failed_blocks.mark(lower_bound, lower_bound + size_bytes);
+	}
+	else
+	{
+		s_spu_failed_blocks.mark(pc, pc + 4);
+	}
+
+	return s_spu_failed_blocks.range_of(pc);
+}
+
+// Interpret the failed range while the current JIT gateway frame is live.
+static void spu_run_interp_fallback(spu_thread& spu, u32 lower_bound = 0, u32 size_bytes = 0)
+{
+	std::tie(spu.interp_fallback_begin, spu.interp_fallback_end) =
+		spu_arm_interp_fallback(spu.pc, lower_bound, size_bytes);
+	spu.interp_fallback_stop_pc = umax;
+
+	ensure(spu.interp_fallback_end > spu.interp_fallback_begin);
+
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+	spu_runtime::g_escape(&spu);
+}
+
+// A cached module can transfer to an indirect target that its analysis did not
+// emit. Catch the exact edgeZlib event helper at the shared dispatcher too.
+// This gate is off by default.
+static bool is_thor_edge_event_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.edge_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x0a4d8)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_edge_signature = {
+		0x42, 0x47, 0x24, 0x02, 0x43, 0x7e, 0xc0, 0x82,
+		0x43, 0x3e, 0x0f, 0x02, 0x42, 0x01, 0x6d, 0x82,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x3000), s_edge_signature.data(), s_edge_signature.size()) == 0;
+}
+
+static void spu_run_thor_edge_event_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu.interp_fallback_begin = 0x0a4d8;
+	spu.interp_fallback_end = 0x0a520;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT DISPATCH INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu.pc, spu.gpr[0]._u32[3], spu.gpr[3]._u32[3],
+			spu.gpr[4]._u32[3], spu.gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu.pc, spu.gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(&spu);
+}
+
+// Interpret the exact FMOD event-send helper before a cold LLVM compile can
+// hold the task at its block entry. The PPU wait snapshot and taskset context
+// keep this default-off diagnostic inside the live BLUS30357 FMOD wait.
+static bool is_thor_fmod_event_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.fmod_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x14008)
+	{
+		return false;
+	}
+
+	const auto wait = thor::get_fmod_event_wait_snapshot();
+
+	if (!wait.active || !wait.taskset ||
+		static_cast<u32>(+spu._ref<u64>(0x27b8)) != wait.taskset)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_fmod_event_signature = {
+		0x5e, 0x0f, 0xc1, 0x88, 0x35, 0x80, 0x00, 0x10,
+		0x41, 0x40, 0x00, 0x86, 0x56, 0xc0, 0x04, 0x02,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x14008), s_fmod_event_signature.data(),
+		s_fmod_event_signature.size()) == 0;
+}
+
+static void spu_run_thor_fmod_event_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu.interp_fallback_begin = 0x14008;
+	spu.interp_fallback_end = 0x14050;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor FMOD EVENT DISPATCH INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu.pc, spu.gpr[0]._u32[3], spu.gpr[3]._u32[3],
+			spu.gpr[4]._u32[3], spu.gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor FMOD EVENT DISPATCH INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu.pc, spu.gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(&spu);
+}
+
+// Run the one-time Transformers PhysX initializers without waiting for four
+// cold LLVM compiles. The title asks for the first queue reply immediately
+// after task creation. On Thor, the final initializer reached LLVM after 5.73
+// seconds and missed the fixed five-second startup handshake.
+//
+// Match the armed BLUS30357 task, its live taskset, its task ID, its startup
+// age, and captured code bytes. The last initializer tail-calls 0x030a8. The
+// caller then enters the first PhysX queue operation at 0x06960. The queue
+// function is above its caller, so a single address range cannot include the
+// function and stop at the caller continuation. Interpret through the queue
+// return at 0x06e50, then use the exact stop PC at 0x06920. At that PC, r3
+// still holds the terminal queue result. The instruction at 0x06924 replaces
+// r3 with the queue pointer before the next helper. This boundary tests the
+// captured GETLLAR and PUTLLC path without interpreting later PhysX work.
+//
+//   debug.rpcsx.thor.transformers_physx_start_interp = 1
+static bool is_thor_transformers_physx_start_interp_dispatch(const spu_thread& spu) noexcept
+{
+	static const bool s_enabled = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.transformers_physx_start_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	if (!s_enabled || spu.pc != 0x06800)
+	{
+		return false;
+	}
+
+	const auto task = thor::get_transformers_physx_task_snapshot();
+	const u64 now = get_system_time();
+
+	if (!task.taskset || task.task_id != 0 || task.elf != 0x018c1000u ||
+		!task.arm_time_us || now < task.arm_time_us || now - task.arm_time_us > 10'000'000 ||
+		static_cast<u32>(+spu._ref<u64>(0x27b8)) != task.taskset ||
+		+spu._ref<u32>(0x27d4) != task.task_id)
+	{
+		return false;
+	}
+
+	static constexpr std::array<u8, 16> s_physx_start_signature = {
+		0x40, 0x20, 0x00, 0x7f, 0x12, 0x7c, 0x70, 0x8a,
+		0x40, 0x20, 0x00, 0x7f, 0x24, 0xff, 0xc0, 0xd0,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x06800), s_physx_start_signature.data(),
+		s_physx_start_signature.size()) == 0;
+}
+
+static void spu_run_thor_transformers_physx_start_interp_dispatch(spu_thread& spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+	const u64 started = get_system_time();
+
+	spu.interp_fallback_begin = 0x030a8;
+	spu.interp_fallback_end = 0x06e54;
+	spu.interp_fallback_stop_pc = 0x06920;
+	spu.interp_fallback = true;
+	spu.allow_interrupts_in_cpu_work = true;
+
+	spu_log.error("Thor Transformers PhysX startup interpreter enter #%u pc=0x%05x lr=0x%05x",
+		count, spu.pc, spu.gpr[0]._u32[3]);
+
+	thor::set_transformers_physx_start_interp_active(true);
+	spu_recompiler_base::old_interpreter(spu, spu._ptr<u8>(0), nullptr);
+	thor::set_transformers_physx_start_interp_active(false);
+
+	spu_log.error("Thor Transformers PhysX startup interpreter leave #%u pc=0x%05x queue_rc=0x%08x elapsed_us=%llu",
+		count, spu.pc, spu.gpr[3]._u32[3],
+		static_cast<unsigned long long>(get_system_time() - started));
+
+	spu_runtime::g_escape(&spu);
 }
 
 // Compiles with TBL2/TBX2 first. If LLVM aborts inside the AArch64 register
@@ -318,6 +597,53 @@ u32 spu_reduced_loop_unroll_factor() noexcept
 	return 2;
 }
 
+int spu_putllc16_mode() noexcept
+{
+	// WHY. With Accurate SPU Reservations off, Transformers combat runs 4 to 5
+	// percent faster on 10 percent fewer cores, and the title live-locks in one
+	// or two of eight cold boots (docs/arm64/spurs-halt.md). Two mechanisms
+	// change together under that setting: do_putllc skips the writer_lock for
+	// the SPURS instance lines, and this analyser installs every PUTLLC16
+	// pattern it finds with no whitelist. ARMSX3 traced the same "off breaks the
+	// title" to the second one (357eee994). This property separates them so a
+	// round can measure each. The SPU object cache is keyed on it.
+	static const int mode = []() -> int
+	{
+#ifdef __ANDROID__
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_putllc16", value) > 0 && value[0])
+		{
+			if (value[0] == '0') return 0;
+			if (value[0] == '1') return 1;
+		}
+#endif
+		return -1;
+	}();
+
+	return mode;
+}
+
+bool spu_dec_dead_read_enabled() noexcept
+{
+	// Default off. It changes SPU codegen, so it also keys the SPU cache file
+	// ("-thor-ddr"), and the first boot with it recompiles.
+	static const bool s_value = []() noexcept
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_dec_dead_read", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
 #if !defined(ANDROID) || defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 bool spu_reduced_loop_reuse_enabled() noexcept
 {
@@ -428,6 +754,17 @@ bool spu_native_object_cache_enabled() noexcept
 	});
 
 	return normalized == "1" || normalized == "on" || normalized == "true" || normalized == "yes";
+}
+
+bool spu_runtime_native_object_cache_enabled() noexcept
+{
+	// Keep the new runtime-cache scope on the measured Android ARM64 target.
+	// Other targets retain their existing runtime compiler construction.
+#if defined(__ANDROID__) && defined(ARCH_ARM64)
+	return spu_native_object_cache_enabled();
+#else
+	return false;
+#endif
 }
 
 static u32 spu_cache_preload_limit() noexcept
@@ -1273,7 +1610,8 @@ void spu_cache::initialize(bool build_existing_cache)
 	const std::string loc = ppu_cache + "spu-" + fmt::to_lower(g_cfg.core.spu_block_size.to_string()) +
 		(use_thor_reduced_loop_cache ? fmt::format("-thor-rl-u%u-v2", thor_reduced_loop_unroll) : "") +
 		(use_thor_reduced_loop_reuse ? "-reuse1" : "") +
-		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") + thor_arm_feature_cache + "-v1-tane.dat";
+		(use_thor_dynamic_mfc_cache ? "-thor-dmfc" : "") +
+		(spu_dec_dead_read_enabled() ? "-thor-ddr" : "") + (spu_putllc16_mode() == 0 ? "-thor-p16off" : spu_putllc16_mode() == 1 ? "-thor-p16on" : "") + thor_arm_feature_cache + "-v1-tane.dat";
 
 	if (use_thor_reduced_loop_cache)
 	{
@@ -1356,9 +1694,9 @@ void spu_cache::initialize(bool build_existing_cache)
 		if (use_native_object_cache)
 		{
 #ifdef __ANDROID__
-			spu_log.always()("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+			spu_log.always()("Thor SPU native-object cache enabled for startup and Android ARM64 runtime LLVM objects: cold runtime misses populate the exact cache.");
 #else
-			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects: bounded preload plus interpreter where required; runtime misses remain uncached.");
+			spu_log.notice("Thor SPU native-object cache enabled for startup LLVM objects.");
 #endif
 		}
 	}
@@ -2042,6 +2380,10 @@ bool spu_program::operator<(const spu_program& rhs) const noexcept
 
 spu_runtime::spu_runtime()
 {
+#ifdef ARCH_ARM64
+	spu_reset_failed_blocks();
+#endif
+
 	// Clear LLVM output
 	m_cache_path = rpcs3::cache::get_ppu_cache();
 
@@ -2922,6 +3264,26 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 #endif
 	}
 
+#ifdef ARCH_ARM64
+	if (is_thor_edge_event_interp_dispatch(spu))
+	{
+		spu_run_thor_edge_event_interp_dispatch(spu);
+		return;
+	}
+
+	if (is_thor_fmod_event_interp_dispatch(spu))
+	{
+		spu_run_thor_fmod_event_interp_dispatch(spu);
+		return;
+	}
+
+	if (is_thor_transformers_physx_start_interp_dispatch(spu))
+	{
+		spu_run_thor_transformers_physx_start_interp_dispatch(spu);
+		return;
+	}
+#endif
+
 	// Second attempt (recover from the recursion after repeated unsuccessful trampoline call)
 	if (spu.block_counter != spu.block_recover && &dispatch != ::at32(*spu_runtime::g_dispatcher, spu._ref<nse_t<u32>>(spu.pc) >> 12))
 	{
@@ -2938,11 +3300,26 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 		return;
 	}
 
+#ifdef ARCH_ARM64
+	if (spu_block_compile_failed(spu.pc))
+	{
+		spu_run_interp_fallback(spu);
+		return;
+	}
+#endif
+
 	auto program = spu.jit->analyse(spu._ptr<u32>(0), spu.pc);
+#ifdef ARCH_ARM64
+	if (program.data.empty())
+	{
+		spu_run_interp_fallback(spu);
+		return;
+	}
+#endif
 #ifdef ARCH_ARM64
 	const auto func = compile_spu_llvm_with_retry(spu.jit, program, []()
 	{
-		return spu_recompiler_base::make_llvm_recompiler();
+		return spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 	});
 #else
 	const auto func = spu.jit->compile(std::move(program));
@@ -2950,6 +3327,15 @@ void spu_recompiler_base::dispatch(spu_thread& spu, void*, u8* rip)
 
 	if (!func)
 	{
+#ifdef ARCH_ARM64
+#if defined(__APPLE__)
+		pthread_jit_write_protect_np(true);
+#endif
+		spu_mark_block_compile_failed(program.entry_point, program.lower_bound, ::size32(program.data) * 4);
+		spu_run_interp_fallback(spu, program.lower_bound, ::size32(program.data) * 4);
+		return;
+#endif
+
 		spu_log.fatal("[0x%05x] Compilation failed.", spu.pc);
 		return;
 	}
@@ -3079,7 +3465,7 @@ void spu_recompiler_base::branch(spu_thread& spu, void*, u8* rip)
 
 void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/)
 {
-	if (g_cfg.core.spu_decoder != spu_decoder_type::_static)
+	if (g_cfg.core.spu_decoder != spu_decoder_type::_static && !spu.interp_fallback)
 	{
 		fmt::throw_exception("Invalid SPU decoder");
 	}
@@ -3096,6 +3482,15 @@ void spu_recompiler_base::old_interpreter(spu_thread& spu, void* ls, u8* /*rip*/
 		{
 			if (spu.check_state())
 				break;
+		}
+
+		if (spu.interp_fallback &&
+			(spu.pc == spu.interp_fallback_stop_pc ||
+				spu.pc < spu.interp_fallback_begin || spu.pc >= spu.interp_fallback_end)) [[unlikely]]
+		{
+			spu.interp_fallback = false;
+			spu.interp_fallback_stop_pc = umax;
+			break;
 		}
 
 		const u32 op = *reinterpret_cast<const be_t<u32>*>(base + spu.pc);
@@ -8786,7 +9181,8 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 			value.reg2 = pattern.reg2;
 		}
 
-		if (g_cfg.core.spu_accurate_reservations)
+		// Thor: the property decides first; otherwise the accuracy setting does.
+		if (const int p16 = spu_putllc16_mode(); p16 == 0 || (p16 < 0 && g_cfg.core.spu_accurate_reservations))
 		{
 			// Because enabling it is a hack, as it turns out
 			continue;
@@ -8861,6 +9257,9 @@ spu_program spu_recompiler_base::analyse(const be_t<u32>* ls, u32 entry_point, s
 	if (result.data.empty())
 	{
 		// Blocks starting from 0x0 or invalid instruction won't be compiled, may need special interpreter fallback
+#ifdef ARCH_ARM64
+		spu_mark_block_compile_failed(entry_point);
+#endif
 	}
 
 	thor_shorten_spu_backoff_loops(result, lsa);
@@ -9007,7 +9406,7 @@ struct spu_llvm_worker
 			if (!compiler)
 			{
 				// Postponed initialization
-				compiler = spu_recompiler_base::make_llvm_recompiler();
+				compiler = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 				compiler->init();
 
 				ls.resize(SPU_LS_SIZE / sizeof(be_t<u32>));
@@ -9043,7 +9442,7 @@ struct spu_llvm_worker
 #ifdef ARCH_ARM64
 				const auto target = compile_spu_llvm_with_retry(compiler, func2, []()
 				{
-					return spu_recompiler_base::make_llvm_recompiler();
+					return spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 				});
 #else
 				const auto target = compiler->compile(std::move(func2));

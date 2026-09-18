@@ -225,6 +225,10 @@ struct cfg_root : cfg::node
 		cfg::_bool strict_texture_flushing{this, "Strict Texture Flushing", false};
 		cfg::_bool multithreaded_rsx{this, "Multithreaded RSX", false};
 		cfg::_bool relaxed_zcull_sync{this, "Relaxed ZCULL Sync", false};
+		// Thor port of RPCS3 a65980547: a surface split reuses a discarded render
+		// target instead of creating an image. On by default since 2026-09-17.
+		// The switch is in Advanced settings, Video. Read by thor_surface_reuse.h.
+		cfg::_bool reuse_discarded_render_targets{this, "Reuse Discarded Render Targets", true, true};
 		cfg::_bool force_hw_MSAA_resolve{this, "Force Hardware MSAA Resolve", false, true};
 		cfg::_enum<stereo_render_mode_options> stereo_render_mode{this, "3D Display Mode", stereo_render_mode_options::disabled};
 		cfg::_bool debug_program_analyser{this, "Debug Program Analyser", false};

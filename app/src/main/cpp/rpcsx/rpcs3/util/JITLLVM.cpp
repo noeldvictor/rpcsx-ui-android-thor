@@ -170,12 +170,30 @@ static std::string sanitize_android_arm64_llvm_cpu(std::string cpu)
 		// and +i8mm, and this JIT already passes -sve,-sve2 in its feature string, so
 		// SVE is suppressed twice over. See docs/arm64/codegen.md.
 		//
-		// Off by default until the A/B says the scheduling model is worth anything --
-		// nine predictions of this shape have been refuted on this project.
+		// MEASURED 2026-08-26, and it is now ON by default.
+		//
+		// Interleaved A/B in restored 3D combat, same savestate, separate warm cache
+		// per arm because changing -mcpu changes the generated code:
+		//
+		//     cortex-a78   20.39  20.40   mean 20.395
+		//     native core  20.51  20.47   mean 20.490
+		//
+		// +0.46% with non-overlapping ranges. Small, but real and free, and the
+		// substitution was never buying anything: SVE is already suppressed by the
+		// feature string (-sve,-sve2), which is why the native core measures the
+		// same or better rather than crashing.
+		//
+		// Do NOT read this as "codegen is the bottleneck". SPU threads are 71% of
+		// cycles and the correct scheduling model bought 0.5%, which says SPU code
+		// is limited by synchronisation (29% of cycles in VM locking), not by
+		// instruction selection or NEON quality.
+		//
+		//   debug.rpcsx.thor.jit_cpu_native = 0  restores the cortex-a78 substitution
 		{
 			char value[PROP_VALUE_MAX]{};
 			const int length = __system_property_get("debug.rpcsx.thor.jit_cpu_native", value);
-			if (length > 0 && value[0] != '0' && value[0] != 'n' && value[0] != 'f')
+			const bool native_default = !(length > 0 && (value[0] == '0' || value[0] == 'n' || value[0] == 'f'));
+			if (native_default)
 			{
 				// Once. This runs per JIT compile, and the answer cannot change
 				// within a session: it depends on HWCAP and one property, both read

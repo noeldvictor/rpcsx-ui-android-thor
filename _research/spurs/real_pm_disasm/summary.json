@@ -1,0 +1,16 @@
+﻿{
+    "source_files":  [
+                         "C:\\Users\\leanerdesigner\\Documents\\ps3-thor\\rpcsx-ui-android\\_research\\spurs\\ls_lle_kernel1.lsdump.txt"
+                     ],
+    "image_path":  "_research\\spurs\\real_pm_disasm\\spu-hot-window-image.bin",
+    "ghidra_output":  "_research\\spurs\\real_pm_disasm\\spu-hot-window-ghidra.txt",
+    "parsed_instruction_count":  65536,
+    "addresses":  [
+                      "0xa00",
+                      "0xc00",
+                      "0x1000"
+                  ],
+    "window_bytes":  "0x120",
+    "ghidra_home":  "C:\\Users\\leanerdesigner\\Documents\\SteamPortableTools\\toolchains\\ghidra_12.0.4_PUBLIC",
+    "processor":  "SPU:BE:128:default"
+}

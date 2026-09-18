@@ -968,6 +968,11 @@ game_boot_result Emulator::BootGame(std::string path, const std::string& title_i
 
 	auto restore_on_no_boot = [&](game_boot_result result)
 	{
+		if (result != game_boot_result::no_errors)
+		{
+			m_prevent_autostart = false;
+		}
+
 		if (m_state == system_state::stopped || result != game_boot_result::no_errors)
 		{
 			ensure(IsStopped());
@@ -1058,6 +1063,16 @@ game_boot_result Emulator::BootGame(std::string path, const std::string& title_i
 void Emulator::SetForceBoot(bool force_boot)
 {
 	m_force_boot = force_boot;
+}
+
+void Emulator::SetPreventAutostart(bool prevent_autostart)
+{
+	m_prevent_autostart = prevent_autostart;
+}
+
+void Emulator::SetPauseAfterStartup(bool pause_after_startup)
+{
+	m_pause_after_startup = pause_after_startup;
 }
 
 void Emulator::SetContinuousMode(bool continuous_mode)
@@ -1659,6 +1674,62 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			// Applied here, beside hle_libs, because the managed profile rewrites
 			// the per-title yml and an edit made before that does not survive.
 			//
+			// FORCE THE SPU INTERPRETER, FOR TRACING ONLY.
+			//
+			// `RunHleFunction` is consulted once per BLOCK on the recompiler path
+			// and before EVERY STEP on the interpreter path:
+			//
+			//     if (jit) { while (true) { ... if (RunHleFunction()) continue; ... } }
+			//     else     { while (true) { ... if (RunHleFunction()) continue;
+			//                                   g_interpreter(...); } }
+			//
+			// so one-shot probes planted inside a guest policy module only fire under
+			// the interpreter. Two tracing attempts against the recompiler produced
+			// zero lines on boots where the module demonstrably ran.
+			//
+			// `jit` is set in the spu_thread constructor and stays null unless the
+			// decoder is asmjit or llvm, so selecting an interpreter here is what
+			// takes the else branch.
+			//
+			// THIS IS RUINOUSLY SLOW. It is a debugging lever, never a measurement
+			// configuration - any fps number taken with it set is meaningless.
+			//
+			// Canonical spellings matter: `cfg::_enum::from_string` matches the
+			// enum's own text, which is "Interpreter (static)", not "static". The
+			// same trap silently swallowed SPU Block Size and XFloat Accuracy for
+			// weeks, so canonicalise AND check the return value.
+			//
+			//   debug.rpcsx.thor.spu_decoder = static | dynamic | llvm | asmjit
+			{
+				char dec_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.spu_decoder", dec_value) > 0 && dec_value[0])
+				{
+					const std::string want(dec_value);
+					std::string canon;
+
+					if (want == "static" || want == "Interpreter (static)") canon = "Interpreter (static)";
+					else if (want == "dynamic" || want == "Interpreter (dynamic)") canon = "Interpreter (dynamic)";
+					else if (want == "asmjit" || want == "Recompiler (ASMJIT)") canon = "Recompiler (ASMJIT)";
+					else if (want == "llvm" || want == "Recompiler (LLVM)") canon = "Recompiler (LLVM)";
+
+					if (canon.empty())
+					{
+						sys_log.error("Thor: ignoring SPU Decoder '%s' (expected static|dynamic|asmjit|llvm)", want);
+					}
+					else if (g_cfg.core.spu_decoder.from_string(canon))
+					{
+						sys_log.error("Thor: SPU Decoder forced to %s (TRACING ONLY - fps is meaningless)",
+							g_cfg.core.spu_decoder.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set SPU Decoder '%s', still %s",
+							canon, g_cfg.core.spu_decoder.to_string());
+					}
+				}
+			}
+
 			//   debug.rpcsx.thor.spu_block_size = safe | mega | giga
 			//
 			// Unset leaves the configured value untouched. Note each setting gets
@@ -1671,13 +1742,15 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 				{
 					const std::string want(bs_value);
 
-					// The enum serializes CAPITALIZED - "Safe", "Mega", "Giga" -
-					// so `from_string("mega")` REJECTS the value and leaves the
-					// setting alone. This block used to pass the lowercase string
-					// straight through and log success without checking the return
-					// value, so `spu_block_size=mega` silently did nothing while
-					// claiming to work: an A/B run against it on 2026-08-25 was
-					// measuring Safe against Safe. Canonicalize, then VERIFY.
+					// CANONICALISE, AND CHECK THE RETURN.
+					//
+					// `from_string` matches the enum's own spelling - "Safe",
+					// "Mega", "Giga" - so passing the lowercase word FAILS and
+					// silently leaves the configured value alone, while the log
+					// below still claimed it had been forced. /diag reported
+					// spuBlockSize "Safe" through every "mega" run because of this.
+					// Same trap as XFloat Accuracy, whose canonical value is
+					// "Inaccurate".
 					std::string canon;
 
 					if (want == "safe" || want == "Safe") canon = "Safe";
@@ -1695,6 +1768,226 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 					else
 					{
 						sys_log.error("Thor: FAILED to set SPU Block Size '%s', still %s", canon, g_cfg.core.spu_block_size.to_string());
+					}
+				}
+			}
+
+			// VIDEO OVERRIDES for the Transformers frame-pacing round, 2026-09-07.
+			//
+			// WHY PROPERTIES. The debug-boot path applies the managed profile and
+			// rewrites the per-title config, so a key edited between arms does not
+			// survive the boot. A property is read here, after the profile.
+			//
+			// WHY THESE. The game's own overlay reports RSX at about 3% while
+			// rsx::thread burns as much CPU as a whole SPU, and the FIFO park
+			// explained none of it. Unreal Engine 3 on PS3 uses ZCULL occlusion
+			// queries, and a ZCULL hard sync stalls rsx::thread on the GPU. The
+			// vblank rate decides the penalty of a missed 33 ms frame when a title
+			// waits for vblank: 16.7 ms at 60 Hz, 8.3 ms at 120 Hz. Neither had
+			// been measured on BLUS30357 before. Upstream warns that a vblank rate
+			// other than 60 can change game speed, so it is an experiment lever
+			// and not a profile value.
+			//
+			//   debug.rpcsx.thor.relaxed_zcull_sync    = 0 | 1   ("Relaxed ZCULL Sync")
+			//   debug.rpcsx.thor.precise_zpass_count   = 0 | 1   ("Accurate ZCULL stats")
+			//   debug.rpcsx.thor.disable_zcull_queries = 0 | 1   ("Disable ZCull Occlusion Queries")
+			//   debug.rpcsx.thor.vblank_rate           = 1..6000
+			//   debug.rpcsx.thor.vblank_ntsc           = 0 | 1
+			//
+			// Unset leaves the configured value untouched. Every applied override
+			// logs its name and the value read back, so a run can prove it engaged.
+			{
+				const auto force_bool = [](const char* prop, cfg::_bool& node, const char* label)
+				{
+					char value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get(prop, value) > 0 && value[0])
+					{
+						const bool want = !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+						node.set(want);
+						sys_log.error("Thor: %s forced to %s (now %s)", label, want ? "true" : "false", node.to_string());
+					}
+				};
+
+				force_bool("debug.rpcsx.thor.relaxed_zcull_sync", g_cfg.video.relaxed_zcull_sync, "Relaxed ZCULL Sync");
+				force_bool("debug.rpcsx.thor.precise_zpass_count", g_cfg.video.precise_zpass_count, "Accurate ZCULL stats");
+				force_bool("debug.rpcsx.thor.disable_zcull_queries", g_cfg.video.disable_zcull_queries, "Disable ZCull Occlusion Queries");
+				force_bool("debug.rpcsx.thor.vblank_ntsc", g_cfg.video.vblank_ntsc, "Vblank NTSC Fixup");
+
+				// 2026-09-07, after the PPU census: the render thread polls a word with
+				// sys_timer_usleep for 82% of its samples and the main thread waits on
+				// it in sys_cond_wait, so the chain runs through rsx::thread's command
+				// processing. These two move work off that thread or shorten its path.
+				//
+				//   debug.rpcsx.thor.multithreaded_rsx  = 0 | 1
+				//   debug.rpcsx.thor.rsx_fifo_accuracy  = fast | atomic | ordered
+				force_bool("debug.rpcsx.thor.multithreaded_rsx", g_cfg.video.multithreaded_rsx, "Multithreaded RSX");
+
+				// Resolution Scale, 25..800. The GPU measured 50 to 62 percent busy at
+				// 550 of 680 MHz in combat; a lower internal resolution says whether the
+				// frame is waiting on it.
+				//
+				//   debug.rpcsx.thor.resolution_scale = 25..800
+				char rs_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.resolution_scale", rs_value) > 0 && rs_value[0])
+				{
+					const long parsed = std::strtol(rs_value, nullptr, 10);
+
+					if (parsed >= 25 && parsed <= 800)
+					{
+						g_cfg.video.resolution_scale_percent.set(parsed);
+						sys_log.error("Thor: Resolution Scale forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.video.resolution_scale_percent);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring Resolution Scale '%s' (expected 25..800)", rs_value);
+					}
+				}
+
+				// STRUCTURAL SWITCHES, 2026-09-08. Three emulator-architecture facts the
+				// Transformers rounds never measured:
+				//
+				//   debug.rpcsx.thor.ppu_threads        = 1..8      PPU Threads. RPCS3 runs at
+				//     most this many PPU threads at once, emulating the Cell's two hardware
+				//     threads; every other runnable PPU thread waits for a slot under the
+				//     global lv2 mutex. On an 8-core host that is a serialisation the
+				//     hardware did not have.
+				//   debug.rpcsx.thor.vk_async_scheduler = safe|fast   Asynchronous Queue
+				//     Scheduler; fast runs compute tasks on a second queue. The forced-safe
+				//     guard in VKGSRender applies to NVIDIA only.
+				//   debug.rpcsx.thor.sleep_timers       = as_host|usleep|all   Sleep Timers
+				//     Accuracy, now that the timer slack is 1 ns.
+				{
+					char pt_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.ppu_threads", pt_value) > 0 && pt_value[0])
+					{
+						const long parsed = std::strtol(pt_value, nullptr, 10);
+
+						if (parsed >= 1 && parsed <= 8)
+						{
+							g_cfg.core.ppu_threads.set(parsed);
+							sys_log.error("Thor: PPU Threads forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.core.ppu_threads);
+						}
+						else
+						{
+							sys_log.error("Thor: ignoring PPU Threads '%s' (expected 1..8)", pt_value);
+						}
+					}
+
+					char as_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.vk_async_scheduler", as_value) > 0 && as_value[0])
+					{
+						const std::string want(as_value);
+						const char* canon = (want == "fast" || want == "Fast") ? "Fast" : (want == "safe" || want == "Safe") ? "Safe" : "";
+
+						if (!*canon)
+						{
+							sys_log.error("Thor: ignoring Asynchronous Queue Scheduler '%s' (expected safe|fast)", want);
+						}
+						else if (g_cfg.video.vk.asynchronous_scheduler.from_string(canon))
+						{
+							sys_log.error("Thor: Asynchronous Queue Scheduler forced to %s (now %s)", canon, g_cfg.video.vk.asynchronous_scheduler.to_string());
+						}
+						else
+						{
+							sys_log.error("Thor: FAILED to set Asynchronous Queue Scheduler '%s'", canon);
+						}
+					}
+
+					char st_value[PROP_VALUE_MAX]{};
+
+					if (__system_property_get("debug.rpcsx.thor.sleep_timers", st_value) > 0 && st_value[0])
+					{
+						const std::string want(st_value);
+						const char* canon = (want == "usleep") ? "Usleep Only" : (want == "as_host") ? "As Host" : (want == "all") ? "All Timers" : "";
+
+						if (!*canon)
+						{
+							sys_log.error("Thor: ignoring Sleep Timers Accuracy '%s' (expected as_host|usleep|all)", want);
+						}
+						else if (g_cfg.core.sleep_timers_accuracy.from_string(canon))
+						{
+							sys_log.error("Thor: Sleep Timers Accuracy forced to %s (now %s)", canon, g_cfg.core.sleep_timers_accuracy.to_string());
+						}
+						else
+						{
+							sys_log.error("Thor: FAILED to set Sleep Timers Accuracy '%s'", canon);
+						}
+					}
+				}
+
+				char fifo_mode[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_accuracy", fifo_mode) > 0 && fifo_mode[0])
+				{
+					const std::string want(fifo_mode);
+					std::string canon;
+
+					// from_string matches the enum's own spelling. Canonicalise, and check the return.
+					if (want == "fast" || want == "Fast") canon = "Fast";
+					else if (want == "atomic" || want == "Atomic") canon = "Atomic";
+					else if (want == "ordered" || want == "Ordered" || want == "Ordered & Atomic") canon = "Ordered & Atomic";
+
+					if (canon.empty())
+					{
+						sys_log.error("Thor: ignoring RSX FIFO Accuracy '%s' (expected fast|atomic|ordered)", want);
+					}
+					else if (g_cfg.core.rsx_fifo_accuracy.from_string(canon))
+					{
+						sys_log.error("Thor: RSX FIFO Accuracy forced to %s (now %s)", canon, g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set RSX FIFO Accuracy '%s', still %s", canon, g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+				}
+
+				char vb_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.vblank_rate", vb_value) > 0 && vb_value[0])
+				{
+					const long parsed = std::strtol(vb_value, nullptr, 10);
+
+					if (parsed >= 1 && parsed <= 6000)
+					{
+						g_cfg.video.vblank_rate.set(parsed);
+						sys_log.error("Thor: Vblank Rate forced to %d (now %d)", static_cast<int>(parsed), +g_cfg.video.vblank_rate);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring Vblank Rate '%s' (expected 1..6000)", vb_value);
+					}
+				}
+			}
+
+			// SPU GETLLAR BUSY WAITING, which defaults to 100 percent.
+			//
+			// This title spends ~29% of all cycles in VM locking
+			// (range_lock_internal 15.37%, writer_lock 10.69%, passive_lock 3.07%)
+			// with six SPU threads on eight cores, so a full-rate busy wait on
+			// load-locked reservations is worth measuring rather than assuming.
+			// The profile sets no reservation options at all.
+			//
+			//   debug.rpcsx.thor.spu_getllar_busy = 0..100
+			{
+				char gl_value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.spu_getllar_busy", gl_value) > 0 && gl_value[0])
+				{
+					const long parsed = std::strtol(gl_value, nullptr, 10);
+
+					if (parsed >= 0 && parsed <= 100)
+					{
+						g_cfg.core.spu_getllar_busy_waiting_percentage.set(static_cast<u32>(parsed));
+						sys_log.error("Thor: SPU GETLLAR busy waiting set to %d%% (now %u)",
+							static_cast<int>(parsed), +g_cfg.core.spu_getllar_busy_waiting_percentage);
+					}
+					else
+					{
+						sys_log.error("Thor: ignoring SPU GETLLAR busy waiting '%s' (expected 0..100)", gl_value);
 					}
 				}
 			}
@@ -1727,6 +2020,28 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 					}
 
 					g_cfg.core.libraries_control.set_set(std::move(set));
+				}
+			}
+
+			// Use the stronger RSX FIFO order only for the measured Transformers HLE route.
+			// Unset or zero keeps the configured mode.
+			{
+				char fifo_value[PROP_VALUE_MAX]{};
+
+				if (m_title_id == "BLUS30357" &&
+					__system_property_get("debug.rpcsx.thor.transformers_fifo_ordered", fifo_value) > 0 &&
+					fifo_value[0] && fifo_value[0] != '0')
+				{
+					if (g_cfg.core.rsx_fifo_accuracy.from_string("Ordered & Atomic"))
+					{
+						sys_log.error("Thor: Transformers RSX FIFO accuracy forced to %s",
+							g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
+					else
+					{
+						sys_log.error("Thor: FAILED to set Transformers RSX FIFO accuracy, still %s",
+							g_cfg.core.rsx_fifo_accuracy.to_string());
+					}
 				}
 			}
 #endif
@@ -2686,7 +3001,8 @@ game_boot_result Emulator::Load(const std::string& title_id, bool is_disc_patch,
 			}
 		}
 
-		const bool autostart = m_ar || (std::exchange(m_force_boot, false) || g_cfg.misc.autostart);
+		const bool autostart = !std::exchange(m_prevent_autostart, false) &&
+			(m_ar || (std::exchange(m_force_boot, false) || g_cfg.misc.autostart));
 
 		if (IsReady())
 		{
@@ -2803,7 +3119,13 @@ void Emulator::FixGuestTime()
 
 void Emulator::FinalizeRunRequest()
 {
-	const bool autostart = !m_ar || !!g_cfg.misc.autostart;
+	const bool pause_after_startup = m_pause_after_startup.exchange(false);
+	const bool autostart = !pause_after_startup && (!m_ar || !!g_cfg.misc.autostart);
+
+	if (pause_after_startup)
+	{
+		sys_log.success("Thor start-paused startup handoff is ready.");
+	}
 
 	rx::EnumBitSet<cpu_flag> add_flags = cpu_flag::dbg_global_pause;
 
@@ -3118,6 +3440,10 @@ void Emulator::Resume()
 			}
 
 			m_pause_msgs_refs.clear();
+
+			// A static guest frame does not request a new presentation. Present the
+			// cleared native UI so that the pause message does not stay on screen.
+			rsx::set_native_ui_flip();
 		});
 
 	if (g_cfg.misc.prevent_display_sleep)

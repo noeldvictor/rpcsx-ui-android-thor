@@ -1,6 +1,7 @@
 ﻿#include "rx/align.hpp"
 #include "Emu/CPU/thor_spu_prof.h"
 #include "stdafx.h"
+#include "Emu/thor_mem_watch.h"
 #include "util/JIT.h"
 #include "util/date_time.h"
 #include "Emu/Memory/vm.h"
@@ -23,6 +24,7 @@
 #include "Emu/Cell/SPUAnalyser.h"
 #include "Emu/Cell/SPUThread.h"
 #include "Emu/Cell/SPURecompiler.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/timers.hpp"
 
 #include "Emu/RSX/Core/RSXReservationLock.hpp"
@@ -238,6 +240,156 @@ static bool get_thor_spurs_tear_probe() noexcept
 
 // Count a plain GET whose source overlaps a line under an active reservation
 // lock. Caps the walk, because a DMA can be 16 KB and this is a diagnostic.
+// CAPTURE THE RESIDENT SPURS POLICY MODULE, UNDER LLE.
+//
+// The taskset policy module is the one reference this effort has never had.
+// It cannot be captured by the dump facilities in cellSpursSpu.cpp because
+// those live in the HLE syscall path, which does not execute under LLE - and
+// under HLE the module is never resident at all (LS 0xA00 measured entirely
+// zero, against 930/1024 nonzero under LLE).
+//
+// do_dma_transfer runs for every MFC transfer in BOTH configurations, so the
+// check belongs here. The kernel DMAs a policy module into local store at
+// 0xA00 before entering it; sampling that address after transfers catches
+// whichever module is resident, keyed by its first 16 bytes so each distinct
+// module is written exactly once.
+//
+//   debug.rpcsx.thor.pm_capture = 1
+static bool get_thor_pm_capture() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.pm_capture", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static void thor_capture_policy_module(spu_thread* spu) noexcept
+{
+	if (!spu)
+	{
+		return;
+	}
+
+	// DUMP THE CellSpurs INSTANCE, AHEAD OF ANY POLICY-MODULE GATE.
+	//
+	// This must not sit behind the ls[0] check below. Under HLE, LS 0xA00 is
+	// entirely zero, so that check returns early and the structure would never
+	// be written - which reads as "HLE has no SPURS instance" when it only
+	// means "HLE has no policy module resident", something already known. The
+	// point here is to compare what the PPU side BUILDS in the two modes.
+	if (const u32 sa = spu->spurs_addr; sa && sa != 0u - 0x80u && vm::check_addr(sa, 0, 0x200))
+	{
+		static std::atomic<u32> s_sdump{0};
+
+		// Rewrite periodically, so the file left behind is a LATE snapshot.
+		// A once-only dump fires at the first capture opportunity, which is not
+		// the same moment in an LLE run and an HLE run - comparing those two
+		// compares phases, not behaviour.
+		if ((s_sdump++ & 0x3FF) == 0)
+		{
+			char spath[256]{};
+			std::snprintf(spath, sizeof(spath),
+				"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_spurs_%08x.bin", sa);
+
+			if (FILE* sf = std::fopen(spath, "wb"))
+			{
+				std::fwrite(vm::base(sa), 1, 0x200, sf);
+				std::fclose(sf);
+				spu_log.error("Thor SPURS DUMP: instance 0x%x -> %s", sa, spath);
+			}
+		}
+	}
+	else
+	{
+		static std::atomic<u32> s_nosp{0};
+
+		if (s_nosp++ == 0)
+		{
+			spu_log.error("Thor SPURS DUMP: spurs_addr %s (0x%x) - nothing to dump",
+				spu->spurs_addr == 0 ? "UNSET" : "INVALID", spu->spurs_addr);
+		}
+	}
+
+	const u8* const ls = static_cast<const u8*>(spu->_ptr<void>(0xA00));
+	u64 sig = 0;
+
+	for (u32 i = 0; i < 16; i++)
+	{
+		sig = sig * 1099511628211ull ^ ls[i];
+	}
+
+	if (sig == 0 || !ls[0])
+	{
+		return;
+	}
+
+	static std::mutex s_mutex;
+	static std::vector<u64> s_seen;
+
+	{
+		std::lock_guard lock(s_mutex);
+
+		for (u64 e : s_seen)
+		{
+			if (e == sig)
+			{
+				return;
+			}
+		}
+
+		if (s_seen.size() >= 24)
+		{
+			return;
+		}
+
+		s_seen.push_back(sig);
+	}
+
+	char path[256]{};
+	std::snprintf(path, sizeof(path),
+		"/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/thor_pm_%016llx.bin",
+		static_cast<unsigned long long>(sig));
+
+	if (FILE* f = std::fopen(path, "wb"))
+	{
+		std::fwrite(spu->_ptr<void>(0), 1, 0x40000, f);
+		std::fclose(f);
+		// SELF-IDENTIFYING CAPTURE.
+		//
+		// Bytes alone cannot say which module this is - the first attempt caught
+		// two and neither could be confirmed as the taskset PM. The kernel context
+		// at LS 0x100 names the workload it is running:
+		//
+		//   0x1D0  wklCurrentAddr   the image EA the kernel loaded from
+		//   0x1D8  wklCurrentUniqueId
+		//   0x1DC  wklCurrentId
+		//
+		// Record them with the bytes so a capture identifies itself instead of
+		// having to be recognised afterwards. Under LLE wklCurrentAddr is a real
+		// guest address, so it also says where the image came from.
+		const u8* const kc = static_cast<const u8*>(spu->_ptr<void>(0x100));
+		const auto be32 = [](const u8* p) -> u32
+		{
+			return (u32{p[0]} << 24) | (u32{p[1]} << 16) | (u32{p[2]} << 8) | u32{p[3]};
+		};
+		const u32 wkl_addr_lo = be32(kc + 0xD4);
+		const u32 wkl_uid     = be32(kc + 0xD8);
+		const u32 wkl_id      = be32(kc + 0xDC);
+
+		spu_log.error("Thor PM CAPTURE: sig=%016llx first16=%02x%02x%02x%02x%02x%02x%02x%02x "
+			"wklCurrentAddr=0x%08x wklUniqueId=%u wklCurrentId=%u spu=%u -> %s",
+			static_cast<unsigned long long>(sig),
+			ls[0], ls[1], ls[2], ls[3], ls[4], ls[5], ls[6], ls[7],
+			wkl_addr_lo, wkl_uid, wkl_id, spu->index, path);
+	}
+}
+
 static void thor_spurs_tear_check(u32 eal, u32 size, u32 spurs_addr) noexcept
 {
 	static atomic_t<u64> s_checked{0};
@@ -433,6 +585,44 @@ static bool get_thor_spurs_always_notify() noexcept
 // thermally bound. This toggle changes ONE thing: it takes vm::writer_lock
 // around those two copies and nothing else. If the halt rate falls with this
 // and not with the other levers, the tear is the cause.
+// Round Q's answer to "who frees the GCMX ring" is SPU PUTLLC on one line from
+// the job code, with the render thread's stwcx on the same line. See the note in
+// do_putllc. Read once.
+static bool thor_spu_putllc16_nobarrier() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.spu_putllc16_nobarrier", value) > 0 && value[0])
+		{
+			const bool on = value[0] != '0';
+
+			if (on)
+			{
+				spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock (property)");
+			}
+
+			return on;
+		}
+#endif
+		// Default on for Transformers (BLUS30357) since 2026-09-08: round R measured
+		// 20.30 and 20.43 FPS against controls of 19.20 and 19.09 with 8 to 11
+		// percent fewer cores, Accurate SPU Reservations on, screenshots drawn.
+		// Every other title keeps upstream's heavyweight path until measured.
+		if (Emu.GetTitleID() == "BLUS30357")
+		{
+			spu_log.error("Thor: PUTLLC confined to 16 bytes commits without the writer_lock (BLUS30357 default)");
+			return true;
+		}
+
+		return false;
+	}();
+
+	return s_value;
+}
+
 static bool get_thor_spurs_store_exclusive() noexcept
 {
 	static const bool s_value = []() -> bool
@@ -521,6 +711,105 @@ static u32 get_thor_spurs_drop_notify() noexcept
 	}();
 
 	return s_value;
+}
+
+// Defined in ps3fw/cellSpursSpu.cpp. The whole SPU-side SPURS kernel lives there
+// and has been unreachable since RegisterHleFunction was removed.
+extern bool spursKernelEntry(spu_thread& spu);
+
+// When the REAL SPURS kernel is staged into the SPU image, the HLE entry hooks
+// must NOT be installed: 0x818 and 0x848 are exactly the addresses the genuine
+// kernel is entered on, so hooking them intercepts it and staging it achieves
+// nothing.
+//
+// This is separate from hle_spurs_kernel on purpose. That flag also gates the
+// PPU-side HLE setup - the handler thread among other things - and turning it
+// off to get the real kernel left SPURS half-initialised: measured, the title
+// died before sys_spu_thread_group_start with
+// "Access violation reading location 0x55553188" inside liblv2.
+//
+// So the working combination is hle_spurs_kernel = 1 AND real_spu_kernel = 1:
+// full PPU-side HLE, genuine SPU-side code.
+//
+//   debug.rpcsx.thor.real_spu_kernel = 1
+// See the PUT census in process_mfc_cmd.
+//   debug.rpcsx.thor.put_census = 1
+// EA of a CellSpursQueue to watch, as hex. Every SPU DMA that reads its first
+// line is logged with the head/tail the SPU is about to receive.
+//
+// The consumer returns CELL_SPURS_TASK_ERROR_AGAIN (queue empty) while the
+// producer's ring reads head=6 tail=262 depth=256, i.e. FULL. Both sides use
+// the same used() formula, so they must be seeing different VALUES. This prints
+// the value the SPU actually gets.
+//
+//   debug.rpcsx.thor.queue_watch_ea = 1030e400
+static FORCE_INLINE u32 get_thor_queue_watch_ea() noexcept
+{
+#ifdef ANDROID
+	static const u32 s_value = []() noexcept -> u32
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.queue_watch_ea", value) <= 0 || !value[0])
+		{
+			return 0;
+		}
+
+		return static_cast<u32>(std::strtoul(value, nullptr, 16));
+	}();
+	return s_value;
+#else
+	return 0;
+#endif
+}
+
+static FORCE_INLINE bool get_thor_put_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.put_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+static FORCE_INLINE bool get_thor_real_spu_kernel() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_spu_kernel", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+static FORCE_INLINE bool get_thor_hle_spurs_kernel() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.hle_spurs_kernel", value) <= 0 || !value[0])
+		{
+			return false;
+		}
+
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
+
+	return s_value;
+#else
+	return false;
+#endif
 }
 
 static FORCE_INLINE u32 get_thor_max_spurs_threads(u32 configured) noexcept
@@ -3828,7 +4117,12 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		if (__system_property_get("debug.rpcsx.thor.cpu_affinity_mask", value) > 0 && value[0])
+		// Per-class mask first (2026-09-08), then the shared one. See the PPU copy
+		// in PPUThread.cpp for why the split exists.
+		//   debug.rpcsx.thor.spu_affinity_mask = 0x..   (SPU threads only)
+		//   debug.rpcsx.thor.cpu_affinity_mask = 0x..   (fallback, PPU and SPU)
+		for (const char* prop : {"debug.rpcsx.thor.spu_affinity_mask", "debug.rpcsx.thor.cpu_affinity_mask"})
+		if (__system_property_get(prop, value) > 0 && value[0])
 		{
 			const unsigned long parsed = std::strtoul(value, nullptr, 0);
 
@@ -3844,11 +4138,236 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 	return s_mask;
 }
 
+// Thread-local so it costs spu_thread neither a layout change nor a savestate
+// field. See the comment on the declarations in SPUThread.h for the two ways a
+// member here broke the emulator.
+static thread_local std::map<u32, bool (*)(spu_thread&)> g_thor_spu_hle_functions;
+
+// SPURS ATOMIC CENSUS.
+//
+// `jobChain->pc` lives in main memory and only ever advances through the SPU's
+// own GETLLAR/PUTLLC pair. Probes planted in local store cannot be seen from a
+// recompiled block, but every atomic goes through process_mfc_cmd, which IS a
+// real call. So the reservation traffic is the one place the job chain module
+// can be observed at full speed.
+//
+// Records (pc, ea, cmd) triples with outcome counts and prints each new triple
+// once, then every 4096th hit. Bounded to 256 slots so a runaway loop cannot
+// flood the log.
+//
+//   debug.rpcsx.thor.spurs_atomic_census = 1
+static FORCE_INLINE bool get_thor_spurs_atomic_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.spurs_atomic_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+// Record the result of each bounded SPU event notification. This probe is off
+// by default and does not change mailbox or event-queue behavior.
+//
+//   debug.rpcsx.thor.spu_event_census = 1
+static FORCE_INLINE bool get_thor_spu_event_census() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.spu_event_census", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+// Correlate the exact edgeZlib event send with the PPU wait without enabling
+// the full runtime census. This property is also the gate for the PPU trace.
+static FORCE_INLINE bool get_thor_edge_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+// Correlate SPU event sends with the dynamic FMOD queue. The PPU wait trace
+// publishes the queue ID before it blocks. This probe stays off by default.
+static FORCE_INLINE bool get_thor_fmod_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_value = []() noexcept -> bool
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_wait_trace", value) > 0 && value[0] && value[0] != '0';
+	}();
+	return s_value;
+#else
+	return false;
+#endif
+}
+
+static FORCE_INLINE bool is_thor_edge_zlib_spu(const spu_thread& spu) noexcept
+{
+	// These are the first four instructions at edgeZlib LS address 0x3000.
+	static constexpr u8 s_edge_signature[16] = {
+		0x42, 0x47, 0x24, 0x02, 0x43, 0x7e, 0xc0, 0x82,
+		0x43, 0x3e, 0x0f, 0x02, 0x42, 0x01, 0x6d, 0x82,
+	};
+
+	return std::memcmp(spu._ptr<u8>(0x3000), s_edge_signature, sizeof(s_edge_signature)) == 0;
+}
+
+// cmd: 0 = GETLLAR, 1 = PUTLLC ok, 2 = PUTLLC fail, 3 = PUTLLUC.
+void thor_spurs_atomic_census(u32 pc, u32 ea, u32 cmd, u32 spu_index, const void* data, const void* ls_pm)
+{
+	if (!get_thor_spurs_atomic_census())
+	{
+		return;
+	}
+
+	// No pc filter. The bound used to be 0x4000, which silently cut off the top of
+	// the real job chain policy module - variant C spans LS 0xa00..0x4a00, so its
+	// sites at 0x4528/0x462c/0x4658 were never recorded. The table is large enough
+	// to hold the title's own SPU programs alongside SPURS; if it saturates, the
+	// highest slot index printed will be 255 and the run is inconclusive.
+
+	static constexpr const char* s_names[4] = {"GETLLAR", "PUTLLC-ok", "PUTLLC-FAIL", "PUTLLUC"};
+
+	struct slot_t
+	{
+		std::atomic<u64> key{0};
+		std::atomic<u64> hits{0};
+	};
+
+	static slot_t s_slots[256];
+	static std::atomic<u32> s_used{0};
+
+	// pc is 18 bits, ea 32, cmd 2 - packs without collision.
+	const u64 key = (u64{cmd} << 56) | (u64{pc} << 32) | u64{ea};
+
+	const u32 have = s_used.load(std::memory_order_acquire);
+
+	for (u32 i = 0; i < have && i < 256; i++)
+	{
+		if (s_slots[i].key.load(std::memory_order_relaxed) == key)
+		{
+			const u64 n = ++s_slots[i].hits;
+
+			if (n <= 8 || (n % 4096) == 0)
+			{
+				spu_log.error("Thor ATOMIC #%u %s pc=0x%05x ea=0x%08x spu=%u hits=%llu",
+					i, s_names[cmd & 3], pc, ea, spu_index, n);
+			}
+
+			return;
+		}
+	}
+
+	const u32 idx = s_used.load(std::memory_order_relaxed);
+
+	if (idx >= 256)
+	{
+		return;
+	}
+
+	s_slots[idx].key.store(key, std::memory_order_relaxed);
+	s_slots[idx].hits.store(1, std::memory_order_relaxed);
+	s_used.store(idx + 1, std::memory_order_release);
+
+	std::string pm;
+
+	if (ls_pm)
+	{
+		const u8* p = static_cast<const u8*>(ls_pm);
+
+		for (u32 i = 0; i < 8; i++)
+		{
+			fmt::append(pm, "%02x", p[i]);
+		}
+
+		// libsre module magics: four dead `ila r2,imm` words at the image start.
+		// Matching on pc alone collides - under LLE several modules occupy LS 0xa00
+		// in turn, so the same pc can belong to different code at different times.
+		if (pm.starts_with("42377002")) fmt::append(pm, "[A]");
+		else if (pm.starts_with("4306dc02")) fmt::append(pm, "[B]");
+		else if (pm.starts_with("53505552")) fmt::append(pm, "[TASKSET]");
+	}
+
+	spu_log.error("Thor ATOMIC #%u %s pc=0x%05x ea=0x%08x spu=%u pm=%s NEW",
+		idx, s_names[cmd & 3], pc, ea, spu_index, pm);
+
+	if ((cmd == 0 || cmd == 1) && data && pc >= 0xa00 && pc < 0x2c00)
+	{
+		const u8* p = static_cast<const u8*>(data);
+		std::string hex;
+
+		for (u32 row = 0; row < 128; row += 16)
+		{
+			fmt::append(hex, "%s+0x%02x:", row ? " |" : "", row);
+
+			for (u32 i = 0; i < 16; i++)
+			{
+				fmt::append(hex, " %02x", p[row + i]);
+			}
+		}
+
+		spu_log.error("Thor ATOMIC #%u DATA ea=0x%08x %s", idx, ea, hex);
+	}
+}
+
+void spu_thread::RegisterHleFunction(u32 addr, bool (*func)(spu_thread&))
+{
+	g_thor_spu_hle_functions[addr] = func;
+}
+
+void spu_thread::UnregisterHleFunction(u32 addr)
+{
+	g_thor_spu_hle_functions.erase(addr);
+}
+
+bool spu_thread::RunHleFunction()
+{
+	if (g_thor_spu_hle_functions.empty()) [[likely]]
+	{
+		return false;
+	}
+
+	const auto found = g_thor_spu_hle_functions.find(pc);
+
+	if (found == g_thor_spu_hle_functions.end())
+	{
+		return false;
+	}
+
+	found->second(*this);
+	return true;
+}
+
 void spu_thread::cpu_task()
 {
 	if (const u64 thor_mask = get_thor_cpu_affinity_mask())
 	{
 		thread_ctrl::set_thread_affinity_mask(thor_mask);
+
+		static atomic_t<bool> s_thor_mask_logged{false};
+		if (!s_thor_mask_logged.exchange(true))
+		{
+			spu_log.error("Thor: SPU affinity mask 0x%llx applied", thor_mask);
+		}
 	}
 
 #ifdef __APPLE__
@@ -3920,6 +4439,45 @@ void spu_thread::cpu_task()
 		}
 	}
 
+	// BOOTSTRAP THE HLE SPURS KERNEL.
+	//
+	// Every RegisterHleFunction call in cellSpursSpu.cpp lives INSIDE a function
+	// that is itself an HLE callback - spursKernelEntry re-registers itself at
+	// line 732 - so nothing installs the first one. The site that was meant to,
+	// in cellSpurs.cpp, is disabled and depends on `custom_task`, which no longer
+	// exists on spu_thread:
+	//
+	//   // idm::get_unlocked<named_thread<spu_thread>>(spurs->spus[num])
+	//   //     ->custom_task = ... spu.RegisterHleFunction(entry, spursKernelEntry);
+	//
+	// Its comment says why it could not be done at creation: the local store is
+	// rewritten by sys_spu_thread_group_start. Doing it HERE, as the thread
+	// begins executing, is after that rewrite and needs no extra hook.
+	//
+	// Both kernel entry addresses are registered because which one applies
+	// depends on the SF1_32_WORKLOADS flag, and spursKernelEntry reads its own
+	// context to tell. Registering an address the title never reaches is inert.
+	//
+	// Gated on the group name, the same test cellSpursSpu.cpp uses to identify a
+	// SPURS group, and on a property so the default is unchanged:
+	//
+	//   debug.rpcsx.thor.hle_spurs_kernel = 1
+	//
+	// This is only meaningful together with hle_libs forcing libsre.sprx to HLE.
+	if (group && get_thor_hle_spurs_kernel() && !get_thor_real_spu_kernel())
+	{
+		constexpr std::string_view spurs_suffix = "CellSpursKernelGroup"sv;
+
+		if (group->name.ends_with(spurs_suffix))
+		{
+			// 0x818 / 0x848 are CELL_SPURS_KERNEL{1,2}_ENTRY_ADDR from
+			// ps3fw/include/rpcsx/fw/ps3/cellSpurs.h, which this TU does not include.
+			RegisterHleFunction(0x818, spursKernelEntry);
+			RegisterHleFunction(0x848, spursKernelEntry);
+			spu_log.success("Thor: HLE SPURS kernel armed on '%s' (spu %u)", group->name, index);
+		}
+	}
+
 	if (jit)
 	{
 		while (true)
@@ -3930,12 +4488,26 @@ void spu_thread::cpu_task()
 					break;
 			}
 
+			// An HLE-registered address is host code, so it must be taken
+			// BEFORE the zero-word check: a workload address that was never
+			// loaded into local store reads as 0x0 and would otherwise be
+			// mistaken for a STOP.
+			if (RunHleFunction())
+			{
+				continue;
+			}
+
 			if (_ref<u32>(pc) == 0x0u)
 			{
 				if (spu_thread::stop_and_signal(0x0))
 					pc += 4;
 				continue;
 			}
+
+			// An escape from the fallback returns here through the JIT gateway.
+			interp_fallback = false;
+			interp_fallback_stop_pc = umax;
+			allow_interrupts_in_cpu_work = false;
 
 			spu_runtime::g_gateway(*this, _ptr<u8>(0), nullptr);
 		}
@@ -3960,6 +4532,11 @@ void spu_thread::cpu_task()
 			{
 				if (check_state())
 					break;
+			}
+
+			if (RunHleFunction())
+			{
+				continue;
 			}
 
 			spu_runtime::g_interpreter(*this, _ptr<u8>(0), nullptr);
@@ -4166,7 +4743,7 @@ spu_thread::spu_thread(lv2_spu_group* group, u32 index, std::string_view name, u
 #if defined(ARCH_X64)
 		jit = spu_recompiler_base::make_fast_llvm_recompiler();
 #elif defined(ARCH_ARM64)
-		jit = spu_recompiler_base::make_llvm_recompiler();
+		jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 #else
 #error "Unimplemented"
 #endif
@@ -4232,7 +4809,7 @@ spu_thread::spu_thread(utils::serial& ar, lv2_spu_group* group)
 #if defined(ARCH_X64)
 		jit = spu_recompiler_base::make_fast_llvm_recompiler();
 #elif defined(ARCH_ARM64)
-		jit = spu_recompiler_base::make_llvm_recompiler();
+		jit = spu_recompiler_base::make_llvm_recompiler(0, spu_runtime_native_object_cache_enabled());
 #else
 #error "Unimplemented"
 #endif
@@ -4389,7 +4966,11 @@ void spu_thread::push_snr(u32 number, u32 value)
 
 void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8* ls)
 {
-	perf_meter<"DMA"_u32> perf_;
+	// One per DMA transfer. Only the destructors read it, and only under
+	// perf_report; the ADMA_GET, ADMA_PUT and DMA_PUT sub-meters copy the first
+	// timestamp, so a disabled parent gives disabled children, which is what
+	// perf_report=off already produced. See perf_meter(std::nullptr_t).
+	perf_meter<"DMA"_u32> perf_(nullptr);
 
 	const bool is_get = (args.cmd & ~(MFC_BARRIER_MASK | MFC_FENCE_MASK | MFC_START_MASK)) == MFC_GET_CMD;
 	record_thor_es_dma(_this, args.cmd, args.lsa, args.eal, args.size, thor_es_dma_list_active(_this));
@@ -4511,6 +5092,16 @@ void spu_thread::do_dma_transfer(spu_thread* _this, const spu_mfc_cmd& args, u8*
 	}
 #endif
 	// Default off. See get_thor_spurs_tear_probe.
+	if (get_thor_pm_capture()) [[unlikely]]
+	{
+		static std::atomic<u32> s_tick{0};
+
+		if ((s_tick++ & 0x7) == 0)
+		{
+			thor_capture_policy_module(_this);
+		}
+	}
+
 	if (is_get && eal < RAW_SPU_BASE_ADDR && get_thor_spurs_tear_probe()) [[unlikely]]
 	{
 		thor_spurs_tear_check(eal, args.size, _this ? _this->spurs_addr : 0);
@@ -5208,7 +5799,8 @@ bool spu_thread::do_dma_check(const spu_mfc_cmd& args)
 
 bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 {
-	perf_meter<"MFC_LIST"_u64> perf0;
+	// Destructor-only. See perf_meter(std::nullptr_t).
+	perf_meter<"MFC_LIST"_u64> perf0(nullptr);
 
 	thor_es_dma_list_scope thor_es_dma_scope{*this};
 
@@ -5771,6 +6363,12 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 			transfer.lsa = arg_lsa | (addr & 0xf);
 			transfer.size = size;
 
+			// Thor MEMWATCH: a list PUT element that covers the watched word.
+			if (thor::mem_watch::armed() && (transfer.cmd & MFC_PUT_CMD) && !(transfer.cmd & MFC_GET_CMD)) [[unlikely]]
+			{
+				thor::mem_watch::on_range("SPU PUTL element", addr, size, index, pc);
+			}
+
 			arg_lsa += rx::alignUp<u32>(size, 16);
 			do_dma_transfer(this, transfer, ls);
 		}
@@ -5814,11 +6412,21 @@ bool spu_thread::do_list_transfer(spu_mfc_cmd& args)
 
 bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 {
-	perf_meter<"PUTLLC-"_u64> perf0;
+	// One per conditional store. perf2's in-function read below feeds only a
+	// perf_report-guarded warning, so a disabled meter cannot be observed. The
+	// STORE128 meter in do_cell_atomic_128_store is deliberately NOT changed:
+	// its value is read to time the suspend_all path. See perf_meter(std::nullptr_t).
+	perf_meter<"PUTLLC-"_u64> perf0(nullptr);
 	perf_meter<"PUTLLC+"_u64> perf1 = perf0;
 
 	// Store conditionally
 	const u32 addr = args.eal & -128;
+
+	// Thor MEMWATCH: a conditional store on the line that holds the watched word.
+	if (thor::mem_watch::armed()) [[unlikely]]
+	{
+		thor::mem_watch::on_range("SPU PUTLLC", addr, 128, index, pc);
+	}
 
 	if ([&]()
 		{
@@ -6000,6 +6608,25 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 			auto& super_data = *vm::get_super_ptr<spu_rdata_t>(addr);
 			const bool success = [&]()
 			{
+				// Thor (2026-09-08), ARMSX3 813774767: a store confined to one aligned
+				// 16-byte chunk commits with a 16-byte compare-exchange and no
+				// vm::writer_lock. The writer_lock is not a lock on this address: it
+				// sets a bit in the global range-lock word, marks every PPU thread
+				// cpu_flag::memory and spins until each has parked, while this
+				// thread holds the line's unique reservation lock, so every other
+				// SPU's PUTLLC on the line fails and every GETLLAR spins. Transformers
+				// hammers one such line, the GCMX ring counter, about 250 times a
+				// frame from five SPUs and the render thread (memory watch, round Q).
+				// The trade: the other 112 bytes are compared but not excluded from
+				// plain stores and DMA for a window of tens of nanoseconds, which is
+				// what the inline PUTLLC16 path and the PPU's 8-byte stwcx already do.
+				//   debug.rpcsx.thor.spu_putllc16_nobarrier = 1
+				if (diff16_pos != umax && thor_spu_putllc16_nobarrier())
+				{
+					return cmp_rdata(rdata, super_data) &&
+						atomic_storage<u128>::compare_exchange(reinterpret_cast<u128*>(super_data)[diff16_pos], reinterpret_cast<u128*>(rdata)[diff16_pos], reinterpret_cast<const u128*>(to_write)[diff16_pos]);
+				}
+
 				// Full lock (heavyweight)
 				// TODO: vm::check_addr
 				vm::writer_lock lock(addr, range_lock);
@@ -6825,6 +7452,58 @@ bool spu_thread::process_mfc_cmd()
 		perf_meter<"GETLLAR"_u64> perf0;
 
 		const u32 addr = ch_mfc_cmd.eal & -128;
+
+		// WHICH ADDRESS DOES THE SPURS QUEUE CONSUMER ACTUALLY RESERVE?
+		//
+		// The HLE producer reports the ring FULL (head=40 tail=296 used=256) while
+		// the guest consumer computes used==0 and returns
+		// CELL_SPURS_TASK_ERROR_AGAIN forever. Both cannot be true of the same 128
+		// bytes, and the consumer gets its queue pointer from a value already in
+		// local store (`lqr r39,-0x6465`), not from anything the HLE hands it. So
+		// log the EA of the reservation itself rather than continuing to assume it
+		// is the queue we push to.
+		//
+		// Distinct addresses only, a handful per SPU - a poll loop reserves one or
+		// two lines, and GETLLAR is far too hot to log unconditionally.
+		//
+		//   debug.rpcsx.thor.getllar_census = 1
+#ifdef __ANDROID__
+		{
+			static const bool s_census = []() noexcept
+			{
+				char v[PROP_VALUE_MAX]{};
+				return __system_property_get("debug.rpcsx.thor.getllar_census", v) > 0 && v[0] && v[0] != '0';
+			}();
+
+			if (s_census)
+			{
+				static std::atomic<u32> s_seen[16]{};
+				static std::atomic<u32> s_n{0};
+
+				bool known = false;
+
+				for (u32 i = 0, have = s_n.load(); i < have && i < 16; i++)
+				{
+					if (s_seen[i].load() == addr) { known = true; break; }
+				}
+
+				if (!known)
+				{
+					const u32 idx = s_n.load();
+
+					if (idx < 16)
+					{
+						s_seen[idx].store(addr);
+						s_n.store(idx + 1);
+						spu_log.error("Thor GETLLAR EA #%u: addr=0x%08x (eal=0x%08x lsa=0x%05x size=0x%x) spu=%u",
+							idx, addr, +ch_mfc_cmd.eal, +ch_mfc_cmd.lsa, +ch_mfc_cmd.size, +id);
+					}
+				}
+			}
+		}
+#endif
+		thor_spurs_atomic_census(pc, addr, 0, +id, &vm::_ref<spu_rdata_t>(addr), _ptr<void>(0xa00));
+
 		const auto& data = vm::_ref<spu_rdata_t>(addr);
 
 		if (addr == last_faddr)
@@ -7649,6 +8328,10 @@ bool spu_thread::process_mfc_cmd()
 
 	case MFC_PUTLLC_CMD:
 	{
+		// raddr is cleared before the outcome is written, so the census EA must be
+		// taken here or it reports 0.
+		const u32 thor_putllc_ea = raddr;
+
 		// Avoid logging useless commands if there is no reservation
 		const bool dump = get_mfc_debug_for_runtime() && raddr;
 
@@ -7814,6 +8497,7 @@ bool spu_thread::process_mfc_cmd()
 
 		if (do_putllc(ch_mfc_cmd))
 		{
+			thor_spurs_atomic_census(pc, thor_putllc_ea, 1, +id, thor_putllc_ea ? &vm::_ref<spu_rdata_t>(thor_putllc_ea) : nullptr, _ptr<void>(0xa00));
 			ch_atomic_stat.set_value(MFC_PUTLLC_SUCCESS);
 
 			if (is_spurs_task_wait)
@@ -7867,6 +8551,7 @@ bool spu_thread::process_mfc_cmd()
 		}
 		else
 		{
+			thor_spurs_atomic_census(pc, thor_putllc_ea, 2, +id, nullptr, _ptr<void>(0xa00));
 			ch_atomic_stat.set_value(MFC_PUTLLC_FAILURE);
 		}
 
@@ -7946,6 +8631,91 @@ bool spu_thread::process_mfc_cmd()
 	case MFC_GETF_CMD:
 	case MFC_SDCRZ_CMD:
 	{
+		// WHERE DO THE SPUs WRITE?
+		//
+		// The title draws ~0.94 times per flip under HLE against ~91 under LLE, so
+		// essentially no scene geometry is submitted. On PS3 that geometry comes
+		// from RSX command buffers the SPUs build in main memory, so the question
+		// is whether the SPUs write there at all. Bucket every PUT by its target
+		// address, 16 MB per bucket, and report the histogram from the SPU that
+		// asks - a bucket that stays empty under HLE and is hot under LLE names
+		// the memory the title never fills.
+		//
+		//   debug.rpcsx.thor.put_census = 1
+		// WHAT DOES THE CONSUMER ACTUALLY READ? See get_thor_queue_watch_ea.
+		if (const u32 watch = get_thor_queue_watch_ea()) [[unlikely]]
+		{
+			if (ch_mfc_cmd.eal >= watch && ch_mfc_cmd.eal < watch + 0x80 &&
+				ch_mfc_cmd.cmd >= MFC_GET_CMD && ch_mfc_cmd.cmd <= MFC_GETF_CMD)
+			{
+				static std::atomic<u64> s_n{0};
+
+				if (const u64 n = ++s_n; n <= 6 || (n % 4096) == 0)
+				{
+					const u32 head = +vm::_ref<be_t<u32>>(watch + 0);
+					const u32 tail = +vm::_ref<be_t<u32>>(watch + 4);
+					const u32 dep  = +vm::_ref<be_t<u32>>(watch + 12);
+
+					spu_log.error("Thor QWATCH #%llu: SPU GET ea=0x%08x size=0x%x -> "
+						"head=%u tail=%u depth=%u used=%d (pc=0x%05x)",
+						n, +ch_mfc_cmd.eal, +ch_mfc_cmd.size, head, tail, dep,
+						static_cast<s32>(tail - head), pc);
+				}
+			}
+		}
+
+		// Thor MEMWATCH: a plain PUT that covers the watched word. List DMA
+		// (PUTL and friends) is not decoded here; the census counts its opcodes.
+		if (thor::mem_watch::armed() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTF_CMD) [[unlikely]]
+		{
+			thor::mem_watch::on_range("SPU PUT", ch_mfc_cmd.eal, ch_mfc_cmd.size, index, pc);
+		}
+
+		if (get_thor_put_census() && ch_mfc_cmd.cmd >= MFC_PUT_CMD && ch_mfc_cmd.cmd <= MFC_PUTRF_CMD) [[unlikely]]
+		{
+			static std::atomic<u64> s_buckets[256]{};
+			static std::atomic<u64> s_opcodes[64]{};
+			static std::atomic<u64> s_total{0};
+
+			// BUCKET BY OPCODE TOO.
+			//
+			// For a LIST dma (PUTL 0x24 / PUTLB 0x25 / PUTLF 0x26) `eal` is the address
+			// of the DMA LIST, not the destination - the real targets are inside the
+			// list entries. So the address histogram MIS-ATTRIBUTES every list transfer,
+			// and a conclusion like "bucket c0 is empty, the SPU never writes RSX memory"
+			// is only sound if the title is not using list DMA. Count the opcodes so that
+			// assumption is checked rather than assumed.
+			s_opcodes[ch_mfc_cmd.cmd & 0x3F]++;
+			s_buckets[(ch_mfc_cmd.eal >> 24) & 0xFF]++;
+
+			if (const u64 n = ++s_total; n == 200 || n == 2000 || (n % 100000) == 0)
+			{
+				std::string hist;
+
+				for (u32 b = 0; b < 256; b++)
+				{
+					if (const u64 c = s_buckets[b].load())
+					{
+						fmt::append(hist, " %02x:%llu", b, c);
+					}
+				}
+
+				std::string ops;
+
+				for (u32 c = 0; c < 64; c++)
+				{
+					if (const u64 v = s_opcodes[c].load())
+					{
+						const char* nm =
+							c == 0x20 ? "PUT" : c == 0x21 ? "PUTB" : c == 0x22 ? "PUTF" :
+							c == 0x24 ? "PUTL" : c == 0x25 ? "PUTLB" : c == 0x26 ? "PUTLF" : "?";
+						fmt::append(ops, " %02x/%s:%llu", c, nm, v);
+					}
+				}
+
+				spu_log.error("Thor PUT CENSUS total=%llu ops:%s byhi:%s", n, ops, hist);
+			}
+		}
 		if (ch_mfc_cmd.size <= 0x4000) [[likely]]
 		{
 			if (do_dma_check(ch_mfc_cmd)) [[likely]]
@@ -8881,7 +9651,15 @@ s64 spu_thread::get_ch_value(u32 ch)
 				{
 					if (u32 work_count = g_spu_work_count)
 					{
-						const u32 true_free = rx::sub_saturate<u32>(utils::get_thread_count(), 10);
+						// Upstream's `thread_count - 10` is 0 on every 8-core device, so
+						// while ANY SPU block compiles, a random reservation waiter sleeps
+						// 200 us. ARMSX3 (00f0d2e38, 2026-08-30) measured 2179 ms frames at
+						// the tail of a 1723-block compile burst with that formula and
+						// kept the half-the-cores form below. With the native SPU object
+						// cache off by default here, every boot is a cold burst, so the
+						// throttle is live through the whole warm-up.
+						const u32 hw_threads = utils::get_thread_count();
+						const u32 true_free = hw_threads > 10 ? (hw_threads - 10) : (hw_threads / 2);
 
 						if (work_count > true_free)
 						{
@@ -9072,6 +9850,22 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutIntrMbox:
 	{
+		// LLVM records the current WRCH address before it calls this handler.
+		// The edgeZlib helper starts at 0xa4d8, but this WRCH is at 0xa514.
+		if (get_thor_spu_event_census() && pc == 0xa514 && is_thor_edge_zlib_spu(*this))
+		{
+			static std::atomic<u32> s_edge_intr_entry_count{0};
+			const u32 n = s_edge_intr_entry_count.fetch_add(1, std::memory_order_relaxed);
+
+			if (n < 16)
+			{
+				spu_log.error("Thor EDGE EVENT intr-entry #%u pc=0x%05x value=0x%08x "
+					"out=%u intr=%u in=%u state=0x%08x",
+					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
+					ch_in_mbox.get_count(), state.load().toUnderlying());
+			}
+		}
+
 		// Does the SPU ever try to signal the PPU at all?
 		//
 		// The boot deadlock ends with main_thread blocked in
@@ -9200,7 +9994,105 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 				}
 
 				// TODO: check passing spup value
-				if (auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN)
+				const auto res = queue ? queue->send(SYS_SPU_THREAD_EVENT_USER_KEY, lv2_id, (u64{spup} << 32) | (value & 0x00ffffff), data) : CELL_ENOTCONN;
+
+				if ((get_thor_spu_event_census() || get_thor_edge_event_wait_trace()) &&
+					pc == 0xa514 && is_thor_edge_zlib_spu(*this))
+				{
+					const u64 dispatch_time_us = get_system_time();
+					const u32 dispatch_total = thor::spurs_event_dispatch(spup, res + 0u,
+						queue ? queue->id : 0, dispatch_time_us);
+					const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+					const u64 active_age_us = edge_wait.active && edge_wait.arm_time_us &&
+						dispatch_time_us >= edge_wait.arm_time_us
+						? dispatch_time_us - edge_wait.arm_time_us : 0;
+					static std::atomic<u32> s_edge_wait_event_count{0};
+
+					if (get_thor_edge_event_wait_trace() && edge_wait.active && active_age_us >= 1000000 &&
+						s_edge_wait_event_count.load(std::memory_order_relaxed) < 16)
+					{
+						const u32 n = s_edge_wait_event_count.fetch_add(1, std::memory_order_relaxed);
+						if (n < 16)
+						{
+							spu_log.error("Thor EDGE EFWAIT EVENT #%u: sequence=%u active_age_us=%llu "
+								"dispatch=%u/%u delta=%u port=%u result=0x%08x queue=0x%08x",
+								n, edge_wait.sequence, static_cast<unsigned long long>(active_age_us),
+								dispatch_total, edge_wait.event_dispatch_at_arm,
+								dispatch_total - edge_wait.event_dispatch_at_arm,
+								spup, res + 0u, queue ? queue->id : 0);
+						}
+					}
+
+					static std::atomic<u32> s_edge_event_result_count{0};
+					const u32 n = s_edge_event_result_count.fetch_add(1, std::memory_order_relaxed);
+
+					if (get_thor_spu_event_census() && n < 16)
+					{
+						spu_log.error("Thor EDGE EVENT result #%u pc=0x%05x port=%u data0=0x%06x "
+							"data1=0x%08x result=0x%08x queue=0x%08x out=%u in=%u state=0x%08x",
+							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue ? queue->id : 0,
+							ch_out_mbox.get_count(), ch_in_mbox.get_count(), state.load().toUnderlying());
+					}
+				}
+
+				if (get_thor_fmod_event_wait_trace())
+				{
+					const auto fmod_wait = thor::get_fmod_event_wait_snapshot();
+					const u32 current_taskset = static_cast<u32>(+_ref<u64>(0x27b8));
+
+					if (fmod_wait.active && current_taskset == fmod_wait.taskset &&
+						spup == fmod_wait.event_port)
+					{
+						const u64 dispatch_time_us = get_system_time();
+						const u32 queue_id = queue ? queue->id : 0;
+						const u32 dispatch_total = thor::fmod_event_dispatch(spup, res + 0u,
+							queue_id, dispatch_time_us);
+						const u64 active_age_us = fmod_wait.arm_time_us && dispatch_time_us >= fmod_wait.arm_time_us
+							? dispatch_time_us - fmod_wait.arm_time_us : 0;
+						static std::atomic<u32> s_fmod_wait_event_count{0};
+						const u32 n = s_fmod_wait_event_count.fetch_add(1, std::memory_order_relaxed);
+
+						if (n < 16)
+						{
+							spu_log.error("Thor FMOD EFWAIT EVENT #%u: sequence=%u active_age_us=%llu "
+								"spu=0x%x index=%u pc=0x%05x dispatch=%u/%u delta=%u "
+								"taskset=0x%08x port=%u data0=0x%06x data1=0x%08x "
+								"result=0x%08x queue=0x%08x expected_queue=0x%08x",
+								n, fmod_wait.sequence, static_cast<unsigned long long>(active_age_us),
+								id, index, pc, dispatch_total, fmod_wait.event_dispatch_at_arm,
+								dispatch_total - fmod_wait.event_dispatch_at_arm, current_taskset, spup,
+								value & 0x00ffffff, data, res + 0u, queue_id, fmod_wait.event_queue);
+						}
+					}
+				}
+
+				if (get_thor_spu_event_census())
+				{
+					static std::atomic<u32> s_event_count{0};
+					const u32 n = s_event_count.fetch_add(1, std::memory_order_relaxed);
+
+					if (n < 32)
+					{
+						u32 queue_id = 0;
+						u32 queue_depth = 0;
+						u32 ppu_waiter = 0;
+
+						if (queue)
+						{
+							std::lock_guard lock{queue->mutex};
+							queue_id = queue->id;
+							queue_depth = static_cast<u32>(queue->events.size());
+							ppu_waiter = queue->pq ? 1 : 0;
+						}
+
+						spu_log.error("Thor SPU EVENT #%u pc=0x%05x port=%u data0=0x%06x data1=0x%08x "
+							"result=0x%08x queue=0x%08x depth=%u waiter=%u out=%u in=%u state=0x%08x",
+							n, pc, spup, value & 0x00ffffff, data, res + 0u, queue_id, queue_depth,
+							ppu_waiter, ch_out_mbox.get_count(), ch_in_mbox.get_count(), state.load().toUnderlying());
+					}
+				}
+
+				if (res)
 				{
 					if (res == CELL_EAGAIN)
 					{
@@ -9292,6 +10184,22 @@ bool spu_thread::set_ch_value(u32 ch, u32 value)
 
 	case SPU_WrOutMbox:
 	{
+		// LLVM records the current WRCH address before it calls this handler.
+		// The edgeZlib helper starts at 0xa4d8, but this WRCH is at 0xa500.
+		if (get_thor_spu_event_census() && pc == 0xa500 && is_thor_edge_zlib_spu(*this))
+		{
+			static std::atomic<u32> s_edge_out_entry_count{0};
+			const u32 n = s_edge_out_entry_count.fetch_add(1, std::memory_order_relaxed);
+
+			if (n < 16)
+			{
+				spu_log.error("Thor EDGE EVENT out-entry #%u pc=0x%05x value=0x%08x "
+					"out=%u intr=%u in=%u state=0x%08x",
+					n, pc, value, ch_out_mbox.get_count(), ch_out_intr_mbox.get_count(),
+					ch_in_mbox.get_count(), state.load().toUnderlying());
+			}
+		}
+
 		if (state & cpu_flag::pending)
 		{
 			do_mfc();
@@ -9852,7 +10760,48 @@ bool spu_thread::stop_and_signal(u32 code)
 
 	case SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE:
 	{
-		fmt::throw_exception("SYS_SPU_THREAD_STOP_SWITCH_SYSTEM_MODULE (op=0x%x, Out_MBox=%s)", code, _ref<u32>(pc), ch_out_mbox);
+		// sys_spu_thread_switch_system_module.
+		//
+		// Unimplemented here and in upstream - it was an unconditional throw, and
+		// the only other mention in the tree is a name formatter. Nothing needed
+		// it because no SPURS policy module had ever run far enough to ask: the
+		// real job chain module reaches it once its ready count is seeded.
+		//
+		// The contract is legible from the module's own code around the stop:
+		//
+		//     02af0  wrch r6,ch28    ; SPU_WrOutIntrMbox  <- the request
+		//     02af4  stop 0x120      ; this
+		//     02af8  rdch r4,ch29    ; SPU_RdInMbox       <- expects a reply
+		//     02afc  ceq  r10,r4,r5  ; r5 = 0x8001000A = CELL_EBUSY
+		//     02b00  brnz r10,0x2af0 ; reply == EBUSY -> RETRY the whole sequence
+		//     02b04  br   0x2aa8     ; anything else    -> carry on
+		//
+		// So a reply is mandatory and it must NOT be EBUSY, or the guest spins on
+		// that retry branch forever.
+		//
+		// Under HLE SPURS the emulator owns policy-module loading already - the
+		// kernel's workload dispatch copies the image to local store itself - so
+		// there is no switch left for lv2 to perform. Acknowledge it and let the
+		// module continue.
+		// Read the request the way every other stop handler does. The first
+		// version used `get_count() ? pop() : 0` and always saw 0, so the request
+		// was being answered without ever being read.
+		u32 request = 0;
+		const bool had_request = ch_out_mbox.try_read(request);
+		const u32 in_count = ch_in_mbox.get_count();
+
+		{
+			static std::atomic<u32> s_n{0};
+
+			if (const u32 n = s_n++; n < 8 || (n & 0xFFF) == 0)
+			{
+				spu_log.error("Thor SWITCH_SYSTEM_MODULE #%u: request=0x%08x (present=%d) "
+					"in_mbox_count=%u pc=0x%05x -> CELL_OK",
+					n, request, had_request ? 1 : 0, in_count, pc);
+			}
+		}
+
+		ch_in_mbox.set_values(1, CELL_OK);
 		return true;
 	}
 

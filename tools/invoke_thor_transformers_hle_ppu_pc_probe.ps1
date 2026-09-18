@@ -1,0 +1,116 @@
+param(
+    [string]$Serial = "192.168.1.3:5555",
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9A-Fa-f]{64}$')]
+    [string]$ExpectedInstalledApkSha256,
+    [switch]$EnableSpursProbe
+)
+
+$ErrorActionPreference = "Stop"
+. "$PSScriptRoot\thor_debug_common.ps1"
+
+$adb = Resolve-ThorAdb
+$inputMacroPath = Join-Path $PSScriptRoot "thor_input_macro.ps1"
+$env:ANDROID_SERIAL = $Serial
+
+function Set-ThorPpuProbeProperty {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+
+    & $adb -s $Serial shell setprop $Name $Value | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not set Thor property '$Name'."
+    }
+}
+
+# Keep the measured HLE candidate stack explicit. Enable only the low-rate PPU
+# PC census. Bound the cached SPU preload so that the startup compile does not
+# use the complete thermal window before the title reaches the late wait.
+$profileProperties = [ordered]@{
+    "debug.rpcsx.thor.hle_libs" = "libsre.sprx"
+    "debug.rpcsx.thor.hle_spurs_kernel" = "1"
+    "debug.rpcsx.thor.real_spu_kernel" = "0"
+    "debug.rpcsx.thor.real_taskset_pm" = "0"
+    "debug.rpcsx.thor.yield_fast_path" = "0"
+    "debug.rpcsx.thor.pm_capture" = "0"
+    "debug.rpcsx.thor.draw_census" = "0"
+    "debug.rpcsx.thor.ppu_pc_census" = "1"
+    "debug.rpcsx.thor.ppu_call_trace" = "0"
+    "debug.rpcsx.thor.spurs_probe" = if ($EnableSpursProbe) { "1" } else { "0" }
+    "debug.rpcsx.thor.spurs_sel_cond_fix" = "0"
+    "debug.rpcsx.thor.spurs_signal_fix" = "0"
+    "debug.rpcsx.thor.spurs_always_notify" = "0"
+    "debug.rpcsx.thor.task_attr_fix" = "0"
+    "debug.rpcsx.thor.contention_atomic_fix" = "1"
+    "debug.rpcsx.thor.contention_orphan_fix" = "1"
+    "debug.rpcsx.thor.pending_contention_fix" = "1"
+    "debug.rpcsx.thor.release_idle_taskset" = "1"
+    "debug.rpcsx.thor.syscall_dma_wait" = "1"
+    "debug.rpcsx.thor.task_ls_clear_fix" = "1"
+    "debug.rpcsx.thor.taskset_enabled_fix" = "1"
+    "debug.rpcsx.thor.taskset_snapshot_fix" = "1"
+    "debug.rpcsx.thor.taskset_syscall_fix" = "1"
+    "debug.rpcsx.thor.yield_redispatch_fix" = "1"
+}
+
+$macroParameters = [ordered]@{
+    Serial = $Serial
+    Profile = "custom"
+    Macro = "wait:15000;stop"
+    GamePath = "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso"
+    TitleId = "BLUS30357"
+    ThermalPreflightSamples = 1
+    ThermalPreflightIntervalSeconds = 2
+    ThermalPreflightHeadroomC = 0
+    MaxLaunchSiliconTemperatureC = 70
+    ThermalPreflightMaxRiseC = 1
+    ThermalRuntimeProbeWindowC = 12
+    MaxBatteryTemperatureC = 34
+    MaxSkinTemperatureC = 40
+    MaxSiliconTemperatureC = 72
+    SpuCachePreloadLimit = 64
+    SpuCacheCompileBudgetMs = 50
+    SpuNativeObjectCache = "on"
+    CacheWorkerAffinityMask = 7
+    ExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
+    BootGame = $true
+    ForceStop = $true
+    PostSnapshot = $true
+    PassThruCaptureDirectory = $true
+}
+
+try {
+    foreach ($property in $profileProperties.GetEnumerator()) {
+        Set-ThorPpuProbeProperty -Name $property.Key -Value $property.Value
+    }
+
+    $captureOutput = @(& $inputMacroPath @macroParameters 6>$null)
+} catch {
+    $failureCaptureDir = [string]$_.Exception.Data["ThorCaptureDirectory"]
+    if (-not [string]::IsNullOrWhiteSpace($failureCaptureDir)) {
+        $resolvedFailureCaptureDir = [IO.Path]::GetFullPath($failureCaptureDir)
+        throw "Transformers HLE PPU PC probe failed (capture_dir=$resolvedFailureCaptureDir): $($_.Exception.Message)"
+    }
+    throw
+} finally {
+    Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.ppu_pc_census" -Value "0"
+    Set-ThorPpuProbeProperty -Name "debug.rpcsx.thor.spurs_probe" -Value "0"
+}
+
+$captureCandidates = @(
+    $captureOutput |
+        ForEach-Object { $_.ToString().Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($captureCandidates.Count -ne 1) {
+    throw "Transformers HLE PPU PC probe expected one capture directory, got $($captureCandidates.Count)."
+}
+
+$captureDir = $captureCandidates[0]
+if (-not (Test-Path -LiteralPath $captureDir -PathType Container)) {
+    throw "Transformers HLE PPU PC probe capture does not exist: $captureDir"
+}
+
+Write-Output (Resolve-Path -LiteralPath $captureDir).Path

@@ -541,3 +541,22 @@ now calls through `VK_GET_SYMBOL()`, keeps its own pipeline cache, carries the R
 auditor hooks, and holds the extended dynamic state pipeline key work.
 
 Wait for it to settle before reading it again.
+
+## Tenth pass, 2026-09-17, against `23e119c0c` (release 0.9.9)
+
+135 commits past `6925a398e`, 46 of them their merge of RPCS3 master. **One
+ARMSX3 change taken, and it is upstream's**: the ARM64 TBL byteswap
+(`86cb3402e`, which is RPCS3 `ec4b1ae65`). The full account is
+[`upstream-survey-2026-09-17.md`](upstream-survey-2026-09-17.md).
+
+Rejected: the MUTABLE_FORMAT change and its same-day revert (this fork never
+sets the bit on Turnip; their measurement says no frame change anyway), the
+Soulcalibur V label sampling (no `rsx_profiler.cpp` here), the two ISO reader
+fixes (no `Loader/ISO.cpp` here), and about 80 commits that touch only their
+Kotlin UI.
+
+Queued: the three graphics-pipe conversion commits (`a2e025365`, `669ad8ce2`,
+`85b7495b9`), which their 0.9.7 and 0.9.8 notes credit for the Adreno 830 hang
+fixes and for taking Arkham City from more than 10,000 compute dispatches a
+frame to 1. Before any port, read this fork's `rp_end(... compute ...)` counter
+per frame on the tracked titles. Near zero means the series has no reach here.

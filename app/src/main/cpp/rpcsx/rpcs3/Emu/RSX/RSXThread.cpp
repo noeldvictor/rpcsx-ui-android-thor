@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include "Emu/thor_playback_probe.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
 #endif
 #include "Emu/thor_thermal_guard.h"
+#include "Emu/RSX/thor_frametime.h"
 #include "RSXThread.h"
 
 #include "Capture/rsx_capture.h"
@@ -860,6 +862,28 @@ namespace rsx
 		in_begin_end = true;
 	}
 
+	// See the census in thread::end / thread::flip.
+	//   debug.rpcsx.thor.draw_census = 1
+	static std::atomic<u64> g_thor_draw_calls{0};
+
+	// EXACT COUNTS PER PRIMITIVE, NOT A SAMPLE.
+	//
+	// Sampling every 97th draw found LLE issuing one prim=5 (TRIANGLES,
+	// 48 elems) among 50 quads and HLE issuing none - but one observation
+	// cannot carry that conclusion. Tally every draw instead.
+	static std::atomic<u64> g_thor_prim_hist[16]{};
+	static std::atomic<u64> g_thor_prim_elems[16]{};
+
+	static const bool g_thor_draw_census = []() noexcept -> bool
+	{
+#ifdef ANDROID
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.draw_census", v) > 0 && v[0] && v[0] != '0';
+#else
+		return false;
+#endif
+	}();
+
 	void thread::end()
 	{
 		if (capture_current_frame)
@@ -869,6 +893,133 @@ namespace rsx
 
 		in_begin_end = false;
 		m_frame_stats.draw_calls++;
+		::thor::rsx_counters::g_draws++;
+
+		// DOES ANY GEOMETRY REACH THE RSX AT ALL.
+		//
+		// Under HLE SPURS this title runs its frame loop at ~30 Hz and presents
+		// empty frames. A flip rate proves the loop runs; it says nothing about
+		// whether draws were submitted. This counts them, and thread::flip reports
+		// the total so that ZERO is reported too - a counter here alone can never
+		// report the case that matters.
+		g_thor_draw_calls++;
+
+		// WHAT IS IN THE DRAW, NOT JUST HOW MANY.
+		//
+		// Measured: HLE issues the SAME number of draws as LLE (~1 per flip) and
+		// shows a flat green frame, with RSX slightly HIGHER than LLE. So the
+		// geometry is submitted and comes out invisible - degenerate vertices or a
+		// dead transform - rather than never submitted. A draw COUNT cannot tell
+		// those apart. Print the shape of the draw and the first transform
+		// constants, which is what actually differs between the two runs.
+		if (g_thor_draw_census) [[unlikely]]
+		{
+			if (const u32 pm = static_cast<u32>(method_registers.current_draw_clause.primitive); pm < 16)
+			{
+				g_thor_prim_hist[pm]++;
+				g_thor_prim_elems[pm] += method_registers.current_draw_clause.get_elements_count();
+			}
+
+			// EVERY NON-QUAD DRAW, IN FULL.
+			//
+			// LLE renders the scene as 73 prim=5 (TRIANGLES) draws totalling
+			// 1,310,328 vertices, once, between flips 600 and 720; HLE issues none.
+			// Sampling every 97th draw cannot characterise a 73-draw burst inside a
+			// thousand quads, so log the burst itself - what it draws and where its
+			// vertex data lives is what HLE has to be made to produce.
+			if (const u32 pm = static_cast<u32>(method_registers.current_draw_clause.primitive);
+				pm != 8 && g_thor_prim_hist[pm & 15].load() <= 80)
+			{
+				const auto& tc = method_registers.transform_constants;
+
+				rsx_log.error("Thor GEOM prim=%u elems=%u vtxbase=0x%x cmd=%u idx=%u "
+					"c0=[%08x %08x %08x %08x] c4=[%08x %08x %08x %08x]",
+					pm, method_registers.current_draw_clause.get_elements_count(),
+					method_registers.vertex_data_base_offset(),
+					static_cast<u32>(method_registers.current_draw_clause.command),
+					method_registers.current_draw_clause.is_immediate_draw ? 1u : 0u,
+					tc[0][0], tc[0][1], tc[0][2], tc[0][3],
+					tc[4][0], tc[4][1], tc[4][2], tc[4][3]);
+			}
+
+			if (const u64 dn = g_thor_draw_calls.load(); dn <= 40 || (dn % 97) == 0)
+			{
+				const auto& tc = method_registers.transform_constants;
+				rsx_log.error("Thor DRAW #%llu: prim=%u elems=%u vtxbase=0x%x "
+					"c0=[%08x %08x %08x %08x] c1=[%08x %08x %08x %08x] "
+					"c2=[%08x %08x %08x %08x] c3=[%08x %08x %08x %08x]",
+					dn,
+					static_cast<u32>(method_registers.current_draw_clause.primitive),
+					method_registers.current_draw_clause.get_elements_count(),
+					method_registers.vertex_data_base_offset(),
+					tc[0][0], tc[0][1], tc[0][2], tc[0][3],
+					tc[1][0], tc[1][1], tc[1][2], tc[1][3],
+					tc[2][0], tc[2][1], tc[2][2], tc[2][3],
+					tc[3][0], tc[3][1], tc[3][2], tc[3][3]);
+			}
+
+			// A submitted Bink quad can still produce a black frame when its decoded
+			// texture planes are empty. Sample the first few draw inputs while the
+			// existing draw-census property is active. Use a strided sample across
+			// each plane so a black border at the start does not hide decoded data.
+			if (const u64 dn = g_thor_draw_calls.load(); dn <= 16)
+			{
+				const auto& draw = method_registers.current_draw_clause;
+				u64 inline_hash = 1469598103934665603ull;
+				const usz inline_words = std::min<usz>(draw.inline_vertex_array.size(), 64);
+
+				for (usz i = 0; i < inline_words; i++)
+				{
+					inline_hash ^= draw.inline_vertex_array[i];
+					inline_hash *= 1099511628211ull;
+				}
+
+				rsx_log.error("Thor DRAW INPUT #%llu: cmd=%u inlineWords=%u inlineHash=0x%016llx",
+					dn, static_cast<u32>(draw.command), static_cast<u32>(draw.inline_vertex_array.size()), inline_hash);
+
+				for (u32 slot = 0; slot < method_registers.fragment_textures.size(); slot++)
+				{
+					const auto& tex = method_registers.fragment_textures[slot];
+
+					if (!tex.enabled())
+					{
+						continue;
+					}
+
+					const u32 address = get_address(tex.offset(), tex.location());
+					const u64 requested_span = tex.pitch()
+						? static_cast<u64>(tex.pitch()) * tex.height()
+						: static_cast<u64>(tex.width()) * tex.height() * 4;
+					const u32 span = static_cast<u32>(std::clamp<u64>(requested_span, 1, 0x1000000));
+					const bool mapped = vm::check_addr(address, vm::page_readable, span);
+					u32 nonzero = 0;
+					u64 sample_hash = 1469598103934665603ull;
+					u32 first[4]{};
+
+					if (mapped)
+					{
+						const auto data = static_cast<const u8*>(vm::base(address));
+						std::memcpy(first, data, std::min<u32>(sizeof(first), span));
+
+						for (u32 sample = 0; sample < 64; sample++)
+						{
+							const u8 value = data[(static_cast<u64>(sample) * (span - 1)) / 63];
+							nonzero += value != 0;
+							sample_hash ^= value;
+							sample_hash *= 1099511628211ull;
+						}
+					}
+
+					rsx_log.error("Thor DRAW TEXTURE #%llu.%u: addr=0x%08x off=0x%08x loc=%u "
+						"fmt=0x%02x dim=%u size=%ux%u pitch=%u span=%u mapped=%u "
+						"sampleNonzero=%u/64 sampleHash=0x%016llx first=%08x.%08x.%08x.%08x",
+						dn, slot, address, tex.offset(), tex.location(), tex.format(),
+						static_cast<u32>(tex.dimension()), tex.width(), tex.height(), tex.pitch(), span,
+						mapped ? 1u : 0u, nonzero, sample_hash,
+						first[0], first[1], first[2], first[3]);
+				}
+			}
+		}
 
 		method_registers.current_draw_clause.post_execute_cleanup(m_ctx);
 
@@ -1171,6 +1322,27 @@ namespace rsx
 		{
 			thread_ctrl::set_thread_affinity_mask(thread_ctrl::get_affinity_mask(thread_class::rsx));
 		}
+
+#ifdef __ANDROID__
+		// Thor: place the RSX thread by property, independent of the scheduler mode.
+		// The PPU render thread and rsx::thread are the frame's chain; the August
+		// census put chain threads on a Cortex-A510 a quarter of the time.
+		//   debug.rpcsx.thor.rsx_affinity_mask = 0x..   (0x80 = the X3 alone)
+		{
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.rsx_affinity_mask", value) > 0 && value[0])
+			{
+				const unsigned long parsed = std::strtoul(value, nullptr, 0);
+
+				if (parsed != 0 && parsed <= 0xffull)
+				{
+					thread_ctrl::set_thread_affinity_mask(parsed);
+					rsx_log.error("Thor: RSX affinity mask 0x%lx applied", parsed);
+				}
+			}
+		}
+#endif
 
 		while (!test_stopped())
 		{
@@ -2477,6 +2649,28 @@ namespace rsx
 
 	void thread::flip(const display_flip_info_t& info)
 	{
+		if (g_thor_draw_census) [[unlikely]]
+		{
+			static std::atomic<u64> s_flips{0};
+
+			if (const u64 f = ++s_flips; (f % 120) == 0)
+			{
+				char hist[256]{};
+				int off = 0;
+
+				for (u32 i = 0; i < 16; i++)
+				{
+					if (const u64 c = g_thor_prim_hist[i].load())
+					{
+						off += std::snprintf(hist + off, sizeof(hist) - off, " p%u=%llu(e=%llu)",
+							i, c, g_thor_prim_elems[i].load());
+					}
+				}
+
+				rsx_log.error("Thor DRAW CENSUS: flips=%llu draw_calls=%llu |%s", f, g_thor_draw_calls.load(), hist);
+			}
+		}
+
 		m_eng_interrupt_mask.clear(rsx::display_interrupt);
 
 		if (async_flip_requested & flip_request::any)
@@ -2495,6 +2689,10 @@ namespace rsx
 		if (info.emu_flip)
 		{
 			performance_counters.sampled_frames++;
+
+			// Frame interval for the Transformers frame-pacing question. See
+			// Emu/RSX/thor_frametime.h; reported on the perf_monitor "Frames:" line.
+			thor::frametime::on_flip(get_system_time());
 
 			if (m_pause_after_x_flips && m_pause_after_x_flips-- == 1)
 			{
@@ -2547,7 +2745,30 @@ namespace rsx
 
 	void thread::get_zcull_stats(u32 type, vm::addr_t sink)
 	{
-		u32 value = 0;
+		// With ZCULL queries disabled, upstream reports 0 pixels for every query,
+		// which a title reads as "fully occluded" and culls. Transformers combat
+		// then runs at its 30 FPS cap because it draws almost nothing (2026-09-07:
+		// 29.6 FPS, the interior, both robots and the floor gone). A nonzero
+		// value reports "visible" instead, so the title draws everything and
+		// pays no query round-trip. That is the discriminating test between "the
+		// culled geometry is the cost" and "the query stalls are the cost".
+		//
+		//   debug.rpcsx.thor.zcull_visible_value = <u32>   (default 0, upstream)
+		static const u32 s_thor_zcull_visible_value = []() -> u32
+		{
+#ifdef __ANDROID__
+			char value[PROP_VALUE_MAX]{};
+
+			if (__system_property_get("debug.rpcsx.thor.zcull_visible_value", value) > 0 && value[0])
+			{
+				const unsigned long parsed = std::strtoul(value, nullptr, 0);
+				return static_cast<u32>(std::min<unsigned long>(parsed, 0xffffffffull));
+			}
+#endif
+			return 0;
+		}();
+
+		u32 value = s_thor_zcull_visible_value;
 		if (!g_cfg.video.disable_zcull_queries)
 		{
 			switch (type)
@@ -2651,7 +2872,7 @@ namespace rsx
 	void thread::flush_fifo()
 	{
 		// Make sure GET value is exposed before sync points
-		fifo_ctrl->sync_get();
+		fifo_ctrl->sync_get_force();
 		fifo_ctrl->invalidate_cache();
 	}
 

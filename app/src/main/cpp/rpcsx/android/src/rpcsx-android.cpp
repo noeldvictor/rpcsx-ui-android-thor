@@ -85,6 +85,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/system_properties.h>
 #include <thread>
@@ -108,6 +109,7 @@ static std::atomic<ANativeWindow *> g_native_window;
 static std::atomic<bool> g_thor_fast_forward_enabled{false};
 static std::atomic<int> g_thor_fast_forward_previous_clocks_scale{100};
 static std::atomic<bool> g_home_menu_exit_game_selected{false};
+static std::atomic<bool> g_thor_start_paused_ready{false};
 static constexpr int k_thor_fast_forward_clocks_scale = 200;
 
 extern std::string g_android_executable_dir;
@@ -2363,6 +2365,23 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
 
   g_initialized = true;
 
+  // Ask for precise timers, the way every other RPCS3 frontend does.
+  //
+  // Ported from ARMSX3 67c2763b9 (2026-08-29). rpcs3.cpp sets this in main()
+  // under __linux__ ("we value precise timers"), and lv2.cpp's wait path is
+  // written against it: with timer slack low, Linux is precise for every value
+  // above it, so sleep_timers_accuracy defaults to As Host and takes the plain
+  // wait_for() branch. The app dlopen()s this core and never runs that main(),
+  // so the process kept Android's default 50,000 ns slack while the sleep path
+  // assumed 1 ns, and every sys_timer_usleep overshot by up to 50 us.
+  //
+  // Set on the calling thread; threads created afterwards inherit it, which is
+  // how the desktop path reaches the emulation threads. Kept unconditional
+  // rather than behind a property: it restores the assumption the wait code
+  // already makes, and a run that wants the old behaviour can compare against
+  // a core built before this line.
+  prctl(PR_SET_TIMERSLACK, 1, 0, 0, 0);
+
 #ifdef ARCH_ARM64
   // Records this device's generic-timer frequency for diagnostics. busy_wait
   // deliberately does NOT apply the scale on this fork; see the note in
@@ -2494,16 +2513,35 @@ extern "C" bool _rpcsx_collectGameInfo(JNIEnv *env, std::string_view rootDir,
   return true;
 }
 
-extern "C" void _rpcsx_shutdown() { Emu.Kill(); }
+extern "C" void _rpcsx_shutdown() {
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
+  Emu.Kill();
+}
 
 extern "C" int _rpcsx_boot(std::string_view path_) {
-  Emu.SetForceBoot(true);
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
+  const bool startPaused = android_property_enabled(
+      "debug.rpcsx.thor.start_paused", false);
+
+  Emu.SetForceBoot(!startPaused);
+  Emu.SetPreventAutostart(startPaused);
+
   std::string path = std::string(path_);
   while (path.ends_with('/')) {
     path.pop_back();
   }
 
-  return static_cast<int>(Emu.BootGame(path, "", false, cfg_mode::custom));
+  const auto result = Emu.BootGame(path, "", false, cfg_mode::custom);
+  if (startPaused) {
+    if (result == game_boot_result::no_errors && Emu.IsReady()) {
+      g_thor_start_paused_ready.store(true, std::memory_order_release);
+      rpcsx_android.always()("Thor start-paused gate is ready.");
+    }
+  }
+
+  return static_cast<int>(result);
 }
 
 extern "C" int _rpcsx_getState() {
@@ -2516,8 +2554,23 @@ extern "C" bool _rpcsx_consumeHomeMenuExitGameSelected() {
   return g_home_menu_exit_game_selected.exchange(false,
                                                  std::memory_order_acq_rel);
 }
-extern "C" void _rpcsx_kill() { Emu.Kill(); }
-extern "C" void _rpcsx_resume() { Emu.Resume(); }
+extern "C" void _rpcsx_kill() {
+  g_thor_start_paused_ready.store(false, std::memory_order_release);
+  Emu.SetPauseAfterStartup(false);
+  Emu.Kill();
+}
+extern "C" void _rpcsx_resume() {
+  if (g_thor_start_paused_ready.exchange(false,
+                                         std::memory_order_acq_rel) &&
+      Emu.IsReady()) {
+    rpcsx_android.always()("Thor start-paused gate released.");
+    Emu.SetPauseAfterStartup(true);
+    Emu.Run(true);
+    return;
+  }
+
+  Emu.Resume();
+}
 
 extern "C" void _rpcsx_openHomeMenu() {
   // Named so a log can tell this apart from the other two ways the menu opens:
@@ -2644,9 +2697,10 @@ extern "C" std::string _rpcsx_diagInfo() {
         items += ",";
       }
       fmt::append(items,
-                  R"({"index":%u,"pc":"0x%05x","spursAddr":"0x%08x","group":"%s",)"
+                  R"({"index":%u,"pc":"0x%05x","state":"0x%x","spursAddr":"0x%08x","group":"%s",)"
                   R"("maxNum":%u,"maxRun":%u,"spursRunning":%u,"waited":%s,"enteredWait":%s})",
-                  spu.index, spu.pc, spu.spurs_addr, group->name, group->max_num,
+                  spu.index, spu.pc, static_cast<u32>(spu.state.load()),
+                  spu.spurs_addr, group->name, group->max_num,
                   group->max_run, +group->spurs_running,
                   spu.spurs_waited ? "true" : "false",
                   spu.spurs_entered_wait ? "true" : "false");
@@ -2704,8 +2758,19 @@ extern "C" std::string _rpcsx_deviceInfo() {
 // keeps running, and by the time a button is pressed the screen has moved on.
 // That is a contamination source, not a convenience. Pause, look, decide,
 // resume, press.
-extern "C" bool _rpcsx_pause() { return Emu.Pause(); }
-extern "C" bool _rpcsx_isPaused() { return Emu.IsPaused(); }
+extern "C" bool _rpcsx_pause() {
+  if (g_thor_start_paused_ready.load(std::memory_order_acquire) &&
+      Emu.IsReady()) {
+    return true;
+  }
+
+  return Emu.Pause();
+}
+extern "C" bool _rpcsx_isPaused() {
+  return (g_thor_start_paused_ready.load(std::memory_order_acquire) &&
+          Emu.IsReady()) ||
+         Emu.IsPaused();
+}
 
 extern "C" std::string _rpcsx_sceneInfo() {
   const u64 age = thor::vdec_age_us();

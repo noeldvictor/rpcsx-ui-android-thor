@@ -1,21 +1,35 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
 #include "perf_monitor.hpp"
 
 #include "Emu/System.h"
+#include "Emu/system_config.h"
 #include "Emu/IdManager.h"
 #include "Emu/RSX/RSXThread.h"
+#include "Emu/Memory/vm.h"
+#include "Emu/Cell/PPUThread.h"
 #include "Emu/Cell/timers.hpp"
 #include "Emu/Cell/thor_spu_selfloop_park.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
 #include "Emu/Cell/thor_spu_ls_dump.h"
+#include "Emu/Cell/thor_spu_pc_census.h"
+#include "Emu/Cell/thor_spurs_wkl_census.h"
+#include "Emu/thor_mem_watch.h"
 #include "Emu/Cell/thor_spu_trap_stop.h"
 #include "Emu/RSX/thor_rsx_fifo_park.h"
 #include "Emu/thor_thermal_guard.h"
 #include "Emu/thor_device_stats.h"
+#include "Emu/RSX/thor_frametime.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "util/cpu_stats.hpp"
 #include "util/sysinfo.hpp"
 #include "util/Thread.h"
 
 LOG_CHANNEL(perf_log, "PERF");
+
+bool thor_transformers_audio_owner_wake_completed() noexcept;
 
 void perf_monitor::operator()()
 {
@@ -46,6 +60,9 @@ void perf_monitor::operator()()
 	{
 		thread_ctrl::wait_until(&sleep_until, update_interval_us);
 		elapsed_us += update_interval_us;
+
+		// This is a monitor-thread probe. The SPU execution path stays unchanged.
+		thor::spu_pc_census_tick();
 
 		// Sample temperature for the gameplay thermal guard.
 		//
@@ -179,6 +196,13 @@ void perf_monitor::operator()()
 					fmt::append(msg, ", Frames: %llu in %.2fs (%.2f FPS)", frames,
 						window_us / 1000000.0, frames * 1000000.0 / window_us);
 
+					// Frame INTERVAL distribution since the previous report: percentiles
+					// and buckets. An average of 20 FPS cannot separate "every frame is
+					// 50 ms" from "frames spread 35 to 70 ms", and the two call for
+					// different work. See Emu/RSX/thor_frametime.h.
+					thor::frametime::report(msg);
+					::thor::rsx_counters::report(msg);
+
 					// Publish for the control API, so a tool can read speed, heat and
 					// power without grepping the log. Frames go with the CPU number on
 					// purpose: CPU alone cannot tell a thread that stopped spinning
@@ -187,6 +211,619 @@ void perf_monitor::operator()()
 						total_usage / 100.0 * utils::get_thread_count(), flips,
 						current_mem_use / (1024 * 1024));
 				}
+
+			// WHERE IS main_thread SPINNING?
+			//
+			// Under HLE SPURS the title never finishes loading: all non-SPURS calls
+			// stop at t=17.17s and main_thread emits its last line at t=12.01s. It is
+			// NOT deadlocked - per-thread CPU shows PPU[0x1000000] burning ~16% of a
+			// core - so it is busy-waiting inside guest code and simply making no
+			// calls this log can see.
+			//
+			// A spinning thread has a PC, and the PC names the loop. Sample it here,
+			// on a timer that keeps running while everything else is stuck, and
+			// disassemble the address against the PPU ELF (PowerPC:BE:64).
+			//
+			//   debug.rpcsx.thor.ppu_pc_census = 1
+#ifdef __ANDROID__
+			// Thor MEMWATCH: the watched word's value each tick. See thor_mem_watch.h.
+			if (thor::mem_watch::armed())
+			{
+				perf_log.error("Thor MEMWATCH: word 0x%08x = 0x%08x", thor::mem_watch::ea(), thor::mem_watch::read_word());
+			}
+
+			// SPURS workload table, every fifth tick. See thor_spurs_wkl_census.h.
+			//   debug.rpcsx.thor.spurs_wkl_census = 1
+			if (thor::spurs_wkl_census::enabled())
+			{
+				static u32 s_wkl_tick = 0;
+
+				if ((s_wkl_tick++ % 5) == 0)
+				{
+					std::string wkl;
+
+					if (thor::spurs_wkl_census::report(wkl))
+					{
+						perf_log.error("%s", wkl);
+					}
+					else
+					{
+						perf_log.error("Thor SPURS WKL: no kernel thread with a SPURS instance yet");
+					}
+				}
+			}
+
+			{
+				static const bool s_explicit_pc_census = []() noexcept
+					{
+						char v[PROP_VALUE_MAX]{};
+						return __system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 &&
+							v[0] && v[0] != '0';
+					}();
+				static const bool s_pc_census = []() noexcept
+				{
+					char v[PROP_VALUE_MAX]{};
+					if (__system_property_get("debug.rpcsx.thor.ppu_pc_census", v) > 0 && v[0] && v[0] != '0')
+					{
+						return true;
+					}
+
+					std::memset(v, 0, sizeof(v));
+					if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", v) > 0 && v[0] && v[0] != '0')
+					{
+						return true;
+					}
+
+					std::memset(v, 0, sizeof(v));
+					return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
+				}();
+				static const bool s_defer_pc_census_until_audio_wake = []() noexcept
+				{
+					char v[PROP_VALUE_MAX]{};
+					return __system_property_get("debug.rpcsx.thor.transformers_audio_wake_fix", v) > 0 &&
+						v[0] && v[0] != '0';
+				}();
+				const bool pc_census_armed = s_explicit_pc_census ||
+					!s_defer_pc_census_until_audio_wake ||
+					thor_transformers_audio_owner_wake_completed();
+
+				// Implicit call and event tracing stays behind the audio wake. An
+				// explicit PC census must sample an earlier title loop when requested.
+				// The device guard remains active for both routes.
+				if (s_pc_census && pc_census_armed)
+				{
+					idm::select<named_thread<ppu_thread>>([](u32 id, ppu_thread& ppu)
+						{
+							const u32 pc = +ppu.cia;
+
+							// Ghidra identifies 0x00102b98 as the instruction after the
+							// helper call in a title task-fence wait. Register 28 points
+							// to the live completion value, and register 29 is its target.
+							// Record the related task-ring words to identify whether the
+							// producer does not publish work or the worker does not consume it.
+							static std::atomic<u32> s_main_fence_dumps{0};
+							const bool main_fence_wait = pc == 0x00102b98u || static_cast<u32>(ppu.lr) == 0x00102b98u;
+							if (id == 0x1000000u && main_fence_wait &&
+								s_main_fence_dumps.load(std::memory_order_relaxed) < 16)
+							{
+								const u32 counter_addr = static_cast<u32>(ppu.gpr[28]);
+								const u32 target = static_cast<u32>(ppu.gpr[29]);
+								const u32 wait_arg = static_cast<u32>(ppu.gpr[30]);
+								constexpr u32 task_ring = 0x01d2ffb0u;
+								const bool counter_ok = vm::check_addr(counter_addr, 0, 4);
+								const bool ring_ok = vm::check_addr(task_ring, 0, 0x38);
+								const u32 counter = counter_ok ? +vm::_ref<be_t<u32>>(counter_addr) : 0;
+								const u32 sample = s_main_fence_dumps.fetch_add(1, std::memory_order_relaxed);
+
+								if (sample < 16)
+								{
+									perf_log.error("Thor MAIN FENCE: sample=%u cia=0x%08x lr=0x%08x counter_addr=%s:0x%08x counter=%u target=%u delta=%d wait_arg=0x%08x",
+										sample + 1, pc, static_cast<u32>(ppu.lr), counter_ok ? "mapped" : "unmapped", counter_addr,
+										counter, target, static_cast<s32>(counter - target), wait_arg);
+
+									if (ring_ok)
+									{
+										perf_log.error("Thor PPU TASK RING 00: sample=%u base=0x%08x %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1, task_ring,
+											+vm::_ref<be_t<u32>>(task_ring + 0x00), +vm::_ref<be_t<u32>>(task_ring + 0x04),
+											+vm::_ref<be_t<u32>>(task_ring + 0x08), +vm::_ref<be_t<u32>>(task_ring + 0x0c),
+											+vm::_ref<be_t<u32>>(task_ring + 0x10), +vm::_ref<be_t<u32>>(task_ring + 0x14),
+											+vm::_ref<be_t<u32>>(task_ring + 0x18), +vm::_ref<be_t<u32>>(task_ring + 0x1c));
+										perf_log.error("Thor PPU TASK RING 20: sample=%u %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(task_ring + 0x20), +vm::_ref<be_t<u32>>(task_ring + 0x24),
+											+vm::_ref<be_t<u32>>(task_ring + 0x28), +vm::_ref<be_t<u32>>(task_ring + 0x2c),
+											+vm::_ref<be_t<u32>>(task_ring + 0x30), +vm::_ref<be_t<u32>>(task_ring + 0x34));
+									}
+								}
+							}
+
+							// The RenderingThread can use an infinite wait in the title command-ring
+							// reader at 0x0152efc0. Ghidra identifies register 25 as the
+							// command-ring base and register 26 as the lane. The loop uses
+							// register 27 as scratch after its first sleep, so read the saved
+							// timeout from the function's stack slot.
+							static std::atomic<u32> s_render_command_wait_dumps{0};
+							if (pc == 0x0152efc0u &&
+								s_render_command_wait_dumps.load(std::memory_order_relaxed) < 16)
+							{
+								const u32 command_base = static_cast<u32>(ppu.gpr[25]);
+								const u32 lane = static_cast<u32>(ppu.gpr[26]);
+								const u32 timeout_addr = static_cast<u32>(ppu.gpr[1]) - 0x28u;
+								const bool timeout_ok = vm::check_addr(timeout_addr, 0, 4);
+								const s32 timeout = timeout_ok
+									? static_cast<s32>(+vm::_ref<be_t<u32>>(timeout_addr)) : 0;
+								const u32 published_addr = command_base + lane * 0x100u + 0x100u;
+								const u32 consumed_addr = command_base + lane * 4u + 0x680u;
+								const bool command_ok = vm::check_addr(command_base, 0, 4) &&
+									vm::check_addr(published_addr, 0, 4) && vm::check_addr(consumed_addr, 0, 4);
+								const u32 published = command_ok ? +vm::_ref<be_t<u32>>(published_addr) : 0;
+								const u32 consumed = command_ok ? +vm::_ref<be_t<u32>>(consumed_addr) : 0;
+								const u32 enabled_mask = command_ok ? +vm::_ref<be_t<u32>>(command_base) : 0;
+								const u32 sample = s_render_command_wait_dumps.fetch_add(1, std::memory_order_relaxed);
+
+								if (sample < 16)
+								{
+									perf_log.error("Thor RENDER COMMAND WAIT: sample=%u base=%s:0x%08x lane=%u timeout=%s:%d scratch27=0x%08x mask=0x%08x published=%u consumed=%u delta=%d",
+										sample + 1, command_ok ? "mapped" : "unmapped", command_base, lane,
+										timeout_ok ? "mapped" : "unmapped", timeout, static_cast<u32>(ppu.gpr[27]),
+										enabled_mask, published, consumed, static_cast<s32>(published - consumed));
+
+									if (sample == 0)
+									{
+										const auto call_stack = ppu.dump_callstack_list();
+										const usz count = std::min<usz>(call_stack.size(), 12);
+										perf_log.error("Thor RENDER COMMAND STACK BEGIN: count=%u total=%u",
+											static_cast<u32>(count), static_cast<u32>(call_stack.size()));
+										for (usz frame = 0; frame < count; frame++)
+										{
+											perf_log.error("Thor RENDER COMMAND STACK: frame=%u from=0x%08x sp=0x%08x",
+												static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+										}
+										perf_log.error("Thor RENDER COMMAND STACK END");
+									}
+								}
+							}
+
+							// THE FENCE main_thread WAITS ON.
+							//
+							// 0x00fdcf60 disassembles to a two-counter spin:
+							//
+							//     lwz  r29,-0x638c(r31)
+							//     lwz  r0,-0x6390(r31)
+							//     cmpw cr7,r29,r0
+							//     bne  cr7,-0x18        ; loop while they differ
+							//     (with li r3,30 / li r11,0x8d / sc = sys_timer_usleep(30))
+							//
+							// main_thread sits here in the WORKING LLE run too, so the loop
+							// itself is normal - what matters is whether the two counters
+							// converge. Under HLE they do not, and printing them says WHICH
+							// side is stuck: a frozen producer or a target that keeps moving.
+							if (pc == 0x00fdcf60u)
+							{
+								const u32 base = static_cast<u32>(ppu.gpr[31]);
+
+								if (vm::check_addr(base - 0x6390, 0, 8))
+								{
+									// WHAT ARE THESE TWO VALUES?
+									//
+									// They never converge and they are not small counters -
+									// 0x304f8348 and 0x304f93e8, 0x10A0 apart. Guest main
+									// memory ends at 0x10000000, video is 0xC0000000 and
+									// stack 0xD0000000, so if these are pointers they live in
+									// a dynamically created user/RSX-context block. Report
+									// whether they are mapped at all, and what they point at.
+									const u32 done = +vm::_ref<be_t<u32>>(base - 0x638c);
+									const u32 targ = +vm::_ref<be_t<u32>>(base - 0x6390);
+									const bool d_ok = vm::check_addr(done, 0, 16);
+									const bool t_ok = vm::check_addr(targ, 0, 16);
+
+									perf_log.error("Thor FENCE: base=0x%08x done=0x%08x(%s) target=0x%08x(%s) delta=0x%x %s",
+										base, done, d_ok ? "mapped" : "UNMAPPED",
+										targ, t_ok ? "mapped" : "UNMAPPED",
+										targ - done, ppu.get_name());
+
+									if (d_ok)
+									{
+										perf_log.error("Thor FENCE   at done: %08x %08x %08x %08x",
+											+vm::_ref<be_t<u32>>(done), +vm::_ref<be_t<u32>>(done + 4),
+											+vm::_ref<be_t<u32>>(done + 8), +vm::_ref<be_t<u32>>(done + 12));
+									}
+								}
+							}
+
+							// Ghidra identifies 0x005a3298 as a staged title loader. The
+							// sleep at 0x009e4ba4 returns to 0x005a3350 once per loop.
+							// Record a bounded set of object snapshots through the post-Start
+							// transition. The first three samples occur before Transformers
+							// enters the loading screen. They cannot identify the stopped request.
+							static std::atomic<u32> s_load_wait_dumps{0};
+							if (id == 0x1000000u && pc == 0x009e4ba4u &&
+								static_cast<u32>(ppu.lr) == 0x005a3350u && s_load_wait_dumps.load() < 18)
+							{
+								const u32 object = static_cast<u32>(ppu.gpr[29]);
+
+								if (vm::check_addr(object, 0, 0x5b0))
+								{
+									const u32 sample = s_load_wait_dumps.fetch_add(1);
+									const u32 vtable = +vm::_ref<be_t<u32>>(object);
+									const bool vtable_ok = vm::check_addr(vtable + 0x170, 0, 8);
+									const u32 data = +vm::_ref<be_t<u32>>(object + 0x580);
+									const bool data_ok = vm::check_addr(data, 0, 0xd0);
+									const u32 data_vtable = data_ok ? +vm::_ref<be_t<u32>>(data) : 0;
+									const bool data_vtable_ok = data_ok && vm::check_addr(data_vtable + 0x50, 0, 4);
+									const u32 size_opd = data_vtable_ok ? +vm::_ref<be_t<u32>>(data_vtable + 0x3c) : 0;
+									const u32 read_opd = data_vtable_ok ? +vm::_ref<be_t<u32>>(data_vtable + 0x50) : 0;
+									const u32 size_code = vm::check_addr(size_opd, 0, 8) ? +vm::_ref<be_t<u32>>(size_opd) : 0;
+									const u32 read_code = vm::check_addr(read_opd, 0, 8) ? +vm::_ref<be_t<u32>>(read_opd) : 0;
+
+									perf_log.error("Thor LOAD WAIT: sample=%u object=0x%08x vtable=0x%08x poll=0x%08x loader=0x%08x flags=0x%08x control=0x%08x data=0x%08x handle=0x%08x",
+										sample + 1, object, vtable,
+										vtable_ok ? +vm::_ref<be_t<u32>>(vtable + 0x170) : 0,
+										vtable_ok ? +vm::_ref<be_t<u32>>(vtable + 0x174) : 0,
+										+vm::_ref<be_t<u32>>(object + 0x598),
+										+vm::_ref<be_t<u32>>(object + 0x170),
+										data,
+										+vm::_ref<be_t<u32>>(object + 0x28));
+									perf_log.error("Thor LOAD COUNTS: sample=%u a=%u/%u b=%u/%u c=%u/%u links=%u/%u ticks=%u entries=0x%08x",
+										sample + 1, +vm::_ref<be_t<u32>>(object + 0x584), +vm::_ref<be_t<u32>>(object + 0x4c),
+										+vm::_ref<be_t<u32>>(object + 0x588), +vm::_ref<be_t<u32>>(object + 0x5c),
+										+vm::_ref<be_t<u32>>(object + 0x58c), +vm::_ref<be_t<u32>>(object + 0x54),
+										+vm::_ref<be_t<u32>>(object + 0x594), +vm::_ref<be_t<u32>>(object + 0xbc),
+										+vm::_ref<be_t<u32>>(object + 0x59c), +vm::_ref<be_t<u32>>(object + 0xb8));
+									perf_log.error("Thor LOAD SOURCE: sample=%u data=0x%08x vtable=0x%08x size_opd=0x%08x size_code=0x%08x read_opd=0x%08x read_code=0x%08x",
+										sample + 1, data, data_vtable, size_opd, size_code, read_opd, read_code);
+
+									if (data_ok)
+									{
+										const u32 range_table = +vm::_ref<be_t<u32>>(data + 0xc8);
+										const bool range_table_ok = vm::check_addr(range_table, 0, 0x20);
+										const u32 io_manager = vm::check_addr(0x019d5410u, 0, 4)
+											? +vm::_ref<be_t<u32>>(0x019d5410u) : 0;
+										const bool io_manager_ok = vm::check_addr(io_manager, 0, 0x0c);
+										const u32 io_workers = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 4) : 0;
+										const u32 io_worker_count = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 8) : 0;
+										const u32 io_worker = io_worker_count && vm::check_addr(io_workers, 0, 4)
+											? +vm::_ref<be_t<u32>>(io_workers) : 0;
+										const bool io_worker_ok = vm::check_addr(io_worker, 0, 0x78);
+										const u32 io_worker_vtable = io_worker_ok
+											? +vm::_ref<be_t<u32>>(io_worker) : 0;
+										const bool io_worker_vtable_ok = io_worker_vtable && vm::check_addr(io_worker_vtable, 0, 0x50);
+										const u32 direct_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x0c) : 0;
+										const u32 table_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x10) : 0;
+										const u32 backend_read_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x40) : 0;
+										const u32 backend_release_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x48) : 0;
+										const u32 backend_validate_opd = io_worker_vtable_ok ? +vm::_ref<be_t<u32>>(io_worker_vtable + 0x4c) : 0;
+
+										perf_log.error("Thor LOAD RANGE: sample=%u limit=%u size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x94), +vm::_ref<be_t<u32>>(data + 0x98),
+											+vm::_ref<be_t<u32>>(data + 0xa0), +vm::_ref<be_t<u32>>(data + 0xa4),
+											+vm::_ref<be_t<u32>>(data + 0xa8), +vm::_ref<be_t<u32>>(data + 0xb0),
+											+vm::_ref<be_t<u32>>(data + 0xb8), +vm::_ref<be_t<u32>>(data + 0xc0),
+											+vm::_ref<be_t<u32>>(data + 0xac), +vm::_ref<be_t<u32>>(data + 0xb4),
+											+vm::_ref<be_t<u32>>(data + 0xbc), +vm::_ref<be_t<u32>>(data + 0xc4),
+											range_table, +vm::_ref<be_t<u32>>(data + 0xcc));
+										perf_log.error("Thor LOAD IO: sample=%u source=%08x %08x %08x table=%s %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x88), +vm::_ref<be_t<u32>>(data + 0x8c),
+											+vm::_ref<be_t<u32>>(data + 0x90), range_table_ok ? "mapped" : "unmapped",
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x00) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x04) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x08) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x0c) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x10) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x14) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x18) : 0,
+											range_table_ok ? +vm::_ref<be_t<u32>>(range_table + 0x1c) : 0);
+										perf_log.error("Thor LOAD IO VT: sample=%u manager=0x%08x workers=0x%08x/%u worker0=0x%08x vtable=0x%08x direct_opd=0x%08x direct_code=0x%08x table_opd=0x%08x table_code=0x%08x",
+											sample + 1, io_manager, io_workers, io_worker_count, io_worker, io_worker_vtable, direct_opd,
+											vm::check_addr(direct_opd, 0, 8) ? +vm::_ref<be_t<u32>>(direct_opd) : 0,
+											table_opd, vm::check_addr(table_opd, 0, 8) ? +vm::_ref<be_t<u32>>(table_opd) : 0);
+										perf_log.error("Thor LOAD IO BACKEND: sample=%u read_opd=0x%08x read_code=0x%08x release_opd=0x%08x release_code=0x%08x validate_opd=0x%08x validate_code=0x%08x",
+											sample + 1,
+											backend_read_opd, vm::check_addr(backend_read_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_read_opd) : 0,
+											backend_release_opd, vm::check_addr(backend_release_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_release_opd) : 0,
+											backend_validate_opd, vm::check_addr(backend_validate_opd, 0, 8) ? +vm::_ref<be_t<u32>>(backend_validate_opd) : 0);
+
+										// Ghidra shows that both read methods add a 0x50-byte entry to
+										// the queue at worker +0x4c. The worker moves it to the active
+										// list at +0x58 before it starts the backend read. Record both
+										// list counts and the first active entry. This separates a
+										// queued request from a backend request that does not finish.
+										if (io_worker_ok)
+										{
+											const u32 io_queue = +vm::_ref<be_t<u32>>(io_worker + 0x4c);
+											const u32 io_queue_count = +vm::_ref<be_t<u32>>(io_worker + 0x50);
+											const u32 io_active = +vm::_ref<be_t<u32>>(io_worker + 0x58);
+											const u32 io_active_count = +vm::_ref<be_t<u32>>(io_worker + 0x5c);
+
+											perf_log.error("Thor LOAD IO STATE: sample=%u queue=0x%08x/%u/%u active=0x%08x/%u/%u wake=0x%08x refs=%u run=%u sequence=%llu",
+												sample + 1, io_queue, io_queue_count, +vm::_ref<be_t<u32>>(io_worker + 0x54),
+												io_active, io_active_count, +vm::_ref<be_t<u32>>(io_worker + 0x60),
+												+vm::_ref<be_t<u32>>(io_worker + 0x64), +vm::_ref<be_t<u32>>(io_worker + 0x68),
+												+vm::_ref<be_t<u32>>(io_worker + 0x6c),
+												static_cast<unsigned long long>(+vm::_ref<be_t<u64>>(io_worker + 0x70)));
+
+											if (io_active_count && vm::check_addr(io_active, 0, 0x50))
+											{
+												perf_log.error("Thor LOAD IO ACTIVE 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x00), +vm::_ref<be_t<u32>>(io_active + 0x04),
+													+vm::_ref<be_t<u32>>(io_active + 0x08), +vm::_ref<be_t<u32>>(io_active + 0x0c),
+													+vm::_ref<be_t<u32>>(io_active + 0x10), +vm::_ref<be_t<u32>>(io_active + 0x14),
+													+vm::_ref<be_t<u32>>(io_active + 0x18), +vm::_ref<be_t<u32>>(io_active + 0x1c));
+												perf_log.error("Thor LOAD IO ACTIVE 20: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x20), +vm::_ref<be_t<u32>>(io_active + 0x24),
+													+vm::_ref<be_t<u32>>(io_active + 0x28), +vm::_ref<be_t<u32>>(io_active + 0x2c),
+													+vm::_ref<be_t<u32>>(io_active + 0x30), +vm::_ref<be_t<u32>>(io_active + 0x34),
+													+vm::_ref<be_t<u32>>(io_active + 0x38), +vm::_ref<be_t<u32>>(io_active + 0x3c));
+												perf_log.error("Thor LOAD IO ACTIVE 40: sample=%u %08x %08x %08x %08x",
+													sample + 1,
+													+vm::_ref<be_t<u32>>(io_active + 0x40), +vm::_ref<be_t<u32>>(io_active + 0x44),
+													+vm::_ref<be_t<u32>>(io_active + 0x48), +vm::_ref<be_t<u32>>(io_active + 0x4c));
+
+												// The completion poll at 0x013bcce0 walks the pointer list
+												// at active entry +0x40. Each item points to a status word
+												// and storage. The request completes when the status is zero.
+												const u32 completion_entries = +vm::_ref<be_t<u32>>(io_active + 0x40);
+												const u32 completion_count = +vm::_ref<be_t<u32>>(io_active + 0x44);
+												const u32 completion_capacity = +vm::_ref<be_t<u32>>(io_active + 0x48);
+												const u32 completion_item = completion_count && vm::check_addr(completion_entries, 0, 4)
+													? +vm::_ref<be_t<u32>>(completion_entries) : 0;
+												const bool completion_item_ok = completion_item && vm::check_addr(completion_item, 0, 8);
+												const u32 completion_state = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item) : 0;
+												const u32 completion_storage = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item + 4) : 0;
+												const bool completion_state_ok = completion_state && vm::check_addr(completion_state, 0, 4);
+
+												perf_log.error("Thor LOAD IO COMPLETION: sample=%u entries=0x%08x/%u/%u item0=0x%08x state0=%s:0x%08x value=0x%08x storage=0x%08x",
+													sample + 1, completion_entries, completion_count, completion_capacity,
+													completion_item, completion_state_ok ? "mapped" : "unmapped", completion_state,
+													completion_state_ok ? +vm::_ref<be_t<u32>>(completion_state) : 0, completion_storage);
+											}
+										}
+										perf_log.error("Thor LOAD DATA 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x00), +vm::_ref<be_t<u32>>(data + 0x04),
+											+vm::_ref<be_t<u32>>(data + 0x08), +vm::_ref<be_t<u32>>(data + 0x0c),
+											+vm::_ref<be_t<u32>>(data + 0x10), +vm::_ref<be_t<u32>>(data + 0x14),
+											+vm::_ref<be_t<u32>>(data + 0x18), +vm::_ref<be_t<u32>>(data + 0x1c));
+										perf_log.error("Thor LOAD DATA 20: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x20), +vm::_ref<be_t<u32>>(data + 0x24),
+											+vm::_ref<be_t<u32>>(data + 0x28), +vm::_ref<be_t<u32>>(data + 0x2c),
+											+vm::_ref<be_t<u32>>(data + 0x30), +vm::_ref<be_t<u32>>(data + 0x34),
+											+vm::_ref<be_t<u32>>(data + 0x38), +vm::_ref<be_t<u32>>(data + 0x3c));
+										perf_log.error("Thor LOAD DATA 40: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+											sample + 1,
+											+vm::_ref<be_t<u32>>(data + 0x40), +vm::_ref<be_t<u32>>(data + 0x44),
+											+vm::_ref<be_t<u32>>(data + 0x48), +vm::_ref<be_t<u32>>(data + 0x4c),
+											+vm::_ref<be_t<u32>>(data + 0x50), +vm::_ref<be_t<u32>>(data + 0x54),
+											+vm::_ref<be_t<u32>>(data + 0x58), +vm::_ref<be_t<u32>>(data + 0x5c));
+									}
+								}
+							}
+
+							// Ghidra identifies 0x00523690 as the return from the sleep in
+							// a stream-read loop. The loop waits while the second pending
+							// count at stream +0xc4 is not zero. Record this later stream
+							// and the first active IO completion item. This probe is bounded
+							// and uses the existing PPU census gate.
+							static std::atomic<u32> s_late_load_wait_dumps{0};
+							if (id == 0x1000000u && pc == 0x009e4ba4u &&
+								static_cast<u32>(ppu.lr) == 0x00523690u && s_late_load_wait_dumps.load() < 8)
+							{
+								const u32 data = static_cast<u32>(ppu.gpr[30]);
+
+								if (vm::check_addr(data, 0, 0xd0))
+								{
+									const u32 sample = s_late_load_wait_dumps.fetch_add(1);
+									const u32 range_table = +vm::_ref<be_t<u32>>(data + 0xc8);
+									const u32 io_manager = vm::check_addr(0x019d5410u, 0, 4)
+										? +vm::_ref<be_t<u32>>(0x019d5410u) : 0;
+									const bool io_manager_ok = vm::check_addr(io_manager, 0, 0x0c);
+									const u32 io_workers = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 4) : 0;
+									const u32 io_worker_count = io_manager_ok ? +vm::_ref<be_t<u32>>(io_manager + 8) : 0;
+									const u32 io_worker = io_worker_count && vm::check_addr(io_workers, 0, 4)
+										? +vm::_ref<be_t<u32>>(io_workers) : 0;
+									const bool io_worker_ok = vm::check_addr(io_worker, 0, 0x78);
+
+									perf_log.error("Thor LATE LOAD WAIT: sample=%u data=0x%08x size=%u request=%u+%u cache0=%u..%u buffer0=0x%08x pending0=%u cache1=%u..%u buffer1=0x%08x pending1=%u table=0x%08x io=%u source=%08x %08x %08x",
+										sample + 1, data, +vm::_ref<be_t<u32>>(data + 0x98),
+										+vm::_ref<be_t<u32>>(data + 0xa0), +vm::_ref<be_t<u32>>(data + 0xa4),
+										+vm::_ref<be_t<u32>>(data + 0xa8), +vm::_ref<be_t<u32>>(data + 0xb0),
+										+vm::_ref<be_t<u32>>(data + 0xb8), +vm::_ref<be_t<u32>>(data + 0xc0),
+										+vm::_ref<be_t<u32>>(data + 0xac), +vm::_ref<be_t<u32>>(data + 0xb4),
+										+vm::_ref<be_t<u32>>(data + 0xbc), +vm::_ref<be_t<u32>>(data + 0xc4),
+										range_table, +vm::_ref<be_t<u32>>(data + 0xcc),
+										+vm::_ref<be_t<u32>>(data + 0x88), +vm::_ref<be_t<u32>>(data + 0x8c),
+										+vm::_ref<be_t<u32>>(data + 0x90));
+
+									if (io_worker_ok)
+									{
+										const u32 io_active = +vm::_ref<be_t<u32>>(io_worker + 0x58);
+										const u32 io_active_count = +vm::_ref<be_t<u32>>(io_worker + 0x5c);
+
+										perf_log.error("Thor LATE LOAD IO STATE: sample=%u worker=0x%08x queue=0x%08x/%u/%u active=0x%08x/%u/%u wake=0x%08x refs=%u run=%u sequence=%llu",
+											sample + 1, io_worker,
+											+vm::_ref<be_t<u32>>(io_worker + 0x4c), +vm::_ref<be_t<u32>>(io_worker + 0x50),
+											+vm::_ref<be_t<u32>>(io_worker + 0x54), io_active, io_active_count,
+											+vm::_ref<be_t<u32>>(io_worker + 0x60), +vm::_ref<be_t<u32>>(io_worker + 0x64),
+											+vm::_ref<be_t<u32>>(io_worker + 0x68), +vm::_ref<be_t<u32>>(io_worker + 0x6c),
+											static_cast<unsigned long long>(+vm::_ref<be_t<u64>>(io_worker + 0x70)));
+
+										if (io_active_count && vm::check_addr(io_active, 0, 0x50))
+										{
+											perf_log.error("Thor LATE LOAD IO ACTIVE 00: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x00), +vm::_ref<be_t<u32>>(io_active + 0x04),
+												+vm::_ref<be_t<u32>>(io_active + 0x08), +vm::_ref<be_t<u32>>(io_active + 0x0c),
+												+vm::_ref<be_t<u32>>(io_active + 0x10), +vm::_ref<be_t<u32>>(io_active + 0x14),
+												+vm::_ref<be_t<u32>>(io_active + 0x18), +vm::_ref<be_t<u32>>(io_active + 0x1c));
+											perf_log.error("Thor LATE LOAD IO ACTIVE 20: sample=%u %08x %08x %08x %08x %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x20), +vm::_ref<be_t<u32>>(io_active + 0x24),
+												+vm::_ref<be_t<u32>>(io_active + 0x28), +vm::_ref<be_t<u32>>(io_active + 0x2c),
+												+vm::_ref<be_t<u32>>(io_active + 0x30), +vm::_ref<be_t<u32>>(io_active + 0x34),
+												+vm::_ref<be_t<u32>>(io_active + 0x38), +vm::_ref<be_t<u32>>(io_active + 0x3c));
+											perf_log.error("Thor LATE LOAD IO ACTIVE 40: sample=%u %08x %08x %08x %08x",
+												sample + 1,
+												+vm::_ref<be_t<u32>>(io_active + 0x40), +vm::_ref<be_t<u32>>(io_active + 0x44),
+												+vm::_ref<be_t<u32>>(io_active + 0x48), +vm::_ref<be_t<u32>>(io_active + 0x4c));
+
+											const u32 completion_entries = +vm::_ref<be_t<u32>>(io_active + 0x40);
+											const u32 completion_count = +vm::_ref<be_t<u32>>(io_active + 0x44);
+											const u32 completion_item = completion_count && vm::check_addr(completion_entries, 0, 4)
+												? +vm::_ref<be_t<u32>>(completion_entries) : 0;
+											const bool completion_item_ok = completion_item && vm::check_addr(completion_item, 0, 8);
+											const u32 completion_state = completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item) : 0;
+											const bool completion_state_ok = completion_state && vm::check_addr(completion_state, 0, 4);
+
+											perf_log.error("Thor LATE LOAD IO COMPLETION: sample=%u entries=0x%08x/%u item0=0x%08x state0=%s:0x%08x value=0x%08x storage=0x%08x",
+												sample + 1, completion_entries, completion_count, completion_item,
+												completion_state_ok ? "mapped" : "unmapped", completion_state,
+												completion_state_ok ? +vm::_ref<be_t<u32>>(completion_state) : 0,
+												completion_item_ok ? +vm::_ref<be_t<u32>>(completion_item + 4) : 0);
+
+											const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+											const u64 now = get_system_time();
+											const u64 active_age_us = edge_wait.active && edge_wait.arm_time_us && now >= edge_wait.arm_time_us
+												? now - edge_wait.arm_time_us : 0;
+											const u64 wake_latency_us = edge_wait.wake_time_us >= edge_wait.arm_time_us
+												? edge_wait.wake_time_us - edge_wait.arm_time_us : 0;
+											const u64 dispatch_age_us = edge_wait.event_dispatch_time_us && now >= edge_wait.event_dispatch_time_us
+												? now - edge_wait.event_dispatch_time_us : 0;
+											perf_log.error("Thor EDGE EFWAIT STATE: sample=%u total=%u active=%u sequence=%u ppu=0x%08x request=0x%04x received=0x%04x mode=%u slot=%u phase=%u active_age_us=%llu wake_latency_us=%llu dispatch=%u/%u delta=%u last{port=%u result=0x%08x queue=0x%08x age_us=%llu}",
+												sample + 1, edge_wait.total, edge_wait.active, edge_wait.sequence,
+												edge_wait.ppu_id, edge_wait.requested, edge_wait.received,
+												edge_wait.mode, edge_wait.slot, edge_wait.phase,
+												static_cast<unsigned long long>(active_age_us),
+												static_cast<unsigned long long>(wake_latency_us),
+												edge_wait.event_dispatch_total, edge_wait.event_dispatch_at_arm,
+												edge_wait.event_dispatch_total - edge_wait.event_dispatch_at_arm,
+												edge_wait.event_dispatch_port, edge_wait.event_dispatch_result,
+												edge_wait.event_dispatch_queue,
+												static_cast<unsigned long long>(dispatch_age_us));
+										}
+									}
+								}
+							}
+
+							// Sample a live exact EDGE wait before the loader reaches its late
+							// completion boundary. The event-wait property enables this low-rate
+							// PPU census without the SPU PC and draw censuses.
+							static std::atomic<u32> s_edge_wait_census_dumps{0};
+							if (pc == 0x02003c54u && s_edge_wait_census_dumps.load(std::memory_order_relaxed) < 8)
+							{
+								const auto edge_wait = thor::get_spurs_event_wait_snapshot();
+								if (edge_wait.active)
+								{
+									const u32 sample = s_edge_wait_census_dumps.fetch_add(1, std::memory_order_relaxed);
+									if (sample < 8)
+									{
+										const u64 now = get_system_time();
+										const u64 active_age_us = edge_wait.arm_time_us && now >= edge_wait.arm_time_us
+											? now - edge_wait.arm_time_us : 0;
+										const u64 dispatch_age_us = edge_wait.event_dispatch_time_us && now >= edge_wait.event_dispatch_time_us
+											? now - edge_wait.event_dispatch_time_us : 0;
+										perf_log.error("Thor EDGE EFWAIT CENSUS: sample=%u sequence=%u ppu=0x%08x active_age_us=%llu dispatch=%u/%u delta=%u last{port=%u result=0x%08x queue=0x%08x age_us=%llu}",
+											sample + 1, edge_wait.sequence, edge_wait.ppu_id,
+											static_cast<unsigned long long>(active_age_us),
+											edge_wait.event_dispatch_total, edge_wait.event_dispatch_at_arm,
+											edge_wait.event_dispatch_total - edge_wait.event_dispatch_at_arm,
+											edge_wait.event_dispatch_port, edge_wait.event_dispatch_result,
+											edge_wait.event_dispatch_queue,
+											static_cast<unsigned long long>(dispatch_age_us));
+									}
+								}
+							}
+
+							// A syscall PC can identify only a shared wrapper. Keep its caller,
+							// stack pointer and first argument in the same low-rate sample.
+							//
+							// `func` is the HLE function or syscall the thread is inside, or "-".
+							// The 2026-09-07 LLE combat census sampled every PPU thread inside a
+							// wait at nearly every tick, and a PC alone named only the eight
+							// wrappers the code dump below had room for. The name is free.
+							const char* const current_function = ppu.current_function;
+
+							// r28 and r30 with the word at r28: the render thread's dominant wait
+							// (0x00fdcba0, decoded 2026-09-07) is `while (*r28 + r27 > r30)
+							// sys_timer_usleep(30)`, and the address in r28 says what it polls.
+							const u32 r28 = static_cast<u32>(ppu.gpr[28]);
+							const bool r28_ok = vm::check_addr(r28, 0, 4);
+							perf_log.error("Thor PPU PC: id=0x%x %s cia=0x%08x lr=0x%08x sp=0x%08x r3=0x%llx state=0x%x func=%s r27=0x%llx r28=0x%08x m28=%s r30=0x%llx",
+								id, ppu.get_name(), pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
+								ppu.gpr[3], static_cast<u32>(ppu.state.load()), current_function ? current_function : "-",
+								ppu.gpr[27], r28, r28_ok ? fmt::format("0x%08x", +vm::_ref<be_t<u32>>(r28)) : "unmapped", ppu.gpr[30]);
+
+							// Capture a bounded stack for each new main-thread PC and LR pair.
+							// One startup stack cannot identify a later zero-frame phase. The
+							// census runs only when the manual Android property is on, and the
+							// performance thread samples at most once per log interval.
+							static std::atomic<u64> s_last_main_stack_key{0};
+							static std::atomic<u32> s_main_stack_dumps{0};
+							const u64 stack_key = (static_cast<u64>(pc) << 32) | static_cast<u32>(ppu.lr);
+							if (id == 0x1000000u && pc && s_main_stack_dumps.load() < 8 &&
+								s_last_main_stack_key.load() != stack_key)
+							{
+								const auto call_stack = ppu.dump_callstack_list();
+								if (!call_stack.empty() && s_last_main_stack_key.exchange(stack_key) != stack_key)
+								{
+									const u32 sample = s_main_stack_dumps.fetch_add(1);
+									if (sample < 8)
+									{
+										const usz count = std::min<usz>(call_stack.size(), 12);
+										perf_log.error("Thor PPU STACK BEGIN: sample=%u cia=0x%08x lr=0x%08x sp=0x%08x count=%u total=%u",
+											sample + 1, pc, static_cast<u32>(ppu.lr), static_cast<u32>(ppu.gpr[1]),
+											static_cast<u32>(count), static_cast<u32>(call_stack.size()));
+										for (usz frame = 0; frame < count; frame++)
+										{
+											perf_log.error("Thor PPU STACK: sample=%u frame=%u from=0x%08x sp=0x%08x",
+												sample + 1, static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+										}
+										perf_log.error("Thor PPU STACK END: sample=%u", sample + 1);
+									}
+								}
+							}
+
+							// AND THE CODE AT THAT PC.
+							//
+							// Dump the words around each sampled address once. The code can
+							// then be disassembled offline as PowerPC:BE:64.
+							// 32 slots, not 8: on 2026-09-07 the boot-time wrappers of twenty
+							// background threads used every slot before the first combat sample,
+							// so the two PCs that mattered were never dumped.
+							static std::atomic<u32> s_dumped[32]{};
+							static std::atomic<u32> s_ndumped{0};
+
+							bool seen = false;
+
+							for (u32 i = 0, have = s_ndumped.load(); i < have && i < 32; i++)
+							{
+								if (s_dumped[i].load() == pc) { seen = true; break; }
+							}
+
+							if (!seen && s_ndumped.load() < 32 && pc > 0x20000 && vm::check_addr(pc - 0x20, 0, 0x40))
+							{
+								s_dumped[s_ndumped.load()].store(pc);
+								s_ndumped++;
+
+								std::string words;
+
+								for (u32 off = 0; off < 0x40; off += 4)
+								{
+									fmt::append(words, "%08x ", +vm::_ref<be_t<u32>>(pc - 0x20 + off));
+								}
+
+								perf_log.error("Thor PPU CODE @0x%08x (from 0x%08x): %s",
+									pc, pc - 0x20, words);
+							}
+						});
+				}
+			}
+#endif
 
 				last_flip_index = flips;
 				last_flip_time = now;

@@ -1,9 +1,29 @@
 #include "stdafx.h"
+#ifdef __ANDROID__
+// AFTER stdafx.h, never before.
+//
+// stdafx.h is the precompiled header. Placing any include ahead of it changes
+// the feature-test macros for THIS translation unit only, which is an ODR
+// mismatch against every other unit and shows up at runtime as corruption
+// rather than as a compile error.
+//
+// The symptom here was savestate restore: `loadstate` returned {"ok":true} and
+// emulation never came back, ending in "Emulation Join Thread is too sleepy".
+// Bisected by isolation - the handler diagnostic, SPUThread.*, and
+// cellSpursSpu.cpp each tested INNOCENT, leaving this file, and the only
+// always-active change in it was this include placement.
+#include <sys/system_properties.h>
+#endif
+#include <mutex>
+#include <unordered_set>
 #include "Emu/System.h"
 #include "Emu/system_config.h"
 #include "Emu/Memory/vm_reservation.h"
 #include "Emu/Cell/PPUModule.h"
 #include "Emu/Cell/SPUThread.h"
+#include "Emu/Cell/thor_spu_pc_census.h"
+#include "Emu/Cell/thor_spurs_event_wait_probe.h"
+#include "Emu/Cell/timers.hpp"
 #include "cellos/sys_lwmutex.h"
 #include "cellos/sys_lwcond.h"
 #include "cellos/sys_spu.h"
@@ -12,6 +32,9 @@
 #include "cellos/sys_process.h"
 #include "cellos/sys_semaphore.h"
 #include "cellos/sys_event.h"
+#include "../kernel/cellos/src/thor_spurs_probe.h"
+#include "Crypto/unself.h"
+#include "Emu/VFS.h"
 #include "sysPrxForUser.h"
 #include "cellSpurs.h"
 
@@ -20,6 +43,186 @@
 #include "util/simd.hpp"
 
 LOG_CHANNEL(cellSpurs);
+
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
+// DEFAULT OFF until the corrected task-attribute route has device proof.
+//
+// Ghidra shows that BLUS30357 sets only r3 through r8 for the initializer. It
+// builds the LS pattern in the opaque attribute buffer before the call. The
+// old HLE code treated stale r9 and r10 values as pointers, cleared the caller
+// pattern, and then made a replacement pattern. The replacement lost Bink's
+// mutable LS block and caused a zero-address DMA after the task resumed.
+//
+// This switch keeps the caller pattern and resolves the {context,size} pair.
+// Turn it on for the bounded Transformers route:
+//
+//   debug.rpcsx.thor.task_attr_fix = 1
+static bool thor_task_attr_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.task_attr_fix", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+// Keep two SPUs free for the later Bink work in Transformers.
+//
+// BLUS30357 adds the edgeZlib workload with a permitted range of one to five
+// SPUs. Some HLE boots allocate all five free SPUs before the Bink workload
+// exists. The new workload then has a pending signal but no SPU can select it.
+// A four-SPU allocation lets the Bink taskset start, but it can replace the
+// resident edge taskset. A three-SPU allocation keeps capacity for both
+// tasksets and is within the title's requested range.
+//
+//   debug.rpcsx.thor.transformers_spu_reserve = 1
+static bool thor_transformers_spu_reserve() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.transformers_spu_reserve", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+// Trace the exact event flag that releases Transformers EDGE zlib slots.
+//
+// The SPU helper updates the control word and pending event slot before it
+// sends the LV2 event. The PPU wait must return the same one-bit mask before
+// the title releases that slot. Keep this trace off by default and bounded.
+//
+//   debug.rpcsx.thor.edge_event_wait_trace = 1
+static bool thor_transformers_edge_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.edge_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+// Trace the FMOD event wait that follows the first completed late load.
+//
+// The event flag and taskset addresses are dynamic. The PPU caller is stable
+// for BLUS30357, so use its link register as the narrow runtime anchor. This
+// probe records state only. It does not change the wait or event delivery.
+//
+//   debug.rpcsx.thor.fmod_event_wait_trace = 1
+static bool thor_transformers_fmod_event_wait_trace() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_wait_trace", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+// Arm the FMOD wait snapshot when the exact interpreter handoff is enabled.
+// The handoff uses this snapshot to match the live taskset. It must not depend
+// on the separate diagnostic log switch.
+//
+//   debug.rpcsx.thor.fmod_event_interp = 1
+static bool thor_transformers_fmod_event_interp() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.fmod_event_interp", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+// Give each cold Transformers PhysX SPU-to-PPU reply time to reach its queue.
+//
+// The title starts a cold SPU task and calls the nonblocking queue pop about
+// 45 microseconds later. It treats BUSY as fatal. A guarded Thor run showed
+// that the exact interpreted initialization and queue push can finish after
+// the title's normal deadline. PhysX then creates more cold tasks with distinct
+// reply queues. Track the first pop per initialized queue, not one global queue.
+// Keep the extended wait active only while the exact first producer is running,
+// with a bounded count of completed poll waits. A process-held thermal pause can
+// advance the host clock while neither side can run. This switch does not
+// fabricate queue data. Later nonblocking pops on the same queue keep the normal
+// BUSY result.
+//
+//   debug.rpcsx.thor.transformers_physx_queue_wait = 1
+static bool thor_transformers_physx_queue_wait() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.transformers_physx_queue_wait", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+static std::mutex s_thor_transformers_physx_queue_wait_mutex;
+static std::unordered_set<u32> s_thor_transformers_physx_queues_waited;
+
+static void thor_transformers_physx_queue_wait_rearm(u32 queue) noexcept
+{
+	std::lock_guard lock(s_thor_transformers_physx_queue_wait_mutex);
+	s_thor_transformers_physx_queues_waited.erase(queue);
+}
+
+static bool thor_transformers_physx_queue_wait_claim(u32 queue) noexcept
+{
+	std::lock_guard lock(s_thor_transformers_physx_queue_wait_mutex);
+	return s_thor_transformers_physx_queues_waited.emplace(queue).second;
+}
+
+static bool thor_taskset_enabled_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.taskset_enabled_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
 
 template <>
 void fmt_class_string<CellSpursCoreError>::format(std::string& out, u64 arg)
@@ -196,7 +399,7 @@ namespace _spurs
 	void handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs);
 
 	// Create the SPURS handler thread
-	s32 create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority);
+	s32 create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority);
 
 	// Invoke event handlers
 	s32 invoke_event_handlers(ppu_thread& ppu, vm::ptr<CellSpurs::EventPortMux> eventPortMux);
@@ -634,6 +837,41 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 		// Find a runnable workload
 		spurs->handlerDirty = 0;
+
+		// WHY THE HLE SPURS PATH NEVER STARTS ITS SPU THREADS.
+		//
+		// sys_spu_thread_group_start for the SPURS kernel group happens only
+		// after this function returns, so if no workload ever looks runnable the
+		// group is created and never started - which is exactly what was
+		// measured: the group appears in the log at 18.56 s, the title then calls
+		// CreateTaskWithAttribute, SendWorkloadSignal and WakeUp, and /proc shows
+		// NO SPU threads at all, only the "SPU LLVM" compiler worker.
+		//
+		// Three independent conditions must hold for a workload to count, and the
+		// loop below cannot say which one failed. This prints them once per
+		// waiting pass for every workload that has any state at all, so the next
+		// run names the field instead of guessing at it.
+		if (spurs->exception == 0u)
+		{
+			for (u32 i = 0; i < 16; i++)
+			{
+				if (spurs->wklState1[i] == SPURS_WKL_STATE_NON_EXISTENT)
+				{
+					continue;
+				}
+
+				cellSpurs.error("Thor SPURS handler wait: wkl%u state=%u priority=0x%llx maxContention=0x%x readyCount=%u signal=%u flag=%u flagReceiver=%u",
+					i,
+					+spurs->wklState1[i],
+					static_cast<unsigned long long>(std::bit_cast<u64>(spurs->wklInfo1[i].priority)),
+					+spurs->wklMaxContention[i],
+					+spurs->wklReadyCount1[i],
+					(spurs->wklSignal1.load() & (0x8000u >> i)) ? 1u : 0u,
+					+spurs->wklFlag.flag.load(),
+					+spurs->wklFlagReceiver);
+			}
+		}
+
 		if (spurs->exception == 0u)
 		{
 			bool foundRunnableWorkload = false;
@@ -699,8 +937,15 @@ void _spurs::handler_wait_ready(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
+	// Distinguishes "the thread was never released" from "it ran and took the
+	// early exit". Both leave sys_spu_thread_group_start uncalled and look
+	// identical from outside.
+	cellSpurs.error("Thor: SPURS handler_entry ENTERED (flags=0x%x flags1=0x%x spuTG=0x%x)",
+		+spurs->flags, +spurs->flags1, +spurs->spuTG);
+
 	if (spurs->flags & SAF_UNKNOWN_FLAG_30)
 	{
+		cellSpurs.error("Thor: SPURS handler_entry EARLY EXIT on SAF_UNKNOWN_FLAG_30");
 		return sys_ppu_thread_exit(ppu, 0);
 	}
 
@@ -735,24 +980,135 @@ void _spurs::handler_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 	}
 }
 
-s32 _spurs::create_handler(vm::ptr<CellSpurs> spurs, u32 ppuPriority)
+static bool get_thor_hle_spurs_kernel_enabled() noexcept
 {
-	struct handler_thread : ppu_thread
+#ifdef __ANDROID__
+	static const bool s_value = []() noexcept -> bool
 	{
-		using ppu_thread::ppu_thread;
+		char value[PROP_VALUE_MAX]{};
 
-		void non_task()
+		if (__system_property_get("debug.rpcsx.thor.hle_spurs_kernel", value) <= 0 || !value[0])
 		{
-			// BIND_FUNC(_spurs::handler_entry)(*this);
+			return false;
 		}
-	};
 
-	// auto eht = idm::make_ptr<ppu_thread, handler_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0", ppuPriority, 0x4000);
+		return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+	}();
 
-	// spurs->ppu0 = eht->id;
+	return s_value;
+#else
+	return false;
+#endif
+}
 
-	// eht->gpr[3] = spurs.addr();
-	// eht->run();
+// Register the PPU helper entries only when HLE SPURS is requested.
+//
+// This must stay at namespace scope: ppu_function_manager allocates ONE guest
+// block for the whole registered list, so a registration made later - from a
+// static local inside create_handler, say - would address past the end of it.
+//
+// But registering unconditionally BREAKS SAVESTATE RESTORE for everyone. The
+// list is serialized (PPUFunction.h has save(utils::serial&) and a deserializing
+// constructor) and func_addr is `addr + index * 8`, so one extra entry shifts the
+// index space and a state written by any other build restores against a
+// mismatched table - which presents as loadstate returning ok:true and then
+// hanging in "Emulation Join Thread is too sleepy", never as an error.
+//
+// So evaluate the gate AT GLOBAL INIT. get_thor_hle_spurs_kernel_enabled() reads
+// an Android system property through a function-local static, which is safe this
+// early and independent of static init order across translation units.
+//
+// With the property unset nothing is registered, the function list is identical
+// to a stock build, and savestates written by either load in the other.
+static const u32 s_thor_spurs_handler_index = get_thor_hle_spurs_kernel_enabled()
+	? ppu_function_manager::register_function<decltype(&_spurs::handler_entry), &_spurs::handler_entry>(BIND_FUNC(_spurs::handler_entry))
+	: 0;
+
+static const u32 s_thor_spurs_event_helper_index = get_thor_hle_spurs_kernel_enabled()
+	? ppu_function_manager::register_function<decltype(&_spurs::event_helper_entry), &_spurs::event_helper_entry>(BIND_FUNC(_spurs::event_helper_entry))
+	: 0;
+
+s32 _spurs::create_handler(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 ppuPriority)
+{
+	// UNCONDITIONAL, before the property check. Separates "create_handler is
+	// never called" from "it is called and the gate is off" - the two look
+	// identical from the log otherwise, which is what stalled the last run.
+	cellSpurs.error("Thor: create_handler CALLED (prio=%u, hle_gate=%u)", ppuPriority, get_thor_hle_spurs_kernel_enabled() ? 1u : 0u);
+
+	// THE HANDLER THREAD, rebuilt against today's API.
+	//
+	// This function was a no-op returning CELL_OK for a thread it never created,
+	// so cellSpursInitialize reported success and the SPURS group was never
+	// started - the handler is the ONLY caller of sys_spu_thread_group_start for
+	// it (see the loop at the top of this file). The original code is disabled
+	// because it used `non_task()`, gone from ppu_thread, and the old
+	// `ppu_thread(name, prio, stack)` constructor, now
+	// `ppu_thread(const ppu_thread_params&, name, prio, detached)`.
+	//
+	// A host function is reached from a PPU thread the same way any HLE call is:
+	// register it, take its guest code address, and use that as the entry. The
+	// shape below follows _sys_ppu_thread_create in cellos/src/sys_ppu_thread.cpp.
+	//
+	// Gated so the default path keeps the old no-op behaviour exactly.
+	if (get_thor_hle_spurs_kernel_enabled())
+	{
+		const u32 code = g_fxo->get<ppu_function_manager>().func_addr(s_thor_spurs_handler_index, true);
+
+		if (!code)
+		{
+			cellSpurs.error("Thor: SPURS handler has no guest address (index %u)", s_thor_spurs_handler_index);
+			return CELL_OK;
+		}
+
+		const vm::addr_t stack{vm::alloc(0x4000, vm::stack, 4096)};
+
+		if (!stack)
+		{
+			cellSpurs.error("Thor: SPURS handler stack allocation failed");
+			return CELL_OK;
+		}
+
+		const std::string name = std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr0";
+
+		const u32 tid = idm::import<named_thread<ppu_thread>>([&]()
+		{
+			ppu_thread_params p{};
+			p.stack_addr = stack;
+			p.stack_size = 0x4000;
+			p.tls_addr = 0;
+			p.entry = ppu_func_opd_t{code, 0};
+			p.arg0 = spurs.addr();
+			p.arg1 = 0;
+
+			return stx::make_shared<named_thread<ppu_thread>>(p, name, ppuPriority, 0);
+		});
+
+		if (!tid)
+		{
+			vm::dealloc(stack);
+			cellSpurs.error("Thor: SPURS handler thread creation failed");
+			return CELL_OK;
+		}
+
+		spurs->ppu0 = tid;
+
+		// Start it with the REAL syscall, not by imitating it.
+		//
+		// The first attempt cleared cpu_flag::stop and notified directly, and
+		// `handler_entry` was NEVER ENTERED - the instrumentation added for
+		// exactly this question printed zero lines. sys_ppu_thread_start does more
+		// than clear the flag: it runs inside an idm::get callback holding
+		// lv2_obj::notify_all_t and goes through the scheduler's awake path.
+		// Calling it is both correct and shorter.
+		if (const s32 start_rc = sys_ppu_thread_start(ppu, tid))
+		{
+			cellSpurs.error("Thor: SPURS handler thread start failed 0x%x (id=0x%x)", start_rc, tid);
+			return CELL_OK;
+		}
+
+		cellSpurs.error("Thor: SPURS handler thread created and started (id=0x%x, entry=0x%x)", tid, code);
+		return CELL_OK;
+	}
 
 	return CELL_OK;
 }
@@ -823,6 +1179,9 @@ s32 _spurs::wakeup_shutdown_completion_waiter(ppu_thread& ppu, vm::ptr<CellSpurs
 
 void _spurs::event_helper_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
+	cellSpurs.error("Thor: SPURS event_helper_entry ENTERED (eventQueue=0x%x, spuPort=%u)",
+		+spurs->eventQueue, +spurs->spuPort);
+
 	vm::var<sys_event_t[]> events(8);
 	vm::var<u32> count;
 
@@ -870,11 +1229,12 @@ void _spurs::event_helper_entry(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 
 			if (data0 == 1)
 			{
-				return;
+				return sys_ppu_thread_exit(ppu, 0);
 			}
 			else if (data0 < 1)
 			{
 				const u32 shutdownMask = static_cast<u32>(event_data3);
+				cellSpurs.error("Thor: SPURS shutdown completion event mask=0x%x", shutdownMask);
 
 				for (u32 wid = 0; wid < CELL_SPURS_MAX_WORKLOAD; wid++)
 				{
@@ -937,17 +1297,59 @@ s32 _spurs::create_event_helper(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 p
 		return CELL_SPURS_CORE_ERROR_STAT;
 	}
 
-	struct event_helper_thread : ppu_thread
+	// The old helper used the removed ppu_thread::non_task interface. Create a
+	// normal joinable PPU thread with the registered HLE entry, as create_handler
+	// does for SpursHdlr0. The event queue and port above remain the real SPURS
+	// transport. This thread receives shutdown masks and posts workload semaphores.
+	if (get_thor_hle_spurs_kernel_enabled())
 	{
-		using ppu_thread::ppu_thread;
+		const u32 code = g_fxo->get<ppu_function_manager>().func_addr(s_thor_spurs_event_helper_index, true);
 
-		void non_task()
+		if (!code)
 		{
-			// BIND_FUNC(_spurs::event_helper_entry)(*this);
+			cellSpurs.error("Thor: SPURS event helper has no guest address (index %u)", s_thor_spurs_event_helper_index);
+			return CELL_SPURS_CORE_ERROR_STAT;
 		}
-	};
 
-	// auto eht = idm::make_ptr<ppu_thread, event_helper_thread>(std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1", ppuPriority, 0x8000);
+		const vm::addr_t stack{vm::alloc(0x8000, vm::stack, 4096)};
+
+		if (!stack)
+		{
+			cellSpurs.error("Thor: SPURS event helper stack allocation failed");
+			return CELL_SPURS_CORE_ERROR_NOMEM;
+		}
+
+		const std::string name = std::string(spurs->prefix, spurs->prefixSize) + "SpursHdlr1";
+		const u32 tid = idm::import<named_thread<ppu_thread>>([&]()
+		{
+			ppu_thread_params p{};
+			p.stack_addr = stack;
+			p.stack_size = 0x8000;
+			p.tls_addr = 0;
+			p.entry = ppu_func_opd_t{code, 0};
+			p.arg0 = spurs.addr();
+			p.arg1 = 0;
+
+			return stx::make_shared<named_thread<ppu_thread>>(p, name, ppuPriority, 0);
+		});
+
+		if (!tid)
+		{
+			vm::dealloc(stack);
+			cellSpurs.error("Thor: SPURS event helper thread creation failed");
+			return CELL_SPURS_CORE_ERROR_STAT;
+		}
+
+		spurs->ppu1 = tid;
+		if (const s32 start_rc = sys_ppu_thread_start(ppu, tid))
+		{
+			cellSpurs.error("Thor: SPURS event helper thread start failed 0x%x (id=0x%x)", start_rc, tid);
+			return CELL_SPURS_CORE_ERROR_STAT;
+		}
+
+		cellSpurs.error("Thor: SPURS event helper thread created and started (id=0x%x, entry=0x%x)", tid, code);
+		return CELL_OK;
+	}
 
 	// if (!eht)
 	{
@@ -1066,6 +1468,11 @@ s32 _spurs::join_handler_thread(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 	spurs->ppu0 = 0xFFFFFFFF;
 	return CELL_OK;
 }
+
+// Defined below, next to the job chain module staging they share machinery with.
+static bool thor_real_spu_kernel() noexcept;
+static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept;
+u32 thor_spurs_kernel_code(u32 want_entry, u32& out_size) noexcept;
 
 s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, u32 sdkVersion, s32 nSpus, s32 spuPriority, s32 ppuPriority, u32 flags, vm::cptr<char> prefix, u32 prefixSize, u32 container, vm::cptr<u8> swlPriority, u32 swlMaxSpu, u32 swlIsPreem)
 {
@@ -1200,6 +1607,89 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	spurs->spuImg.entry_point = isSecond ? CELL_SPURS_KERNEL2_ENTRY_ADDR : CELL_SPURS_KERNEL1_ENTRY_ADDR;
 	spurs->spuImg.nsegs = 0;
 
+	// THE EINVAL THAT KILLS HLE SPURS.
+	//
+	// The image above is deliberately EMPTY - no segments - because the SPURS
+	// kernel was meant to be host code reached through RegisterHleFunction, and
+	// that mechanism was removed from spu_thread. Today's lv2 rejects it:
+	//
+	//   sys_spu.cpp: if (entry_point > 0x3fffc || nsegs <= 0 || nsegs > 0x20)
+	//                    return CELL_EINVAL;
+	//
+	// so the FIRST sys_spu_thread_initialize fails, cellSpursInitializeWithAttribute
+	// returns 0x80010002, and BLUS30357 ignores that and builds tasksets on an
+	// uninitialized CellSpurs. Every later symptom - no handler thread,
+	// sys_spu_thread_group_start never called, no SPU threads at all, the hang at
+	// 1.08 cores - descends from this one line.
+	//
+	// A minimal image that PASSES validation is enough, because the entry point is
+	// intercepted by the HLE dispatch before any of it executes. lv2 requires at
+	// least one COPY segment whose size is non-zero, whose ls and size are
+	// 16-byte aligned, and whose source address is 4-byte aligned. Sixteen bytes
+	// of zeros at local store 0 satisfies all of it and is inert.
+	// THE REAL KERNEL, when asked for. See thor_spurs_kernel_image.
+	//
+	// Use with hle_spurs_kernel = 1 AND real_spu_kernel = 1. The SPU-side entry
+	// hooks at 0x818/0x848 are suppressed separately by get_thor_real_spu_kernel()
+	// in SPUThread.cpp, because hle_spurs_kernel also gates the PPU-side setup:
+	// turning IT off to get the real kernel left SPURS half-initialised and the
+	// title died before sys_spu_thread_group_start with an access violation at
+	// 0x55553188 inside liblv2.
+	if (thor_real_spu_kernel())   // takes precedence over the minimal stub image below
+	{
+		const bool k2 = (spurs->flags1 & SF1_32_WORKLOADS) != 0;
+		const u32 entry = k2 ? 0x848u : 0x818u;
+
+		u32 ksize = 0;
+
+		if (const u32 kmem = thor_spurs_kernel_image(entry, ksize))
+		{
+			if (const u32 seg_mem = vm::alloc(0x80, vm::main))
+			{
+				std::memset(vm::base(seg_mem), 0, 0x80);
+
+				const auto segs = vm::ptr<sys_spu_segment>::make(seg_mem);
+				segs[0].type = SYS_SPU_SEGMENT_TYPE_COPY;
+				segs[0].ls = 0x100;
+				segs[0].size = ksize;
+				segs[0].addr = kmem;
+
+				spurs->spuImg.segs = segs;
+				spurs->spuImg.nsegs = 1;
+				spurs->spuImg.entry_point = entry;
+
+				cellSpurs.error("Thor KERNEL: real SPURS kernel%d installed "
+					"(entry 0x%x, %u bytes at 0x%x -> LS 0x100)", k2 ? 2 : 1, entry, ksize, kmem);
+			}
+			else
+			{
+				cellSpurs.error("Thor KERNEL: could not allocate the segment table");
+			}
+		}
+	}
+	else if (get_thor_hle_spurs_kernel_enabled())
+	{
+		if (const u32 img_mem = vm::alloc(0x100, vm::main))
+		{
+			std::memset(vm::base(img_mem), 0, 0x100);
+
+			const auto segs = vm::ptr<sys_spu_segment>::make(img_mem);
+			segs[0].type = SYS_SPU_SEGMENT_TYPE_COPY;
+			segs[0].ls = 0;
+			segs[0].size = 0x10;
+			segs[0].addr = img_mem + 0x80;
+
+			spurs->spuImg.segs = segs;
+			spurs->spuImg.nsegs = 1;
+
+			cellSpurs.error("Thor: HLE SPURS minimal SPU image installed at 0x%x (entry 0x%x)", img_mem, +spurs->spuImg.entry_point);
+		}
+		else
+		{
+			cellSpurs.error("Thor: HLE SPURS could not allocate a minimal SPU image");
+		}
+	}
+
 	// Create a thread group for this SPURS context
 	std::memcpy(spuTgName.get_ptr(), spurs->prefix, spurs->prefixSize);
 	std::memcpy(spuTgName.get_ptr() + spurs->prefixSize, "CellSpursKernelGroup", 21);
@@ -1321,7 +1811,7 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	}
 
 	// Create the SPURS handler thread
-	if (s32 rc = _spurs::create_handler(spurs, ppuPriority))
+	if (s32 rc = _spurs::create_handler(ppu, spurs, ppuPriority))
 	{
 		_spurs::stop_event_helper(ppu, spurs);
 		ppu_execute<&sys_lwcond_destroy>(ppu, lwCond);
@@ -1329,6 +1819,18 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 		_spurs::finalize_spu(ppu, spurs);
 		return rollback(), rc;
 	}
+
+	// The direct group start that used to live here is GONE.
+	//
+	// It existed only because create_handler was a no-op, so nothing else called
+	// sys_spu_thread_group_start. Now that the handler thread is real it starts
+	// the group itself, and starting it twice made the handler fail immediately:
+	//
+	//   Thor: SPURS handler_entry ENTERED (flags=0x2000000 flags1=0x0 ...)
+	//   '_spurs::handler_entry' failed with 0x8001000f : CELL_ESTAT
+	//
+	// CELL_ESTAT is sys_spu_thread_group_start refusing a group that is already
+	// running. The scaffold had become the bug.
 
 	// Enable SPURS exception handler
 	if (s32 rc = cellSpursEnableExceptionEventHandler(ppu, spurs, true /*enable*/))
@@ -2373,9 +2875,31 @@ s32 _spurs::add_workload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<u32>
 		});
 
 	*wid = wnum; // store workload id
+
+	// HOW FAR DOES THE TITLE GET? Measured: the real runtime builds TEN
+	// workloads for this title and HLE reaches THREE. Log every attempt with
+	// its outcome, so "stops at 3" becomes either "the 4th add fails with X"
+	// or "the 4th add is never requested".
+	{
+		static std::atomic<u32> s_add{0};
+
+		cellSpurs.error("Thor ADDWKL #%u: wnum=%u wmax=%u pm=0x%x size=0x%x minC=%u maxC=%u",
+			s_add++, wnum, wmax, pm.addr(), size, minContention, maxContention);
+	}
+
 	if (wnum >= wmax)
 	{
+		cellSpurs.error("Thor ADDWKL: REFUSED, wnum=%u >= wmax=%u (table full)", wnum, wmax);
 		return CELL_SPURS_POLICY_MODULE_ERROR_AGAIN;
+	}
+
+	// This exact edgeZlib workload can take every SPU that is not in the first
+	// taskset. Keep two SPUs available for the Bink taskset and its downstream
+	// edge taskset. Do not change any other title or workload.
+	if (thor_transformers_spu_reserve() && wnum == 6 && size == 0x4000 && minContention == 1 && maxContention == 5)
+	{
+		maxContention = 3;
+		cellSpurs.notice("Thor Transformers SPU reserve: workload 6 max contention changed from 5 to 3");
 	}
 
 	auto& spurs_res = vm::reservation_acquire(spurs.addr());
@@ -2655,6 +3179,174 @@ s32 cellSpursShutdownWorkload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid
 	return CELL_OK;
 }
 
+// Reconcile one stale HLE shutdown acknowledgement in Transformers.
+//
+// A SPURS workload status bit means that an SPU has the workload in its local
+// runnable snapshot. The real SPURS system service clears each bit after a
+// shutdown request. An HLE SPU that runs a real policy module cannot enter the
+// host system service until that module polls or exits. A long GCM policy-module
+// wait can therefore keep an unrelated taskset status bit set forever and make
+// cellSpursJoinTaskset wait on a completion that cannot occur.
+//
+// Run this only after shutdown made the target workload non-runnable. Keep a
+// bit for an SPU that is currently in the target workload. Also keep a bit when
+// the thread is missing, the SPURS context does not match, or the current ID
+// changes while it is read. This makes the repair fail closed. Workload 7 is
+// the rendering taskset that has this failure in BLUS30357.
+static s32 thor_reconcile_transformers_shutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid, bool log_no_change = false)
+{
+	if (!get_thor_hle_spurs_kernel_enabled() || Emu.GetTitleID() != "BLUS30357" || wid != 7)
+	{
+		return CELL_OK;
+	}
+
+	std::array<u32, 8> currentIds{};
+	std::array<u32, 8> pcs{};
+	currentIds.fill(umax);
+	pcs.fill(umax);
+
+	u8 knownSpus = 0;
+	u8 activeSpus = 0;
+
+	// Enumerate the live SPU objects. The direct lookup through CellSpurs::spus
+	// returned no objects in the Transformers capture while the Android status
+	// view found all six SPUs for this SPURS instance. The host SPURS address and
+	// the local-store context identify the instance without that stale ID path.
+	idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread>& thread)
+	{
+		if (thread.spurs_addr != spurs.addr())
+		{
+			return;
+		}
+
+		const auto ctxt = thread._ptr<SpursKernelContext>(0x100);
+		const u32 current1 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
+		const u32 current2 = +atomic_storage<be_t<u32>>::load(ctxt->wklCurrentId);
+		const u32 spuNum = +atomic_storage<be_t<u32>>::load(ctxt->spuNum);
+
+		if (current1 != current2 || spuNum >= 8 || ctxt->spurs.addr() != spurs.addr())
+		{
+			return;
+		}
+
+		const u8 bit = static_cast<u8>(1u << spuNum);
+		knownSpus |= bit;
+		currentIds[spuNum] = current1;
+		pcs[spuNum] = thread.pc;
+
+		if (current1 == wid)
+		{
+			activeSpus |= bit;
+		}
+	});
+
+	u8 statusBefore = 0;
+	u8 statusAfter = 0;
+	u8 stateBefore = 0;
+	u8 eventBefore = 0;
+	u8 eventAfter = 0;
+	bool inspected = false;
+	bool completed = false;
+	bool sendEvent = false;
+	const u8 keepSpus = activeSpus | static_cast<u8>(~knownSpus);
+
+	const bool changed = vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_wkl_state_op>(spurs.ptr(&CellSpurs::wklState1)), [&](spurs_wkl_state_op& op)
+			{
+				auto& state = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklState1[wid] : op.wklState2[wid % 16];
+				auto& status = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklStatus1[wid] : op.wklStatus2[wid % 16];
+				auto& event = wid < CELL_SPURS_MAX_WORKLOAD ? op.wklEvent1[wid] : op.wklEvent2[wid % 16];
+
+				stateBefore = state;
+				statusBefore = statusAfter = status;
+				eventBefore = eventAfter = event;
+				inspected = true;
+
+				if (state != SPURS_WKL_STATE_SHUTTING_DOWN)
+				{
+					return false;
+				}
+
+				status = (status & keepSpus) | activeSpus;
+				statusAfter = status;
+
+				if (statusAfter == statusBefore)
+				{
+					return false;
+				}
+
+				if (!statusAfter)
+				{
+					state = SPURS_WKL_STATE_REMOVABLE;
+					sendEvent = event & 0x12 && !(event & 1);
+					event |= 1;
+					eventAfter = event;
+					completed = true;
+				}
+
+				return true;
+			});
+
+	if (!changed)
+	{
+		if (log_no_change && inspected)
+		{
+			const u32 tasksetAddr = static_cast<u32>(+spurs->wklInfo(wid).arg);
+			u32 tasksetWid = umax;
+			u32 taskRunning = 0;
+			u32 taskReady = 0;
+			u32 taskPending = 0;
+			u32 taskWaiting = 0;
+			u32 taskEnabled = 0;
+			u32 taskSignalled = 0;
+			const bool tasksetReadable = tasksetAddr && vm::check_addr(tasksetAddr, 0, 0x80);
+
+			if (tasksetReadable)
+			{
+				tasksetWid = +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, wid));
+
+				for (u32 i = 0; i < 4; i++)
+				{
+					taskRunning |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, running) + i * sizeof(u32));
+					taskReady |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, ready) + i * sizeof(u32));
+					taskPending |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, pending_ready) + i * sizeof(u32));
+					taskWaiting |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, waiting) + i * sizeof(u32));
+					taskEnabled |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, enabled) + i * sizeof(u32));
+					taskSignalled |= +vm::_ref<be_t<u32>>(tasksetAddr + OFFSET_OF(CellSpursTaskset, signalled) + i * sizeof(u32));
+				}
+			}
+
+			cellSpurs.error("Thor TWC SHUTDOWN RECONCILE NO CHANGE: wid=%u state=%u status=0x%02x event=0x%02x "
+				"known=0x%02x active=0x%02x update=0x%02x message=0x%02x ready=%u contention=%u "
+				"taskset=0x%x readable=%u taskWid=%u taskAny{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x} "
+				"current=[%x,%x,%x,%x,%x,%x,%x,%x] pc=[%x,%x,%x,%x,%x,%x,%x,%x]",
+				wid, stateBefore, statusBefore, eventBefore, knownSpus, activeSpus,
+				+spurs->sysSrvMsgUpdateWorkload.load(), +spurs->sysSrvMessage.load(),
+				+spurs->readyCount(wid).load(), +spurs->wklCurrentContention[wid],
+				tasksetAddr, tasksetReadable ? 1u : 0u, tasksetWid,
+				taskRunning, taskReady, taskPending, taskWaiting, taskEnabled, taskSignalled,
+				currentIds[0], currentIds[1], currentIds[2], currentIds[3],
+				currentIds[4], currentIds[5], currentIds[6], currentIds[7],
+				pcs[0], pcs[1], pcs[2], pcs[3], pcs[4], pcs[5], pcs[6], pcs[7]);
+		}
+
+		return CELL_OK;
+	}
+
+	cellSpurs.error("Thor TWC SHUTDOWN RECONCILE: wid=%u status=0x%02x->0x%02x known=0x%02x active=0x%02x "
+		"complete=%u event=0x%02x current=[%x,%x,%x,%x,%x,%x,%x,%x] pc=[%x,%x,%x,%x,%x,%x,%x,%x]",
+		wid, statusBefore, statusAfter, knownSpus, activeSpus, completed ? 1u : 0u, eventAfter,
+		currentIds[0], currentIds[1], currentIds[2], currentIds[3],
+		currentIds[4], currentIds[5], currentIds[6], currentIds[7],
+		pcs[0], pcs[1], pcs[2], pcs[3], pcs[4], pcs[5], pcs[6], pcs[7]);
+
+	if (completed && sendEvent && sys_event_port_send(spurs->eventPort, 0, 0, (1u << 31) >> wid))
+	{
+		return CELL_SPURS_CORE_ERROR_STAT;
+	}
+
+	return CELL_OK;
+}
+
 /// Wait for workload shutdown
 s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 {
@@ -2674,6 +3366,11 @@ s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, 
 
 	if (spurs->exception)
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
+
+	if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid))
+	{
+		return rc;
+	}
 
 	auto& info = spurs->wklSyncInfo(wid);
 
@@ -2706,7 +3403,45 @@ s32 cellSpursWaitForWorkloadShutdown(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, 
 
 	if (wait_sema)
 	{
-		ensure(sys_semaphore_wait(ppu, static_cast<u32>(info.sem), 0) == 0);
+		const bool retry_transformers_shutdown = get_thor_hle_spurs_kernel_enabled() &&
+			Emu.GetTitleID() == "BLUS30357" && wid == 7;
+
+		if (!retry_transformers_shutdown)
+		{
+			ensure(sys_semaphore_wait(ppu, static_cast<u32>(info.sem), 0) == 0);
+		}
+		else
+		{
+			// The first reconciliation can run while the last task is still
+			// leaving workload 7. Retry after a short wait. Each reconciliation
+			// keeps the status bit for an active or unknown SPU.
+			constexpr u64 retry_us = 20'000;
+			u32 retries = 0;
+
+			for (;;)
+			{
+				const auto wait_result = sys_semaphore_wait(ppu, static_cast<u32>(info.sem), retry_us);
+
+				if (wait_result == CELL_OK)
+				{
+					break;
+				}
+
+				ensure(wait_result + 0u == CELL_ETIMEDOUT);
+
+				const bool first_retry = retries++ == 0;
+
+				if (first_retry)
+				{
+					cellSpurs.error("Thor TWC SHUTDOWN WAIT RETRY: wid=%u timeout_us=%llu", wid, retry_us);
+				}
+
+				if (const s32 rc = thor_reconcile_transformers_shutdown(ppu, spurs, wid, first_retry))
+				{
+					return rc;
+				}
+			}
+		}
 	}
 
 	// Reverified
@@ -2780,7 +3515,7 @@ s32 cellSpursRemoveWorkload(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 
 s32 cellSpursWakeUp(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 {
-	cellSpurs.warning("cellSpursWakeUp(spurs=*0x%x)", spurs);
+	cellSpurs.trace("cellSpursWakeUp(spurs=*0x%x)", spurs);
 
 	if (!spurs)
 	{
@@ -2810,7 +3545,12 @@ s32 cellSpursWakeUp(ppu_thread& ppu, vm::ptr<CellSpurs> spurs)
 /// Send a workload signal
 s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 wid)
 {
-	cellSpurs.warning("cellSpursSendWorkloadSignal(spurs=*0x%x, wid=%d)", spurs, wid);
+	static std::atomic<u32> s_thor_signal_calls{0};
+	const u32 thor_call_index = s_thor_signal_calls.fetch_add(1);
+	if (thor_call_index < 8)
+	{
+		cellSpurs.warning("cellSpursSendWorkloadSignal(spurs=*0x%x, wid=%d)", spurs, wid);
+	}
 
 	if (!spurs)
 	{
@@ -2827,25 +3567,51 @@ s32 cellSpursSendWorkloadSignal(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 w
 		return CELL_SPURS_POLICY_MODULE_ERROR_INVAL;
 	}
 
+	// Keep rejection logs because an early return can prevent workload dispatch.
 	if (!(spurs->wklEnabled.load() & (0x80000000u >> wid)))
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: not enabled (wklEnabled=0x%x)", wid, +spurs->wklEnabled);
 		return CELL_SPURS_POLICY_MODULE_ERROR_SRCH;
 	}
 
 	if (spurs->exception)
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: exception set", wid);
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
 	if (spurs->wklState(wid) != SPURS_WKL_STATE_RUNNABLE)
 	{
+		cellSpurs.error("Thor signal wid=%u REJECTED: state=%u not RUNNABLE", wid, +spurs->wklState(wid));
 		return CELL_SPURS_POLICY_MODULE_ERROR_STAT;
 	}
 
-	vm::light_op<true>(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2, [&](atomic_be_t<u16>& sig)
+	// Publish the signal through the reservation-aware guest-memory helper.
+	// A direct member atomic can set the bit without notifying an SPU that waits
+	// for a reservation loss. In that case, a new workload runs only when an SPU
+	// polls by chance. The upstream RPCS3 path uses light_op<true> so the write
+	// also wakes reservation waiters.
+	//
+	// This matters because it is the ONLY term that can start a taskset workload
+	// here: the gate is (wklFlag || wklSignal || readyCount) and the other two are
+	// dead - flag reads 0xFFFFFFFF and readyCount is 0.
+	u16 thor_inside = 0;
+	vm::light_op<true>(wid < CELL_SPURS_MAX_WORKLOAD ? spurs->wklSignal1 : spurs->wklSignal2, [&](atomic_be_t<u16>& data)
 		{
-			sig |= 0x8000 >> (wid % 16);
+			data |= 0x8000 >> (wid % 16);
+			thor_inside = data;
 		});
+
+	// The selector can consume the signal before this PPU thread reads it back.
+	// Keep only a bounded startup record. The render path calls this function
+	// thousands of times and success logging can change timing and temperature.
+	if (thor_call_index < 8)
+	{
+		cellSpurs.error("Thor signal wid=%u: inside=0x%x readback=0x%x addr=0x%x sig2=0x%x enabled=0x%x ready=%u state=%u",
+			wid, thor_inside, +spurs->wklSignal1.load(), spurs.addr(),
+			+spurs->wklSignal2.load(), +spurs->wklEnabled,
+			+spurs->wklReadyCount1[wid % CELL_SPURS_MAX_WORKLOAD], +spurs->wklState(wid));
+	}
 
 	return CELL_OK;
 }
@@ -3368,16 +4134,27 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 		return CELL_SPURS_TASK_ERROR_ALIGN;
 	}
 
-	if (auto dir = eventFlag->direction; dir != CELL_SPURS_EVENT_FLAG_SPU2PPU && dir != CELL_SPURS_EVENT_FLAG_ANY2ANY)
+	if (auto dir = eventFlag->direction; dir != CELL_SPURS_EVENT_FLAG_PPU2SPU && dir != CELL_SPURS_EVENT_FLAG_ANY2ANY)
 	{
 		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	// Does the title wake its parked task through an event flag?
+	if (thor_spurs_probe_enabled())
+	{
+		static std::atomic<u32> s_efs{0};
+
+		if (const u32 n = s_efs++; n < 8 || (n & 0xFF) == 0)
+		{
+			cellSpurs.error("Thor EFSET #%u: eventFlag=0x%x bits=0x%x direction=%u", n, eventFlag.addr(), bits, eventFlag->direction);
+		}
 	}
 
 	bool send;
 	u8 ppuWaitSlot;
 	u16 ppuEvents;
 	u16 pendingRecv;
-	u16 pendingRecvTaskEvents[16];
+	u16 pendingRecvTaskEvents[16]{};
 
 	ppu.state += cpu_flag::wait;
 
@@ -3425,7 +4202,8 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 					{
 						eventsToClear |= spuTaskRelevantEvents;
 						pendingRecv |= 1 << j;
-						pendingRecvTaskEvents[j] = spuTaskRelevantEvents;
+						// The low bit maps to wait slot 15, and the high bit maps to slot 0.
+						pendingRecvTaskEvents[i] = spuTaskRelevantEvents;
 					}
 				}
 
@@ -3475,13 +4253,45 @@ s32 cellSpursEventFlagSet(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag
 					*taskset = vm::cast(eventFlag->addr);
 				}
 
-				auto rc = _cellSpursSendSignal(ppu, *taskset, eventFlag->waitingTaskId[i]);
+				const s32 rc = _cellSpursSendSignal(ppu, *taskset, eventFlag->waitingTaskId[i]);
 				if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL || rc + 0u == CELL_SPURS_TASK_ERROR_STAT)
 				{
 					return CELL_SPURS_TASK_ERROR_FATAL;
 				}
 
-				ensure(rc == CELL_OK);
+				// Sony libsre at 0x16010 sends other results to its diagnostic helper.
+				// It then returns CELL_OK. Do not stop the PPU thread for SRCH.
+				if (rc != CELL_OK && thor_spurs_probe_enabled())
+				{
+					static std::atomic<u32> s_signal_errors{0};
+
+					if (const u32 n = s_signal_errors++; n < 8 || (n & 0xff) == 0)
+					{
+						u32 running = 0;
+						u32 ready = 0;
+						u32 pending_ready = 0;
+						u32 waiting = 0;
+						u32 enabled = 0;
+						u32 signalled = 0;
+						const auto ts = *taskset;
+
+						if (ts)
+						{
+							const auto rd = [&](u32 off) { return vm::_ref<be_t<u32>>(ts.addr() + off); };
+							running = +rd(OFFSET_OF(CellSpursTaskset, running));
+							ready = +rd(OFFSET_OF(CellSpursTaskset, ready));
+							pending_ready = +rd(OFFSET_OF(CellSpursTaskset, pending_ready));
+							waiting = +rd(OFFSET_OF(CellSpursTaskset, waiting));
+							enabled = +rd(OFFSET_OF(CellSpursTaskset, enabled));
+							signalled = +rd(OFFSET_OF(CellSpursTaskset, signalled));
+						}
+
+						cellSpurs.error("Thor EFSET signal #%u: slot=%d taskset=0x%x taskId=%u rc=0x%x "
+							"state{run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x sig=%08x}",
+							n, i, ts.addr(), eventFlag->waitingTaskId[i], rc,
+							running, ready, pending_ready, waiting, enabled, signalled);
+					}
+				}
 			}
 		}
 	}
@@ -3516,14 +4326,52 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 		return CELL_SPURS_TASK_ERROR_STAT;
 	}
 
+	const u16 requested_mask = *mask;
+	static std::atomic<u32> s_edge_wait_trace_count{0};
+	static std::atomic<u32> s_fmod_wait_trace_count{0};
+	const bool thor_edge_wait = thor_transformers_edge_event_wait_trace() && eventFlag.addr() == 0x01e54800u;
+	const u32 thor_edge_wait_index = thor_edge_wait ? s_edge_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
+	const u32 thor_edge_wait_sequence = thor_edge_wait_index + 1;
+	const bool thor_log_edge_wait = thor_edge_wait &&
+		(thor_edge_wait_index < 4 || (thor_edge_wait_index < 2048 && (thor_edge_wait_index & 0x7f) == 0));
+	const bool thor_fmod_trace = thor_transformers_fmod_event_wait_trace();
+	const bool thor_fmod_wait = (thor_fmod_trace || thor_transformers_fmod_event_interp()) && block &&
+		static_cast<u32>(ppu.lr) == 0x00e2bab4u;
+	const u32 thor_fmod_wait_index = thor_fmod_wait
+		? s_fmod_wait_trace_count.fetch_add(1, std::memory_order_relaxed) : 0;
+	const u32 thor_fmod_wait_sequence = thor_fmod_wait_index + 1;
+	const bool thor_log_fmod_wait = thor_fmod_trace && thor_fmod_wait && thor_fmod_wait_index < 16;
+	const u32 thor_fmod_taskset = thor_fmod_wait && !eventFlag->isIwl
+		? static_cast<u32>(+eventFlag->addr) : 0;
+	const bool thor_fmod_taskset_ok = thor_fmod_taskset &&
+		vm::check_addr(thor_fmod_taskset, 0, 0xa0);
+
 	if (eventFlag->ctrl.raw().ppuWaitMask || eventFlag->ctrl.raw().ppuPendingRecv)
 	{
+		if (thor_edge_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor EDGE EFWAIT BUSY #%u: flag=0x%x request=0x%04x mode=%u block=%u "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
+		if (thor_log_fmod_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor FMOD EFWAIT BUSY #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x "
+				"request=0x%04x mode=%u block=%u state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, mode, block, +ctrl.events, +ctrl.ppuWaitMask,
+				+ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
 		return CELL_SPURS_TASK_ERROR_BUSY;
 	}
 
-	bool recv;
-	s32 rc;
-	u16 receivedEvents;
+	const auto thor_ctrl_before = eventFlag->ctrl.raw();
+	bool recv = false;
+	s32 rc = CELL_OK;
+	u16 receivedEvents = 0;
 	vm::atomic_op(eventFlag->ctrl, [eventFlag, mask, mode, block, &recv, &rc, &receivedEvents](CellSpursEventFlag::ControlSyncVar& ctrl)
 		{
 			u16 relevantEvents = ctrl.events & *mask;
@@ -3619,11 +4467,89 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			rc = CELL_OK;
 		});
 
+	if (thor_log_edge_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor EDGE EFWAIT ARM #%u: flag=0x%x request=0x%04x mode=%u block=%u recv=%u rc=0x%x "
+			"pre{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"post{events=%04x wait=%04x slotmode=%02x pending=%u} queue=0x%x port=%u",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block, recv, static_cast<u32>(rc),
+			+thor_ctrl_before.events, +thor_ctrl_before.ppuWaitMask,
+			+thor_ctrl_before.ppuWaitSlotAndMode, +thor_ctrl_before.ppuPendingRecv,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv,
+			+eventFlag->eventQueueId, +eventFlag->spuPort);
+	}
+	if (thor_edge_wait && rc == CELL_OK)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		thor::spurs_event_wait_arm(thor_edge_wait_sequence, ppu.id, requested_mask, mode,
+			+ctrl.ppuWaitSlotAndMode >> 4, get_system_time());
+	}
+	else if (thor_edge_wait)
+	{
+		cellSpurs.error("Thor EDGE EFWAIT ERROR #%u: flag=0x%x request=0x%04x mode=%u block=%u rc=0x%x",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, mode, block, static_cast<u32>(rc));
+	}
+	if (thor_log_fmod_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		u32 running = 0;
+		u32 ready = 0;
+		u32 pending_ready = 0;
+		u32 enabled = 0;
+		u32 signalled = 0;
+		u32 waiting = 0;
+		u32 wid = 0xffffffffu;
+		u32 task0_elf = 0;
+
+		if (thor_fmod_taskset_ok)
+		{
+			const auto rd = [&](u32 off) { return +vm::_ref<be_t<u32>>(thor_fmod_taskset + off); };
+			running = rd(OFFSET_OF(CellSpursTaskset, running));
+			ready = rd(OFFSET_OF(CellSpursTaskset, ready));
+			pending_ready = rd(OFFSET_OF(CellSpursTaskset, pending_ready));
+			enabled = rd(OFFSET_OF(CellSpursTaskset, enabled));
+			signalled = rd(OFFSET_OF(CellSpursTaskset, signalled));
+			waiting = rd(OFFSET_OF(CellSpursTaskset, waiting));
+			wid = rd(OFFSET_OF(CellSpursTaskset, wid));
+			task0_elf = static_cast<u32>(+vm::_ref<be_t<u64>>(thor_fmod_taskset + 0x90));
+		}
+
+		cellSpurs.error("Thor FMOD EFWAIT ARM #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x mapped=%u "
+			"request=0x%04x mode=%u block=%u recv=%u rc=0x%x "
+			"pre{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"post{events=%04x wait=%04x slotmode=%02x pending=%u} "
+			"queue=0x%x port=%u direction=%u clear=%u "
+			"task{run=%08x ready=%08x pready=%08x enabled=%08x sig=%08x wait=%08x wid=%u elf0=0x%08x}",
+			thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+			thor_fmod_taskset_ok, requested_mask, mode, block, recv, static_cast<u32>(rc),
+			+thor_ctrl_before.events, +thor_ctrl_before.ppuWaitMask,
+			+thor_ctrl_before.ppuWaitSlotAndMode, +thor_ctrl_before.ppuPendingRecv,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv,
+			+eventFlag->eventQueueId, +eventFlag->spuPort, +eventFlag->direction, +eventFlag->clearMode,
+			running, ready, pending_ready, enabled, signalled, waiting, wid, task0_elf);
+	}
+	if (thor_fmod_wait && rc == CELL_OK)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		thor::fmod_event_wait_arm(thor_fmod_wait_sequence, ppu.id, eventFlag.addr(),
+			thor_fmod_taskset, +eventFlag->eventQueueId, +eventFlag->spuPort,
+			requested_mask, mode, +ctrl.ppuWaitSlotAndMode >> 4, get_system_time());
+	}
+	else if (thor_log_fmod_wait)
+	{
+		cellSpurs.error("Thor FMOD EFWAIT ERROR #%u: ppu=0x%x lr=0x%08x flag=0x%x taskset=0x%x "
+			"request=0x%04x mode=%u block=%u rc=0x%x",
+			thor_fmod_wait_index, ppu.id, static_cast<u32>(ppu.lr), eventFlag.addr(), thor_fmod_taskset,
+			requested_mask, mode, block, static_cast<u32>(rc));
+	}
+
 	if (rc != CELL_OK)
 	{
 		return rc;
 	}
 
+	u32 received_slot = 0xffffffffu;
 	if (recv)
 	{
 		// Block till something happens
@@ -3636,7 +4562,34 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 			i = eventFlag->ctrl.raw().ppuWaitSlotAndMode >> 4;
 		}
 
-		*mask = eventFlag->pendingRecvTaskEvents[i];
+		received_slot = static_cast<u32>(i);
+		receivedEvents = eventFlag->pendingRecvTaskEvents[i];
+		if (thor_edge_wait)
+		{
+			thor::spurs_event_wait_wake(received_slot, receivedEvents, get_system_time());
+		}
+		if (thor_fmod_wait)
+		{
+			thor::fmod_event_wait_wake(received_slot, receivedEvents, get_system_time());
+		}
+		if (thor_log_fmod_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor FMOD EFWAIT WAKE #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+				"request=0x%04x slot=%u slotEvents=0x%04x "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, received_slot, receivedEvents,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
+		if (thor_log_edge_wait)
+		{
+			const auto ctrl = eventFlag->ctrl.raw();
+			cellSpurs.error("Thor EDGE EFWAIT WAKE #%u: flag=0x%x request=0x%04x slot=%u slotEvents=0x%04x "
+				"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, received_slot, receivedEvents,
+				+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+		}
 		vm::atomic_op(eventFlag->ctrl, [](CellSpursEventFlag::ControlSyncVar& ctrl)
 			{
 				ctrl.ppuPendingRecv = 0;
@@ -3644,13 +4597,58 @@ s32 _spurs::event_flag_wait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFl
 	}
 
 	*mask = receivedEvents;
+	if (thor_edge_wait)
+	{
+		const bool mismatch = mode == CELL_SPURS_EVENT_FLAG_OR
+			? (receivedEvents & requested_mask) == 0
+			: receivedEvents != requested_mask;
+		thor::spurs_event_wait_finish(thor_edge_wait_sequence, receivedEvents,
+			mismatch);
+		if (mismatch)
+		{
+			cellSpurs.error("Thor EDGE EFWAIT MISMATCH #%u: flag=0x%x request=0x%04x received=0x%04x recv=%u slot=%u",
+				thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot);
+		}
+	}
+	if (thor_fmod_wait)
+	{
+		const bool mismatch = mode == CELL_SPURS_EVENT_FLAG_OR
+			? (receivedEvents & requested_mask) == 0
+			: receivedEvents != requested_mask;
+		thor::fmod_event_wait_finish(thor_fmod_wait_sequence, receivedEvents, mismatch);
+		if (mismatch)
+		{
+			cellSpurs.error("Thor FMOD EFWAIT MISMATCH #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+				"request=0x%04x received=0x%04x recv=%u slot=%u",
+				thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+				requested_mask, receivedEvents, recv, received_slot);
+		}
+	}
+	if (thor_log_edge_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor EDGE EFWAIT RETURN #%u: flag=0x%x request=0x%04x received=0x%04x recv=%u slot=%u rc=0x%x "
+			"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+			thor_edge_wait_index, eventFlag.addr(), requested_mask, receivedEvents, recv, received_slot, 0u,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+	}
+	if (thor_log_fmod_wait)
+	{
+		const auto ctrl = eventFlag->ctrl.raw();
+		cellSpurs.error("Thor FMOD EFWAIT RETURN #%u: ppu=0x%x flag=0x%x taskset=0x%x "
+			"request=0x%04x received=0x%04x recv=%u slot=%u rc=0x%x "
+			"state{events=%04x wait=%04x slotmode=%02x pending=%u}",
+			thor_fmod_wait_index, ppu.id, eventFlag.addr(), thor_fmod_taskset,
+			requested_mask, receivedEvents, recv, received_slot, 0u,
+			+ctrl.events, +ctrl.ppuWaitMask, +ctrl.ppuWaitSlotAndMode, +ctrl.ppuPendingRecv);
+	}
 	return CELL_OK;
 }
 
 /// Wait for SPURS event flag
 s32 cellSpursEventFlagWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, vm::ptr<u16> mask, u32 mode)
 {
-	cellSpurs.warning("cellSpursEventFlagWait(eventFlag=*0x%x, mask=*0x%x, mode=%d)", eventFlag, mask, mode);
+	cellSpurs.trace("cellSpursEventFlagWait(eventFlag=*0x%x, mask=*0x%x, mode=%d)", eventFlag, mask, mode);
 
 	return _spurs::event_flag_wait(ppu, eventFlag, mask, mode, 1);
 }
@@ -3658,7 +4656,7 @@ s32 cellSpursEventFlagWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFla
 /// Check SPURS event flag
 s32 cellSpursEventFlagTryWait(ppu_thread& ppu, vm::ptr<CellSpursEventFlag> eventFlag, vm::ptr<u16> mask, u32 mode)
 {
-	cellSpurs.warning("cellSpursEventFlagTryWait(eventFlag=*0x%x, mask=*0x%x, mode=0x%x)", eventFlag, mask, mode);
+	cellSpurs.trace("cellSpursEventFlagTryWait(eventFlag=*0x%x, mask=*0x%x, mode=0x%x)", eventFlag, mask, mode);
 
 	return _spurs::event_flag_wait(ppu, eventFlag, mask, mode, 0);
 }
@@ -3877,10 +4875,24 @@ s32 _cellSpursLFQueueInitialize(vm::ptr<void> pTasksetOrSpurs, vm::ptr<CellSpurs
 	return SyncErrorToSpursError(cellSyncLFQueueInitialize(pQueue, buffer, size, depth, direction, pTasksetOrSpurs));
 }
 
-s32 _cellSpursLFQueuePushBody()
+// Defined in cellSync.cpp and not declared in cellSync.h, so declare them here.
+// Signatures copied verbatim from cellSync.cpp:1117 and :1418.
+error_code _cellSyncLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking);
+error_code _cellSyncLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking);
+
+// The SPURS LFQueue body uses the cellSync reserve, copy, and complete sequence.
+// Sony's wrapper supplies a SPURS notifier to the complete call. The HLE
+// complete path recognizes the SPURS tag in eaSignal and delivers the packed
+// workload and task token through thor_spurs_notify_lfq.
+//
+// This title exercises BOTH queue families: the log shows
+// cellSpursLFQueueAttachLv2EventQueue and cellSpursQueueAttachLv2EventQueue
+// called from different sites within 30 ms of each other.
+s32 _cellSpursLFQueuePushBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::cptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.trace("_cellSpursLFQueuePushBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePushBody(ppu, queue, buffer, isBlocking)));
 }
 
 s32 cellSpursLFQueueAttachLv2EventQueue(vm::ptr<CellSyncLFQueue> queue)
@@ -3895,10 +4907,11 @@ s32 cellSpursLFQueueDetachLv2EventQueue(vm::ptr<CellSyncLFQueue> queue)
 	return CELL_OK;
 }
 
-s32 _cellSpursLFQueuePopBody()
+s32 _cellSpursLFQueuePopBody(ppu_thread& ppu, vm::ptr<CellSyncLFQueue> queue, vm::ptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.trace("_cellSpursLFQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	return SyncErrorToSpursError(static_cast<s32>(_cellSyncLFQueuePopBody(ppu, queue, buffer, isBlocking)));
 }
 
 s32 cellSpursLFQueueGetTasksetAddress()
@@ -3907,34 +4920,1232 @@ s32 cellSpursLFQueueGetTasksetAddress()
 	return CELL_OK;
 }
 
-s32 _cellSpursQueueInitialize()
+// THE SPURS QUEUE, IMPLEMENTED FROM THE FIRMWARE.
+//
+// These were UNIMPLEMENTED_FUNC stubs taking NO PARAMETERS, here and in upstream
+// RPCS3, and CellSpursQueue was defined nowhere. A title that pushes work gets
+// CELL_OK, nothing is queued, the consuming task never runs, and it hangs - which
+// is exactly what Transformers (BLUS30357) does at emulated 0:00:09 the moment
+// libsre is forced to HLE.
+//
+// Layout, error codes and protocol were recovered from the decrypted libsre.sprx
+// with Ghidra (see AGENTS.md). Every validation constant below is the one the
+// firmware actually returns:
+//
+//     queue == 0                  -> 0x80410911  CELL_SPURS_TASK_ERROR_NULL_POINTER
+//     queue & 0x7f                -> 0x80410910  CELL_SPURS_TASK_ERROR_ALIGN
+//     direction != 2 (on push)    -> 0x80410909  CELL_SPURS_TASK_ERROR_PERM
+//
+// The firmware push is `lwarx` on the tail at 0x04 against head at 0x00 and depth
+// at 0x0c. Here the same invariant is kept with an atomic compare-exchange on the
+// tail, which is the equivalent on a host that is not executing PPC reservations.
+//
+// KNOWN SIMPLIFICATION, stated rather than hidden: the firmware BLOCKS on
+// sys_lwmutex/sys_lwcond when the ring is full, and this returns
+// CELL_SPURS_TASK_ERROR_BUSY instead. A caller that fills the queue therefore
+// sees a different behaviour from hardware. Implementing the block needs the
+// lwmutex/lwcond pair the queue was created with, which _cellSpursQueueInitialize
+// does not obviously store in the 0x70 bytes recovered so far.
+static bool spurs_queue_valid(vm::ptr<CellSpursQueue> queue, s32& error)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	if (!queue)
+	{
+		error = CELL_SPURS_TASK_ERROR_NULL_POINTER;
+		return false;
+	}
+
+	if (queue.addr() % 128)
+	{
+		error = CELL_SPURS_TASK_ERROR_ALIGN;
+		return false;
+	}
+
+	return true;
+}
+
+// SIGNATURE FROM THE FIRMWARE PROLOGUE, NOT FROM THE LFQueue ANALOGY.
+//
+// The first version copied _cellSpursLFQueueInitialize's shape and put the queue
+// in argument 2. That was WRONG and it corrupted memory: argument 2 is the
+// TASKSET, so writing 0x70 bytes of queue there zeroed CellSpursTaskset::spurs at
+// 0x60, and the title then died in _spurs::task_start with
+// `Verification failed (object: 0x0)` because cellSpursWakeUp got a null spurs.
+//
+// libsre 0x164c0 settles the mapping. PPC64 passes args in r3..r10:
+//
+//     lwz r0,0x74(r4)          ; r4->0x74 is CellSpursTaskset::wid
+//     ld  r3,0x60(r4)          ; r4->0x60 is CellSpursTaskset::spurs   -> r4 = taskset
+//     rlwinm r0,r5,0,0x19,0x1f ; r5 & 0x7f  -> r5 = queue, 128-byte aligned
+//     rlwinm r0,r6,0,0x1c,0x1f ; r6 & 0x0f  -> r6 = buffer, 16-byte aligned
+//     cmplwi r7,0x4000         ; r7 = size, capped at 0x4000
+//     or  r10,r9,r9 ... stw r10,0x1c(r5)   ; r9 = direction
+//
+// and the epilogue stores `taskset->spurs` (loaded into r3) at queue+0x68, with
+// the taskset itself at queue+0x60. `cmpwi cr6,r4,0x0` plus the branch at 0x1654c
+// is the "taskset OR spurs" path: when the taskset argument is null the spurs
+// argument is used instead.
+s32 _cellSpursQueueInitialize(vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset> taskset, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 size, u32 depth, u32 direction)
+{
+	// WHICH QUEUES EXIST AND WHICH TASKSET OWNS EACH.
+	// Only 0x10364100 ever takes a push; a second queue bound to 0x101b4e80
+	// would be the wake path its parked task is waiting on.
+	cellSpurs.error("Thor QUEUEINIT: queue=0x%x taskset=0x%x depth=%u size=%u dir=%u",
+		queue.addr(), taskset.addr(), depth, size, direction);
+
+	cellSpurs.warning("_cellSpursQueueInitialize(spurs=*0x%x, taskset=*0x%x, queue=*0x%x, buffer=*0x%x, size=%d, depth=%d, direction=%d)",
+		spurs, taskset, queue, buffer, size, depth, direction);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer || !depth || (!taskset && !spurs))
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// r6 & 0x0f: the buffer must be 16-byte aligned.
+	if (buffer.addr() % 16)
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	// cmplwi cr7,r7,0x4000
+	if (size > 0x4000)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	// Mirrors the firmware's store order at libsre 0x165c4.
+	// ZERO THE WHOLE STRUCTURE FIRST.
+	//
+	// This used to set ten named fields and leave `unk20` - the 64 bytes at
+	// 0x20..0x5F - holding whatever the guest allocator last left there. The
+	// consumer READS that span. From the SPU-side pop disassembly:
+	//
+	//     lqa      r10,0xa0        ; the quadword at queue+0x20
+	//     rotqbyi  r10,r10,0xd     ; select the byte at queue+0x2D
+	//     ceqbi    r77,r10,0x0     ; and branch on whether it is zero
+	//
+	// so an uninitialised byte there steers the consumer down a path the
+	// producer never satisfies, every single call. Measured symptom: the ring
+	// fills to used=256 and `head` never moves off its first few dozen entries
+	// while the task polls, yields and backs off forever.
+	//
+	// Zeroing the whole 0x78 before writing the named fields is what the
+	// firmware does and costs nothing here.
+	std::memset(vm::base(queue.addr()), 0, sizeof(CellSpursQueue));
+
+	queue->head.release(0);
+	queue->tail.release(0);
+	queue->entry_size = size;
+	queue->depth = depth;
+	queue->buffer.set(buffer.addr());
+	// 0x18 IS THE "NO EVENT QUEUE ATTACHED" SENTINEL, AND IT IS -1, NOT 0.
+	//
+	// cellSpursQueueAttachLv2EventQueue (libsre 0x16778) refuses to attach unless
+	// this field already reads -1:
+	//
+	//     lwz   r0,0x1c(r3)   ; direction must be non-zero else 0x80410909 PERM
+	//     lwz   r0,0x18(r3)   ; cmpwi r0,-0x1 ; bne -> 0x8041090f STAT
+	//     ld    r0,0x68(r3)   ; spurs must be non-null else 0x80410902 INVAL
+	//
+	// Initialising it to 0 would make every attach fail with STAT.
+	queue->x18 = 0xFFFFFFFF;
+	queue->direction = direction;
+	// Not written by the firmware's store run at 0x165c4, but this memory comes
+	// from the guest and is not zeroed for us. 0x74 in particular MUST start at 0
+	// so a push before any attach cannot wait on a stale event queue id.
+	queue->x70 = 0;
+	// LEAVE AN ALREADY-BOUND EVENT QUEUE ALONE.
+	//
+	// This title calls Attach at 0:00:09.449 and Initialize at 0:00:09.561 -
+	// initialise AFTER attach, on the SAME queue object (0x1030e400, confirmed by
+	// logging all three call sites). Zeroing here throws away the id the blocking
+	// path needs. An earlier guard tried to test x18 for this and was useless,
+	// because Initialize sets x18 to the -1 sentinel a few lines above, making the
+	// condition always true.
+	if (!queue->event_queue_id)
+	{
+		queue->event_queue_id = 0;
+	}
+	// std r11,0x60(r5) = the taskset, std r3,0x68(r5) = taskset->spurs (r3 is
+	// reloaded from r4->0x60 at 0x1655c). When no taskset is given the spurs
+	// argument stands in, which is the branch at 0x1654c.
+	queue->taskset.set(taskset.addr());
+	if (taskset)
+	{
+		queue->spurs.set(taskset->spurs.addr());
+	}
+	else
+	{
+		queue->spurs.set(spurs.addr());
+	}
+
+	// Rearm this queue's first startup wait when the title creates a PhysX reply
+	// queue. The task ELF is not published until cellSpursCreateTask, which
+	// follows this initializer. The pop path checks that ELF before it waits.
+	if (thor_transformers_physx_queue_wait() && direction == 1 && depth == 128 && size == 16)
+	{
+		thor_transformers_physx_queue_wait_rearm(queue.addr());
+	}
+
 	return CELL_OK;
 }
 
-s32 cellSpursQueuePopBody()
+// THE THIRD ARGUMENT IS A TASK ID, NOT A BLOCKING FLAG.
+//
+// libsre 0x169f8 keeps it in r31 and the tail masks it to 8 bits to signal the
+// consumer, so naming it isBlocking (as the stub did) is misleading.
+// THE RING IS WRAPPED, SO PRINT THE WRAPPED COUNT.
+//
+// The probe used to print `tail - head` raw, which underflows the moment tail
+// wraps past head and reported `used=4294967295` for a ring holding 255
+// entries. That reads as corruption and is only a bad subtraction; the claim
+// loop below always used the firmware formula. Same arithmetic as
+// cellSpursQueueSize (libsre 0x168fc).
+// THE GUEST CONSUMER COUNTS MONOTONICALLY. Measured 2026-08-26.
+//
+// With the taskset capture fixed (yield_redispatch_fix) the SPU consumer runs
+// and advances `head` for the first time, and it goes PAST depth:
+//
+//     head=64  tail=64   head=128 tail=128   head=190 tail=192
+//     head=257 tail=0    depth=256
+//
+// head=257 cannot be an index modulo 256. The consumer keeps a monotonic
+// counter and takes the buffer slot as `n % depth`. Our push wrapped tail with
+// `% depth`, so the two sides disagreed the moment tail passed 255:
+// `tail + depth - head` = 0 + 256 - 257 underflows to 4294967295, `used + 1`
+// wraps to 0, the full test never fires, and the producer floods the ring
+// (8.3 million push calls in one run).
+//
+// RETRACTS the earlier note that monotonic counters break the consumer. That
+// was measured when the consumer was CAPTURED inside the taskset and had
+// drained only ~40 entries, so "tail ran to 302 while the consumer saw empty
+// forever" was the capture, not the arithmetic. With the SPU actually running,
+// head tracks tail within a couple of entries.
+//
+// NOTE: monotonic counters fix the underflow, but the reserved slot STAYS.
+// The consumer reduces the counters modulo depth, where used == depth is
+// congruent to 0 and reads as empty. See the full test below.
+//
+//   debug.rpcsx.thor.queue_monotonic_fix = 0  restore the modulo-depth tail
+// PUBLISH THE PAYLOAD BEFORE THE COUNTER, NOT AFTER.
+//
+// Both producer paths advanced `tail` and only THEN memcpy'd the entry:
+//
+//     if (queue->tail.compare_and_swap_test(tail, ...)) { slot = ...; break; }
+//     ...
+//     std::memcpy(buffer + slot * entry_size, src, entry_size);
+//
+// The consumer gates on `tail`, so between those two statements it can dequeue
+// a slot whose payload has not been written and read whatever was there before.
+// Measured consequence: the ring drains correctly (head tracks tail, used=1),
+// pops succeed, and the SPU tasks produce NOTHING - put_census bucket c0 (RSX
+// memory) is empty under HLE against 641,379 writes under LLE, and bucket 10
+// (the title's heap) gets 7 writes out of 2000 against LLE's 17.8 million.
+//
+// Writing the payload first makes the counter mean what the consumer assumes it
+// means: "this slot is complete".
+//
+// BLUS30357 uses this corrected route by default. An explicit property value
+// remains available for controlled comparisons:
+//
+//   debug.rpcsx.thor.queue_publish_order = 0   use the old publish order
+//   debug.rpcsx.thor.queue_publish_order = 1   use the corrected publish order
+static bool thor_queue_publish_order() noexcept
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.queue_publish_order", v) > 0 && v[0])
+		{
+			return v[0] != '0';
+		}
+		return Emu.GetTitleID() == "BLUS30357";
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+// Keep queue tracing out of the producer hot path unless a measurement needs
+// it. A fast consumer can process thousands of entries per second.
+static bool thor_queue_diagnostics() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.queue_diagnostics", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static bool thor_queue_monotonic_fix() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.queue_monotonic_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
+// THE COUNTERS RUN MODULO 2*DEPTH. Measured 2026-08-26, and it is decisive.
+//
+// With the taskset capture fixed the consumer runs, and the ring drains
+// perfectly for 511 entries - head tracking tail exactly:
+//
+//     head=64  tail=64  used=0
+//     head=128 tail=128 used=0
+//     head=511 tail=512 used=1
+//
+// and then head goes 511 -> 2. It WRAPPED, at 512, which is 2*depth for
+// depth=256. That is the double-range ring: keep the indices modulo 2N and the
+// buffer slot modulo N, and full (indices differ by N) stays distinguishable
+// from empty (indices equal) WITHOUT giving up a slot.
+//
+// This supersedes two earlier readings, both taken while the consumer was
+// captured inside the taskset and barely running:
+//
+//   - "indices are modulo depth"  - wrong; head legitimately reaches 257.
+//   - "indices are monotonic"     - wrong; head wraps at 512, so a monotonic
+//                                   tail runs away and used explodes past
+//                                   depth (measured head=2 tail=513 used=511).
+//
+// CLAIM THE SLOT INSIDE A RESERVATION ON THE QUEUE LINE.
+//
+// The consumer is guest SPU code and it reads this queue with GETLLAR and
+// commits with PUTLLC - a reservation on the 128 bytes at the queue base.
+// head (0x00) and tail (0x04) are in that one granule, so writing tail with a
+// bare atomic CAS kills the consumer's reservation on EVERY push. Under a
+// continuously pushing producer the consumer can never land its PUTLLC and
+// retries forever, which is the measured stall: ring full, head frozen, the
+// task yielding with a 2400-cycle backoff between attempts.
+//
+// Claiming through vm::reservation_op on the same line makes the two sides
+// interlock the way lwarx/stwcx. and GETLLAR/PUTLLC do on hardware: a push
+// that loses the race retries instead of silently stealing the line, and a
+// push that finds the ring full does NOT write, so it leaves the consumer's
+// reservation intact and lets it drain.
+//
+//   debug.rpcsx.thor.queue_reserve_fix = 0  restore the bare CAS
+// SEED THE READY COUNT WHEN A JOB CHAIN IS RUN.
+//
+// The policy module branches on POLL_STATUS_READYCOUNT at entry:
+//
+//     0222c  andi r14,r3,0x1        ; READYCOUNT
+//     02238  brhnz r12,0x000025a0   ; clear -> idle path, arm the tag event, sleep
+//
+// and our kernel sets that bit only when `readyCount > contention`. Nothing
+// ever raises a job chain's ready count: `cellSpursRunJobChain` signals and
+// wakes but sets none, and `cellSpursKickJobChain` - the API that takes a
+// numReadyCount - is never called, because this title passes
+// autoRequestSpuCount = true. With auto-request the MODULE is supposed to grow
+// its own ready count as it grabs jobs, which it cannot do while it idles.
+//
+// Matching upstream is not evidence here: upstream's HLE cellSpurs is a
+// partial port whose SPU side is entirely disabled, so its RunJobChain has
+// never had to make a real module run.
+//
+//   debug.rpcsx.thor.jobchain_readycount = N   seed N on RunJobChain (0 = off)
+// EXPERIMENT: seed the halfword the job chain policy module gates on.
+//
+// Disassembly of the real job chain policy module (see AGENTS.md, "The gate:
+// LS 0x22c8", and _research/spurs/jobchain_pm.disasm.txt):
+//
+//   22b0: wrch r25,ch21        ; GETLLAR the job chain
+//   22c0: lqr  r27,0x270       ; the fetched line at LS 0x2c80
+//   22c4: rotqbyi r26,r27,0x8  ; preferred slot <- struct +0x08..0x0b
+//   22c8: brhz r26,0x2374      ; halfword at +0x0a == 0 -> skip the grab
+//
+// 0x2368 is the ONLY PUTLLC in that region and it sits strictly inside the
+// range brhz jumps over, so while +0x0a is zero the module can never write
+// `pc` back and no job is ever grabbed.
+//
+// The firmware reads +0x08 and +0x0a as two u16 fields; RPCS3's header calls
+// the same bytes linkRegister[0], a 64-bit pointer, and NOTHING in the PPU-side
+// code writes them. They reach the SPU as zero.
+//
+// This is a probe, not a fix: it writes a nonzero value there so the branch is
+// not taken, purely to confirm that the gate is what stops the job chain. If
+// `pc` then advances and a PUTLLC on the job chain appears in the atomic
+// census, the gate is proven and the real field semantics can be worked out.
+// Default 0 = off = unchanged behaviour.
+//
+//   debug.rpcsx.thor.jobchain_grab_seed = 1   (or 16, = maxGrabbedJob)
+static u16 thor_jobchain_grab_seed() noexcept
+{
+#ifdef __ANDROID__
+	static const u16 s_n = []() noexcept -> u16
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.jobchain_grab_seed", v) <= 0 || !v[0])
+		{
+			return 0;
+		}
+
+		const long parsed = std::strtol(v, nullptr, 10);
+		return parsed > 0 && parsed < 0x10000 ? static_cast<u16>(parsed) : 0;
+	}();
+	return s_n;
+#else
+	return 0;
+#endif
+}
+
+// Publishes the "jobs available to grab" count the policy module gates on.
+//
+// MEASURED, from the census dump of the job chain before and after the module's
+// own PUTLLC at LS 0x2368:
+//
+//   before:  pc=0x01eca480  +0x08=0x0000  +0x0a=0x0001   (seeded)
+//   after:   pc=0x01eca480  +0x08=0x0001  +0x0a=0x0000
+//
+// The module took one job: it consumed +0x0a and advanced +0x08. So +0x0a is a
+// count of jobs available and +0x08 is the index of the next one. `pc` is the
+// descriptor array base and is NOT advanced per job - the index is.
+//
+// Nothing in this file ever writes +0x0a, at creation or at kick, so it reaches
+// the SPU as zero and the module never grabs anything. Seeding it at creation
+// alone yields exactly one job and then silence.
+// Dumps the memory the job chain points at.
+//
+// The grab path reads job n as a 4-byte word at jobChain + 0x14 + n*4, and in
+// the captured reservation line that whole region is zero - so forcing a grab
+// fetches a NULL job, which is why seeding the count produces a write-back but
+// no frame. This says whether the title ever wrote a descriptor list at all:
+// `pc` is the descriptor array base and `sizeJobDescriptor` its stride.
+static void thor_jobchain_dump_descriptors(vm::ptr<CellSpursJobChain> jobChain, const char* site)
+{
+	if (!jobChain)
+	{
+		return;
+	}
+
+	const u32 pc = static_cast<u32>(jobChain->pc.addr());
+	const u32 stride = jobChain->sizeJobDescriptor;
+
+	auto hexdump = [](u32 addr, u32 len) -> std::string
+	{
+		std::string out;
+
+		if (!addr || !vm::check_addr(addr, vm::page_readable, len))
+		{
+			fmt::append(out, "<unmapped>");
+			return out;
+		}
+
+		const u8* p = vm::_ptr<u8>(addr);
+
+		for (u32 i = 0; i < len; i++)
+		{
+			fmt::append(out, "%s%02x", (i && (i % 16) == 0) ? " | " : " ", p[i]);
+		}
+
+		return out;
+	};
+
+	cellSpurs.error("Thor JOBCHAIN DESC(%s): jc=0x%x pc=0x%x stride=0x%x", site, jobChain.addr(), pc, stride);
+	cellSpurs.error("Thor JOBCHAIN DESC(%s):   handles jc+0x14: %s", site, hexdump(jobChain.addr() + 0x14, 0x20));
+	cellSpurs.error("Thor JOBCHAIN DESC(%s):   at pc         : %s", site, hexdump(pc, 0x40));
+}
+
+static void thor_jobchain_publish_jobs(vm::ptr<CellSpursJobChain> jobChain, const char* site)
+{
+	const u16 seed = thor_jobchain_grab_seed();
+
+	if (!seed || !jobChain)
+	{
+		return;
+	}
+
+	const auto raw = vm::_ptr<u8>(jobChain.addr());
+	raw[0x0a] = static_cast<u8>(seed >> 8);
+	raw[0x0b] = static_cast<u8>(seed & 0xff);
+
+	cellSpurs.error("Thor JOBCHAIN PUBLISH(%s): +0x0a = 0x%04x at 0x%x (probe)", site, seed, jobChain.addr());
+}
+
+static u32 thor_jobchain_readycount() noexcept
+{
+#ifdef __ANDROID__
+	static const u32 s_n = []() noexcept -> u32
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.jobchain_readycount", v) <= 0 || !v[0])
+		{
+			return 1;
+		}
+
+		const long parsed = std::strtol(v, nullptr, 10);
+		return parsed > 0 ? static_cast<u32>(parsed) : 0;
+	}();
+	return s_n;
+#else
+	return 1;
+#endif
+}
+
+static bool thor_queue_reserve_fix() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.queue_reserve_fix", v) <= 0 || !v[0])
+		{
+			return true;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return true;
+#endif
+}
+
+static u32 spurs_ring_range(u32 depth) noexcept
+{
+	return depth * 2;
+}
+
+static u32 spurs_ring_used(u32 head, u32 tail, u32 depth) noexcept
+{
+	if (thor_queue_monotonic_fix())
+	{
+		const u32 range = spurs_ring_range(depth);
+		return (tail + range - head) % range;
+	}
+
+	return head <= tail ? tail - head : tail + depth - head;
+}
+
+s32 cellSpursQueuePushBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::cptr<void> buffer, u32 taskId)
+{
+	cellSpurs.trace("cellSpursQueuePushBody(queue=*0x%x, buffer=*0x%x, taskId=%d)", queue, buffer, taskId);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// libsre 0x16a58: lwz r0,0x1c(r29) ; cmpwi r0,0x2 ; bne -> 0x80410909
+	if (queue->direction != CELL_SPURS_QUEUE_PPU2SPU)
+	{
+		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	const u32 depth = queue->depth;
+	const u32 entry_size = queue->entry_size;
+
+	if (!depth || !queue->buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	// IS ANYTHING DRAINING? `Pop: 0` cannot answer that - PopBody is the PPU-side
+	// API and this queue's consumer is an SPU task reading the ring directly. The
+	// ring's own counters can: if head (0x00) advances, something IS consuming.
+	// Sampled sparsely so a half-million-call path stays cheap.
+	if (thor_queue_diagnostics())
+	{
+		static std::atomic<u32> s_calls{0};
+
+		if (const u32 n = s_calls++; (n & 0x3F) == 0)   // every 64: the run only makes ~650 pushes
+		{
+			// HOW MANY WORK ITEMS HAVE ACTUALLY BEEN FILLED?
+			//
+			// The entries carry pointers to 16-byte slots in 0x304f8038.., and those
+			// slots are ZERO when pushed - they are OUTPUT slots the SPU fills. The
+			// fence done=0x304f8348 is item #49 of that array and target=0x304f93e8 is
+			// item #315. So counting how far the non-zero prefix extends says exactly
+			// how much work the SPU has really completed, independently of any counter
+			// either side maintains.
+			if (thor_queue_publish_order())   // reuse as a queue-diagnostics gate; OFF by default
+			{
+				constexpr u32 base = 0x304f8038;
+				u32 filled = 0;
+				u32 scanned = 0;
+
+				for (u32 i = 0; i < 320; i++)
+				{
+					const u32 a = base + i * 0x10;
+
+					if (!vm::check_addr(a, vm::page_readable, 0x10))
+					{
+						break;
+					}
+
+					scanned++;
+
+					const u8* w = vm::_ptr<u8>(a);
+
+					for (u32 k = 0; k < 0x10; k++)
+					{
+						if (w[k]) { filled++; break; }
+					}
+				}
+
+				cellSpurs.error("Thor WORKFILL: %u of %u items non-zero (done=item#49 target=item#315)",
+					filled, scanned);
+			}
+
+			cellSpurs.warning("Thor QUEUE RING #%u: head=%u tail=%u depth=%u used=%u eq=0x%x",
+				n, +queue->head.load(), +queue->tail.load(), +queue->depth,
+				spurs_ring_used(+queue->head.load(), +queue->tail.load(), +queue->depth),
+				+queue->event_queue_id);
+		}
+	}
+
+	// Claim a slot: advance the tail only if the ring is not full. This is the
+	// compare-exchange equivalent of the firmware's lwarx/stwcx. on 0x04.
+	u32 slot = 0;
+	u32 spins = 0;
+	bool published = false;   // see thor_queue_publish_order
+	const bool order_fix = thor_queue_publish_order();
+
+	while (true)
+	{
+		// CLAIM THROUGH THE RESERVATION when enabled: read head/tail, test for
+		// full, and take the slot in one reservation on the queue line. A full
+		// ring returns false so the line is left untouched and the consumer keeps
+		// its reservation.
+		if (thor_queue_reserve_fix() || order_fix)
+		{
+			u32 claimed = umax;
+			u32 seen_head = 0;
+			u32 seen_tail = 0;
+
+			vm::reservation_op(ppu, vm::unsafe_ptr_cast<spurs_queue_op>(queue), [&](spurs_queue_op& op)
+				{
+					seen_head = op.head;
+					seen_tail = op.tail;
+
+					if (spurs_ring_used(seen_head, seen_tail, depth) >= depth)
+					{
+						return false;   // full: do not write, do not disturb the consumer
+					}
+
+					claimed = seen_tail % depth;
+					if (order_fix)
+					{
+						// Hold the queue reservation while the payload lands. No other
+						// producer can own this slot, and the consumer cannot observe the
+						// new tail before the complete payload is available.
+						std::memcpy(vm::base(queue->buffer.addr() + claimed * entry_size), buffer.get_ptr(), entry_size);
+					}
+					op.tail = (seen_tail + 1) % spurs_ring_range(depth);
+					return true;
+				});
+
+			if (claimed != umax)
+			{
+				slot = claimed;
+				published = order_fix;
+
+				break;
+			}
+
+			// Full. Fall through to the same blocking path the CAS route uses.
+			if (queue->event_queue_id)
+			{
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 20);
+
+				if (spins++ < 4096)
+				{
+					continue;
+				}
+
+				return CELL_SPURS_TASK_ERROR_BUSY;
+			}
+
+			if (spins++ < 1024)
+			{
+				ppu.state += cpu_flag::wait;
+				std::this_thread::yield();
+				ppu.check_state();
+				continue;
+			}
+
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
+		const u32 tail = queue->tail.load();
+		const u32 head = queue->head.load();
+
+		// WRAPPED INDICES, NOT MONOTONIC COUNTERS.
+		//
+		// cellSpursQueueSize (libsre 0x168fc) computes the used count as
+		//
+		//     if (head <= tail) used = tail - head
+		//     else              used = tail + depth - head
+		//
+		//     lwz r3,0xc(r29) ; cmpw cr7,r9,r0 ; subf r11,r9,r0
+		//     ... subf r9,r3,r9 ; add r0,r0,r3 ; subf r11,r9,r0
+		//
+		// so head and tail are INDICES MODULO DEPTH, and the guest consumer reads
+		// them that way. Writing monotonic counters made `used` meaningless to the
+		// SPU side once tail passed depth: measured, the consumer drained ~40
+		// entries and then saw an empty queue forever while tail ran to 302.
+		//
+		// One slot stays reserved so full and empty remain distinguishable, which
+		// is what makes `tail == head` mean empty in the firmware's arithmetic.
+		// RAW HEAD, NOT NORMALISED - measured, and this matters.
+		//
+		// Reducing head mod depth looked harmless (the used count comes out the
+		// same for the observed values) but it collapsed dispatch activity: the
+		// queue's workload went from 45 sampled dispatches to 0, and frames from
+		// 68 to 42. Use the firmware's own comparison on the raw values.
+		const u32 used = spurs_ring_used(head, tail, depth);
+
+		// KEEP ONE SLOT RESERVED, EVEN WITH MONOTONIC COUNTERS.
+		//
+		// Letting all `depth` entries be used was wrong and is measured: the
+		// producer filled to used=256 and the consumer then sat on a full ring
+		// doing nothing, head frozen at 89 while tail held at 345.
+		//
+		// OUR counters are monotonic, but the CONSUMER reduces them modulo depth,
+		// and there `used = 345 - 89 = 256` is congruent to 0 - indistinguishable
+		// from EMPTY. That full/empty ambiguity is exactly what the reserved slot
+		// exists to prevent, and it is why the firmware never lets used reach
+		// depth. Monotonic counters fix the UNDERFLOW; they do not license
+		// filling the last slot.
+		// In the double-range scheme `used == depth` IS full and is unambiguous,
+		// so no slot is reserved. The reserved slot only existed to break the
+		// full/empty tie that modulo-depth indices cannot resolve.
+		if (thor_queue_monotonic_fix() ? used >= depth : used + 1 >= depth)
+		{
+			// BLOCK, DO NOT SPIN. Returning BUSY here starves the very consumer
+			// that has to drain the ring: the caller retried immediately and the
+			// PPU thread never yielded, so the SPU task could not run.
+			//
+			// MEASURED with a ring probe - head advanced 0 -> 42, so the SPU side
+			// IS consuming, and then froze at head=42 tail=298 used=256 for the
+			// remaining ~480,000 push calls. The data path works; the busy-spin
+			// was the deadlock.
+			//
+			// libsre blocks with a raw syscall on the event queue id at 0x74:
+			//     li r11,0x82 ; sc 0x0     = sys_event_queue_receive(id, &ev, 0)
+			// BOUNDED WAIT, NOT AN INFINITE ONE.
+			//
+			// Measured both extremes on this exact path:
+			//
+			//   return BUSY at once      spin: 481,204 pushes, emu reached 0:03:07
+			//   block with timeout 0     hang: 292 pushes,      emu stuck at 0:00:10
+			//
+			// A timeout of 0 means WAIT FOREVER, and nothing signals this queue
+			// yet, so the PPU never came back. A short timeout yields the CPU -
+			// which is what lets the SPU consumer drain - without betting the
+			// thread on a signal that may never arrive.
+			if (queue->event_queue_id)
+			{
+				// 20 us, NOT 200. Nothing signals this queue yet, so every retry
+				// burns the FULL timeout - at 200 us x 4096 that is ~0.8 s per
+				// push once the ring is full, and the measured result was
+				// FlipPump pushing exactly once per emulated second. The cadence
+				// was the timeout, not the game.
+				sys_event_queue_receive(ppu, queue->event_queue_id, vm::null, 20);
+
+				if (spins++ < 4096)
+				{
+					continue;
+				}
+
+				return CELL_SPURS_TASK_ERROR_BUSY;
+			}
+
+			// NO EVENT QUEUE BOUND - STILL DO NOT SPIN.
+			//
+			// Returning BUSY immediately is what starved the consumer: measured at
+			// ~480,000 pushes with head frozen at 37 and seven cores pinned. The
+			// SPU task cannot drain the ring if the PPU thread never yields, so
+			// yield explicitly and let it run. Bounded, so a genuinely stuck
+			// consumer still surfaces as BUSY rather than hanging forever.
+			if (spins++ < 1024)
+			{
+				ppu.state += cpu_flag::wait;
+				std::this_thread::yield();
+				ppu.check_state();
+				continue;
+			}
+
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
+		// The corrected order always uses the reservation route above. This old
+		// comparison route publishes the counter first for controlled rollback.
+		const u32 pending_slot = thor_queue_monotonic_fix() ? tail % depth : tail;
+
+		if (queue->tail.compare_and_swap_test(tail, thor_queue_monotonic_fix() ? (tail + 1) % spurs_ring_range(depth) : (tail + 1) % depth))
+		{
+			// The COUNTER is monotonic; the BUFFER INDEX is the counter mod depth.
+			slot = pending_slot;
+			break;
+		}
+	}
+
+	if (!published)
+	{
+		std::memcpy(vm::base(queue->buffer.addr() + slot * entry_size), buffer.get_ptr(), entry_size);
+	}
+
+	// WHAT IS ACTUALLY IN THE ENTRY?
+	//
+	// The consumer pops successfully and produces nothing - put_census bucket c0
+	// (RSX memory) is empty under HLE against 641,379 writes under LLE. Every
+	// mechanism between the two has been cleared, so check the payload itself: an
+	// entry of zeros would mean the task is correctly doing nothing and the fault
+	// is upstream on the PPU, not in SPURS at all.
+	if (thor_queue_diagnostics())
+	{
+		static std::atomic<u32> s_pay{0};
+		static std::atomic<u32> s_render_pay{0};
+		const bool render_queue = Emu.GetTitleID() == "BLUS30357" &&
+			queue->taskset.addr() == u64{0x10364100} && depth == 256 && entry_size == 16;
+		const u32 n = render_queue
+			? s_render_pay.fetch_add(1, std::memory_order_relaxed)
+			: s_pay.fetch_add(1, std::memory_order_relaxed);
+
+		if ((render_queue && n < 128) || (!render_queue && (n < 4 || (n & 0x3FF) == 0)))
+		{
+			const u8* src = static_cast<const u8*>(buffer.get_ptr());
+			const u32 show = std::min<u32>(entry_size, 32);
+			std::string hex;
+			u32 nonzero = 0;
+
+			for (u32 i = 0; i < entry_size; i++)
+			{
+				nonzero += src[i] ? 1 : 0;
+			}
+
+			for (u32 i = 0; i < show; i++)
+			{
+				fmt::append(hex, " %02x", src[i]);
+			}
+
+			// The first word of the entry is a WORK ITEM POINTER into 0x304fxxxx, and
+			// the long-known fence (done=0x304f8348 target=0x304f93e8) indexes the same
+			// array. Dump what the item itself holds - that layout says what the task
+			// is meant to do with it, and it is ordinary mapped main memory, so no SPU
+			// tracing is needed to read it.
+			std::string item;
+			const u32 wp = entry_size >= 4 ? ((u32{src[0]} << 24) | (u32{src[1]} << 16) | (u32{src[2]} << 8) | src[3]) : 0;
+
+			if (wp && vm::check_addr(wp, vm::page_readable, 0x20))
+			{
+				const u8* w = vm::_ptr<u8>(wp);
+
+				for (u32 i = 0; i < 0x20; i++)
+				{
+					fmt::append(item, " %02x", w[i]);
+				}
+			}
+			else
+			{
+				fmt::append(item, " <unmapped 0x%08x>", wp);
+			}
+
+			cellSpurs.error("Thor %sPAYLOAD #%u: queue=0x%x taskset=0x%x entry_size=%u nonzero=%u/%u slot=%u src=0x%x |%s",
+				render_queue ? "RENDER " : "", n, queue.addr(), queue->taskset.addr(), entry_size,
+				nonzero, entry_size, slot, buffer.addr(), hex);
+			cellSpurs.error("Thor %sWORKITEM #%u: at 0x%08x |%s", render_queue ? "RENDER " : "", n, wp, item);
+		}
+	}
+
+	if (thor_queue_diagnostics())
+	{
+		static std::atomic<u32> s_ok{0};
+
+		if (const u32 n = s_ok++; (n & 0x3F) == 0)
+		{
+			cellSpurs.warning("Thor QUEUE PUSH OK #%u: slot=%u head=%u tail=%u", n, slot,
+				+queue->head.load(), +queue->tail.load());
+		}
+	}
+
+	// WAKE THE CONSUMER.
+	//
+	// This was removed once, and correctly at the time: `queue->spurs` was then
+	// aliased to the TASKSET pointer by a wrong Initialize signature, and
+	// cellSpursWakeUp WRITES through what it is handed, so it corrupted the
+	// taskset and produced `Verification failed (object: 0x0)` in
+	// _spurs::task_start. The pointer was bad because the signature was wrong,
+	// NOT because waking is wrong.
+	//
+	// With the signature fixed, 0x68 holds the real spurs - the firmware itself
+	// does `ld r3,0x60(r4)` then `std r3,0x68(r5)`, i.e. it stores taskset->spurs
+	// there - so this is exactly the pointer libsre would use.
+	//
+	// Needed because this ring returns BUSY when full instead of blocking on
+	// lwmutex/lwcond: the title rendered 31 frames and then stalled with a full
+	// queue and nothing draining it. The result is deliberately ignored, since a
+	// failed wake must not turn a successful push into a failure.
+	if (queue->spurs)
+	{
+		ppu_execute<&cellSpursWakeUp>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs));
+	}
+
+	// SIGNAL THE CONSUMER TASK. This is the notify libsre performs after the
+	// entry is copied, and its absence is why PopBody was never reached:
+	//
+	//     ld     r0,0x60(r29)      ; taskset
+	//     rldicl r31,r31,0x0,0x38  ; the 3rd argument masked to 8 bits = task id
+	//     or     r4,r31,r31
+	//     bl     0x000125d8        ; _cellSpursSendSignal(taskset, taskId)
+	//     xoris  r0,r3,0x8041 ; cmpwi r0,0x902  ; INVAL -> 0x80410914 FATAL
+	//
+	// Measured before this: 483,819 pushes against 0 pops, with the consumer
+	// parked in CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL.
+	// SIGNAL THE TASK THAT IS ACTUALLY WAITING, NOT THE CALLER'S ARGUMENT.
+	//
+	// Reading arg3 as a task id was wrong. Measured, straight out of the taskset:
+	//
+	//   ts=0x10364100 enabled=80000000 waiting=80000000 signalled=00000000
+	//   SIGNAL taskId=1 rc=0x80410905 (SRCH)
+	//
+	// enabled=80000000 is MSB-first, so ONLY TASK 0 exists - the game creates two
+	// tasksets with one task each - and task 0 is the one WAITING. Every push was
+	// signalling task 1, which cannot exist, so the consumer was never woken and
+	// head froze at ~40 while tail ran to 302.
+	//
+	// The waiting bitmap names the right target, so use it. Bit layout is
+	// `(1u << 31) >> (taskId % 32)`, hence countl_zero gives the id.
+	u32 wake = taskId & 0xFF;
+
+	if (queue->taskset)
+	{
+		const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+
+		for (u32 w = 0; w < 4; w++)
+		{
+			const u32 word = vm::_ref<be_t<u32>>(ts.addr() + OFFSET_OF(CellSpursTaskset, waiting) + w * 4);
+
+			if (word)
+			{
+				wake = w * 32 + std::countl_zero(word);
+				break;
+			}
+		}
+	}
+
+	if (const u32 tid = wake; queue->taskset)
+	{
+		const s32 rc = _cellSpursSendSignal(ppu, vm::static_ptr_cast<CellSpursTaskset>(queue->taskset), tid);
+
+		// WHAT DOES THE SIGNAL ACTUALLY RETURN?
+		//
+		// The consumer drains 46 entries and then head freezes forever, and every
+		// taskset syscall in the census comes from taskId=0 while these pushes
+		// carry taskId=1. If task 1 is not enabled in the taskset,
+		// _cellSpursSendSignal returns SRCH (0x80410905) and sets no signalled
+		// bit, so the consumer is never made ready and never scheduled.
+		if (thor_queue_diagnostics())
+		{
+			static std::atomic<u32> s_sig{0};
+
+			if (const u32 n = s_sig++; (n & 0x3F) == 0)
+			{
+				// WHICH TASKS EXIST, AND IN WHAT STATE? rc is SRCH every time, and
+				// the game creates two tasksets with one task each, so signalling
+				// task 1 in a taskset that only has task 0 can only fail. Read the
+				// bitmaps rather than infer them.
+				const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+				const auto rd = [&](u32 off) { return vm::_ref<be_t<u32>>(ts.addr() + off); };
+
+				cellSpurs.error("Thor SIGNAL #%u: taskId=%u rc=0x%x | ts=0x%x running=%08x ready=%08x pready=%08x waiting=%08x enabled=%08x signalled=%08x",
+					n, tid, rc, ts.addr(),
+					+rd(OFFSET_OF(CellSpursTaskset, running)),
+					+rd(OFFSET_OF(CellSpursTaskset, ready)),
+					+rd(OFFSET_OF(CellSpursTaskset, pending_ready)),
+					+rd(OFFSET_OF(CellSpursTaskset, waiting)),
+					+rd(OFFSET_OF(CellSpursTaskset, enabled)),
+					+rd(OFFSET_OF(CellSpursTaskset, signalled)));
+			}
+		}
+
+		// RE-SIGNAL THE WORKLOAD EVERY PUSH, NOT ONLY ON THE 0->1 TRANSITION.
+		//
+		// _cellSpursSendSignal computes `signal = !!(~signalled & waiting & mask)`
+		// and only sends the WORKLOAD signal when that is 1. Measured state at the
+		// stall:
+		//
+		//   waiting=80000000 signalled=80000000   (set, never consumed)
+		//   gate: wkl0 signal=0, wkl1 signal=0    (workload not signalled)
+		//
+		// Once `signalled` is set and the task has not run to consume it, every
+		// later push computes 0 and never re-signals the workload. But the task
+		// can only consume by RUNNING, and it can only run if the workload is
+		// selected, which needs the workload signal. Circular - the drain stops
+		// (head froze at 100) and rendering stops with it.
+		//
+		// Re-signalling is safe: the worst case is a redundant workload selection,
+		// which the selector already handles, and it is what keeps the consumer
+		// scheduled while entries are pending.
+		if (queue->taskset && queue->spurs)
+		{
+			const auto ts = vm::static_ptr_cast<CellSpursTaskset>(queue->taskset);
+			const u32 wid = vm::_ref<be_t<u32>>(ts.addr() + OFFSET_OF(CellSpursTaskset, wid));
+
+			if (wid < CELL_SPURS_MAX_WORKLOAD2)
+			{
+				ppu_execute<&cellSpursSendWorkloadSignal>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), wid);
+				ppu_execute<&cellSpursWakeUp>(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs));
+			}
+		}
+
+		if (rc + 0u == CELL_SPURS_TASK_ERROR_INVAL)
+		{
+			return CELL_SPURS_TASK_ERROR_FATAL;
+		}
+	}
+
+
+	return CELL_OK;
 	return CELL_OK;
 }
 
-s32 cellSpursQueuePushBody()
+s32 cellSpursQueuePopBody(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue, vm::ptr<void> buffer, u32 isBlocking)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("cellSpursQueuePopBody(queue=*0x%x, buffer=*0x%x, isBlocking=%d)", queue, buffer, isBlocking);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	const u32 depth = queue->depth;
+	const u32 entry_size = queue->entry_size;
+	const bool thor_physx_start_shape = thor_transformers_physx_queue_wait() &&
+		!isBlocking && static_cast<u32>(ppu.lr) == 0x00a94678u &&
+		queue->direction == 1u && depth == 128 && entry_size == 16 && queue->taskset;
+	const auto taskset = thor_physx_start_shape
+		? vm::static_ptr_cast<CellSpursTaskset>(queue->taskset)
+		: vm::ptr<CellSpursTaskset>::make(0);
+	const u32 first_task_elf = taskset ? static_cast<u32>(taskset->task_info[0].elf.addr()) : 0u;
+	const bool thor_physx_start_candidate = thor_physx_start_shape && first_task_elf == 0x018c1000u;
+
+	if (!depth || !queue->buffer)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	while (true)
+	{
+		const u32 head = queue->head.load();
+		const u32 tail = queue->tail.load();
+
+		if (head == tail)
+		{
+			if (thor_physx_start_candidate &&
+				thor_transformers_physx_queue_wait_claim(queue.addr()))
+			{
+				static constexpr u32 c_poll_us = 100;
+				static constexpr u64 c_max_wait_us = 6'000'000;
+				static constexpr u32 c_producer_wait_poll_limit = 600'000;
+				const u64 started = get_system_time();
+				u32 producer_wait_polls = 0;
+
+				// Release the PPU memory lock before this thread waits for the SPU.
+				// The SPU uses an accurate PUTLLC on this queue. That store needs a
+				// VM writer lock. If this PPU keeps its memory lock, the PPU waits for
+				// the SPU and the SPU waits for the PPU.
+				lv2_obj::prepare_for_sleep(ppu);
+
+				while (true)
+				{
+					const u64 elapsed = get_system_time() - started;
+					const bool producer_active =
+						thor::transformers_physx_start_interp_active();
+					if (queue->head.load() != queue->tail.load())
+					{
+						cellSpurs.notice("Thor Transformers PhysX queue startup ready: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
+							queue.addr(), first_task_elf, elapsed,
+							producer_active ? 1u : 0u, producer_wait_polls);
+						break;
+					}
+
+					if (elapsed >= c_max_wait_us &&
+						(!producer_active ||
+							producer_wait_polls >= c_producer_wait_poll_limit))
+					{
+						break;
+					}
+
+					if (ppu.is_stopped())
+					{
+						ppu.state += cpu_flag::again;
+						return {};
+					}
+
+					thread_ctrl::wait_for(c_poll_us, false);
+					producer_wait_polls += elapsed >= c_max_wait_us ? 1u : 0u;
+				}
+
+				if (queue->head.load() != queue->tail.load())
+				{
+					continue;
+				}
+
+				cellSpurs.warning("Thor Transformers PhysX queue startup timeout: queue=0x%x elf=0x%x wall_us=%llu producer=%u producer_polls=%u",
+					queue.addr(), first_task_elf, get_system_time() - started,
+					thor::transformers_physx_start_interp_active() ? 1u : 0u,
+					producer_wait_polls);
+			}
+
+			return CELL_SPURS_TASK_ERROR_BUSY;
+		}
+
+		// Same convention as the push side: monotonic counter, index = counter % depth.
+		if (queue->head.compare_and_swap_test(head, thor_queue_monotonic_fix() ? (head + 1) % spurs_ring_range(depth) : (head + 1) % depth))
+		{
+			const u32 idx = thor_queue_monotonic_fix() ? head % depth : head;
+			std::memcpy(buffer.get_ptr(), vm::base(queue->buffer.addr() + idx * entry_size), entry_size);
+			break;
+		}
+	}
+
 	return CELL_OK;
 }
 
-s32 cellSpursQueueAttachLv2EventQueue()
+// ATTACH THE EVENT QUEUE THE CONSUMER WAITS ON.
+//
+// This is the notify half of the SPURS queue, and it was the last stub standing
+// between HLE and continuous frames: the task blocks with
+// CELL_SPURS_TASK_SYSCALL_WAIT_SIGNAL, nothing ever signals it, so PopBody was
+// called 0 times against 479,359 pushes and the ring stayed full.
+//
+// Contract from libsre 0x16778, in this exact order:
+//
+//     cmpwi r3,0x0             ; null queue        -> 0x80410911 NULL_POINTER
+//     rlwinm r0,r3,0,0x19,0x1f ; queue & 0x7f      -> 0x80410910 ALIGN
+//     lwz r0,0x1c(r3)          ; direction == 0    -> 0x80410909 PERM
+//     lwz r0,0x18(r3)          ; 0x18 != -1        -> 0x8041090f STAT
+//     ld  r0,0x68(r3)          ; spurs == 0        -> 0x80410902 INVAL
+//     ... delegates with (spurs, ..., ..., 1)
+//
+// The delegate is cellSpursAttachLv2EventQueue, which this tree already
+// implements via _spurs::attach_lv2_eq, so this is a wrapper rather than new
+// machinery. `isDynamic = 1` is the `li r6,0x1` above.
+// ONE ARGUMENT. The firmware validates only r3 and derives the rest itself:
+// `ld r0,0x68(r3)` fetches spurs, then it calls with (spurs, &out, &out, 1) -
+// TWO OUTPUT POINTERS - so it CREATES the event queue and receives both the id
+// and the port. Declaring a second parameter made RPCS3 hand this function r4,
+// which merely happened to hold the taskset pointer, and the id stored at 0x74
+// was garbage - the probe read eq=0x0 because of it.
+//
+// `_spurs::create_lv2_eq(ppu, spurs, queueId, port, size, attr)` is that call,
+// with size = 1 from the `li r6,0x1`.
+s32 cellSpursQueueAttachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	cellSpurs.warning("cellSpursQueueAttachLv2EventQueue(queue=*0x%x)", queue);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	if (!queue->direction)
+	{
+		return CELL_SPURS_TASK_ERROR_PERM;
+	}
+
+	// 0x18 holds -1 until an event queue is attached.
+	if (queue->x18 != 0xFFFFFFFFu)
+	{
+		return CELL_SPURS_TASK_ERROR_STAT;
+	}
+
+	if (!queue->spurs)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	vm::var<u32> queueId;
+	vm::var<u8> port;
+
+	if (s32 rc = _spurs::create_lv2_eq(ppu, vm::static_ptr_cast<CellSpurs>(queue->spurs), queueId, port, 1,
+			sys_event_queue_attribute_t{SYS_SYNC_PRIORITY, SYS_PPU_QUEUE, {"_spuQue "_u64}}))
+	{
+		return rc;
+	}
+
+	const u32 eventQueueId = *queueId;
+
+	// BOTH fields matter. 0x18 takes the port (its -1 sentinel is what gates a
+	// second attach), and 0x74 takes the EVENT QUEUE ID, which is what
+	// cellSpursQueuePushBody feeds to sys_event_queue_receive when the ring is
+	// full. Storing only the port - as the first version did - leaves 0x74 zero
+	// and the blocking path with nothing to wait on.
+	queue->x18 = *port;
+	queue->event_queue_id = eventQueueId;
 	return CELL_OK;
 }
 
-s32 cellSpursQueueDetachLv2EventQueue()
+s32 cellSpursQueueDetachLv2EventQueue(ppu_thread& ppu, vm::ptr<CellSpursQueue> queue)
 {
-	UNIMPLEMENTED_FUNC(cellSpurs);
-	return CELL_OK;
+	cellSpurs.warning("cellSpursQueueDetachLv2EventQueue(queue=*0x%x)", queue);
+
+	s32 error = CELL_OK;
+
+	if (!spurs_queue_valid(queue, error))
+	{
+		return error;
+	}
+
+	// Nothing attached is the -1 sentinel; detaching then is a state error.
+	if (queue->x18 == 0xFFFFFFFFu)
+	{
+		return CELL_SPURS_TASK_ERROR_STAT;
+	}
+
+	if (!queue->spurs)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	const s32 rc = cellSpursDetachLv2EventQueue(vm::static_ptr_cast<CellSpurs>(queue->spurs), static_cast<u8>(+queue->x18));
+
+	if (rc == CELL_OK)
+	{
+		queue->x18 = 0xFFFFFFFF;
+		queue->event_queue_id = 0;
+	}
+
+	return rc;
 }
 
 s32 cellSpursQueueGetTasksetAddress()
@@ -3973,6 +6184,140 @@ s32 cellSpursQueueGetDirection()
 	return CELL_OK;
 }
 
+// Match the notifier that Sony's _cellSpursLFQueuePushBody passes to cellSync.
+// eaSignal low nibble 1 means that the base is a SPURS instance. The token then
+// contains the workload ID above the low task-ID byte. Other tags name a
+// taskset directly.
+s32 thor_spurs_notify_lfq(ppu_thread& ppu, u32 ea_signal, u32 token)
+{
+	const u32 task_id = token & 0xff;
+	vm::ptr<CellSpursTaskset> taskset;
+
+	if ((ea_signal & 0xf) == 1)
+	{
+		vm::var<vm::ptr<CellSpursTaskset>> resolved;
+		const s32 rc = cellSpursLookUpTasksetAddress(ppu,
+			vm::ptr<CellSpurs>::make(ea_signal & ~0xfu), resolved, (token >> 8) & 0xffffff);
+
+		if (rc)
+		{
+			return rc;
+		}
+
+		taskset = *resolved;
+	}
+	else
+	{
+		taskset = vm::ptr<CellSpursTaskset>::make(ea_signal & ~0xfu);
+	}
+
+	return _cellSpursSendSignal(ppu, taskset, task_id);
+}
+
+// STAGE THE REAL TASKSET POLICY MODULE.
+//
+// SPURS_IMG_ADDR_TASKSET_PM is a sentinel (0x200). cellSpursSpu.cpp switches on
+// it and registers an HLE stub at LS 0xA00 instead of loading anything, so
+// under HLE the SPU holds NO policy module at all - measured, LS 0xA00 is
+// entirely zero against 930/1024 nonzero under LLE.
+//
+// Three firmware-verified corrections to that stub (syscall_dma_wait,
+// exit_destroy_fix, yield_poll_always) each matched the real module and none
+// produced a triangle, which argues the stub is not where the geometry is
+// lost. ps3recomp reached the same conclusion independently: the SPURS kernel
+// dispatches through OPD pointers read from memory, and images coexist at
+// overlapping local-store addresses, which a C stub cannot reproduce - so they
+// lift the real firmware instead of finishing the HLE.
+//
+// This does that for the taskset. The module is the one identified by its
+// syscall entry at 0xA70 (CELL_SPURS_TASKSET_PM_SYSCALL_ADDR), where it saves
+// sp and r80..r127 into the taskset management area - sig_b below. Passing its
+// real address instead of the sentinel makes cellSpursSpu.cpp take the default
+// branch, which unregisters the 0xA00 stub and copies the image in.
+//
+//   debug.rpcsx.thor.real_taskset_pm = 1
+static bool thor_real_taskset_pm() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_taskset_pm", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+static u32 thor_taskset_pm_image(u32& out_size) noexcept
+{
+	static u32 s_size = 0;
+
+	static const u32 s_addr = []() -> u32
+	{
+		// The taskset policy module, identified by its 0xA70 syscall entry.
+		static const u8 sig[32] = {
+			0x43, 0x06, 0xdc, 0x02, 0x43, 0x22, 0xb6, 0x82, 0x42, 0x5c, 0xcb, 0x02, 0x42, 0x82, 0x87, 0x82,
+			0x40, 0x96, 0x28, 0x01, 0x12, 0x02, 0x96, 0x94, 0x33, 0x83, 0xb5, 0x11, 0x30, 0x80, 0x38, 0x10,
+		};
+
+		constexpr u32 pm_size = 0x1E40;
+
+		fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+		if (!self)
+		{
+			cellSpurs.error("Thor TASKSETPM: cannot open libsre.sprx");
+			return 0;
+		}
+
+		fs::file dec = decrypt_self(self);
+
+		if (!dec)
+		{
+			cellSpurs.error("Thor TASKSETPM: cannot decrypt libsre.sprx");
+			return 0;
+		}
+
+		dec.seek(0);
+		const std::vector<u8> bytes = dec.to_vector<u8>();
+		const auto it = std::search(bytes.begin(), bytes.end(), sig, sig + 32);
+
+		if (it == bytes.end())
+		{
+			cellSpurs.error("Thor TASKSETPM: signature not found in libsre (different firmware?)");
+			return 0;
+		}
+
+		const usz off = static_cast<usz>(it - bytes.begin());
+
+		if (off + pm_size > bytes.size())
+		{
+			cellSpurs.error("Thor TASKSETPM: module at 0x%x runs past end of libsre", static_cast<u32>(off));
+			return 0;
+		}
+
+		const u32 mem = vm::alloc(pm_size, vm::main);
+
+		if (!mem)
+		{
+			cellSpurs.error("Thor TASKSETPM: could not allocate %u bytes", pm_size);
+			return 0;
+		}
+
+		std::memcpy(vm::base(mem), bytes.data() + off, pm_size);
+		s_size = pm_size;
+
+		cellSpurs.error("Thor TASKSETPM: staged the REAL taskset policy module at 0x%x "
+			"(%u bytes, found in libsre at 0x%x)", mem, pm_size, static_cast<u32>(off));
+		return mem;
+	}();
+
+	out_size = s_size;
+	return s_addr;
+}
+
 s32 _spurs::create_taskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursTaskset> taskset, u64 args, vm::cptr<u8[8]> priority, u32 max_contention, vm::cptr<char> name, u32 size, s32 enable_clear_ls)
 {
 	if (!spurs || !taskset)
@@ -3993,7 +6338,25 @@ s32 _spurs::create_taskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<Ce
 	taskset->size = size;
 
 	vm::var<CellSpursWorkloadAttribute> wkl_attr;
-	_cellSpursWorkloadAttributeInitialize(ppu, wkl_attr, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::cptr<void>::make(SPURS_IMG_ADDR_TASKSET_PM), 0x1E40 /*pm_size*/,
+
+	// Use the real module when asked for. See thor_taskset_pm_image.
+	u32 pm_addr = SPURS_IMG_ADDR_TASKSET_PM;
+	u32 pm_size = 0x1E40;
+
+	if (thor_real_taskset_pm())
+	{
+		u32 real_size = 0;
+
+		if (const u32 real = thor_taskset_pm_image(real_size))
+		{
+			pm_addr = real;
+			pm_size = real_size;
+			cellSpurs.error("Thor TASKSETPM: taskset 0x%x will run the REAL policy module at 0x%x",
+				taskset.addr(), real);
+		}
+	}
+
+	_cellSpursWorkloadAttributeInitialize(ppu, wkl_attr, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::cptr<void>::make(pm_addr), pm_size,
 		taskset.addr(), priority, 8, max_contention);
 	// TODO: Check return code
 
@@ -4051,11 +6414,49 @@ s32 cellSpursCreateTaskset(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<Ce
 	return _spurs::create_taskset(ppu, spurs, taskset, args, priority, maxContention, vm::null, sizeof(CellSpursTaskset), 0);
 }
 
-s32 cellSpursJoinTaskset(vm::ptr<CellSpursTaskset> taskset)
+s32 cellSpursJoinTaskset(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset)
 {
 	cellSpurs.warning("cellSpursJoinTaskset(taskset=*0x%x)", taskset);
 
-	UNIMPLEMENTED_FUNC(cellSpurs);
+	if (!taskset)
+	{
+		return CELL_SPURS_TASK_ERROR_NULL_POINTER;
+	}
+
+	if (!taskset.aligned())
+	{
+		return CELL_SPURS_TASK_ERROR_ALIGN;
+	}
+
+	const u32 wid = taskset->wid;
+	const auto spurs = +taskset->spurs;
+
+	if (wid >= CELL_SPURS_MAX_WORKLOAD2)
+	{
+		return CELL_SPURS_TASK_ERROR_INVAL;
+	}
+
+	auto as_task_error = [](s32 error) -> s32
+	{
+		switch (error + 0u)
+		{
+		case CELL_SPURS_POLICY_MODULE_ERROR_INVAL: return CELL_SPURS_TASK_ERROR_INVAL;
+		case CELL_SPURS_POLICY_MODULE_ERROR_STAT: return CELL_SPURS_TASK_ERROR_STAT;
+		default: return error;
+		}
+	};
+
+	if (auto err = ppu_execute<&cellSpursWaitForWorkloadShutdown>(ppu, spurs, wid))
+	{
+		return as_task_error(err);
+	}
+
+	if (auto err = ppu_execute<&cellSpursRemoveWorkload>(ppu, spurs, wid))
+	{
+		return as_task_error(err);
+	}
+
+	taskset->wid = CELL_SPURS_MAX_WORKLOAD2;
 	return CELL_OK;
 }
 
@@ -4148,6 +6549,8 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 	{
 		if (size < CELL_SPURS_TASK_EXECUTION_CONTEXT_SIZE)
 		{
+			cellSpurs.error("Thor CREATETASK-INVAL size-too-small: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
 			return CELL_SPURS_TASK_ERROR_INVAL;
 		}
 
@@ -4160,14 +6563,18 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 
 			if (ls_blocks > alloc_ls_blocks)
 			{
-				return CELL_SPURS_TASK_ERROR_INVAL;
+				cellSpurs.error("Thor CREATETASK-INVAL ls-blocks-exceed-alloc: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
+			return CELL_SPURS_TASK_ERROR_INVAL;
 			}
 
 			v128 _0 = v128::from32(0);
 			if ((ls_pattern_128 & v128::from32r(0xFC000000)) != _0)
 			{
 				// Prevent save/restore to SPURS management area
-				return CELL_SPURS_TASK_ERROR_INVAL;
+				cellSpurs.error("Thor CREATETASK-INVAL ls-pattern-hits-mgmt-area: context=0x%x size=0x%x lsp=0x%x elf=0x%x",
+				context.addr(), size, ls_pattern.addr(), elf.addr());
+			return CELL_SPURS_TASK_ERROR_INVAL;
 			}
 		}
 	}
@@ -4180,6 +6587,54 @@ s32 _spurs::create_task(vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> task_id,
 
 	u32 tmp_task_id;
 
+	// ALLOCATE THE TASK ID IN THE SAME LAYOUT EVERY OTHER READER USES.
+	//
+	// The comment below was right about the firmware and wrong to deviate from
+	// it. `enabled` is a CellSpursTaskset::atomic_tasks_bitset - four big-endian
+	// 32-bit words, addressed by `get_bit(b) = values[b/32] & ((1u<<31) >> b%32)`.
+	// `pending_ready`, `get_bit` and the SPU-side taskset check all use that word
+	// layout. Only this allocator reinterpreted the field as a single be_t<v128>
+	// and allocated from `_u64[0]`, but converting a 128-bit big-endian value
+	// reverses ALL SIXTEEN BYTES, which swaps the two u64 halves as well as the
+	// bytes inside them. `_u64[0]` is therefore NOT `values[0]`, so the same task
+	// landed in a different half depending on which writer touched it.
+	//
+	// MEASURED, on the first boot where the taskset ever dispatched:
+	//
+	//   Thor SPU0 dispatch#2: wid=0 addr=0x200 size=0x1e40
+	//   Thor INVALID TASKSET STATE: tasksetAddr=0x101b4e80
+	//     en     = 8000000000000000 0000000000000000
+	//     pready = 0000000000000000 8000000000000000
+	//
+	// The taskset policy module then fails its own validity check - a task is
+	// pending-ready while not enabled - logs "Invalid taskset state" and halts,
+	// which kills the SPU thread and the process.
+	//
+	// "Realfw processes this using 4 32-bits atomic loops" is the correct
+	// behaviour, so do that. Each `values[w]` is its own atomic_be_t<u32>.
+	//
+	//   debug.rpcsx.thor.taskset_enabled_fix = 0 restores the 128-bit shortcut
+	if (thor_taskset_enabled_fix())
+	{
+		vm::light_op(taskset->enabled, [&](CellSpursTaskset::atomic_tasks_bitset& v)
+			{
+				tmp_task_id = CELL_SPURS_MAX_TASK;
+
+				for (u32 w = 0; w < 4; w++)
+				{
+					const u32 cur = v.values[w];
+					const u32 pos = std::countl_one(cur);
+
+					if (pos != 32)
+					{
+						v.values[w] = cur | ((1u << 31) >> pos);
+						tmp_task_id = w * 32 + pos;
+						return;
+					}
+				}
+			});
+	}
+	else
 	vm::light_op(vm::_ref<atomic_be_t<v128>>(taskset.ptr(&CellSpursTaskset::enabled).addr()), [&](atomic_be_t<v128>& ptr)
 		{
 			// NOTE: Realfw processes this using 4 32-bits atomic loops
@@ -4253,6 +6708,10 @@ s32 _spurs::task_start(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32 t
 
 s32 cellSpursCreateTask(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::ptr<u32> taskId, vm::cptr<void> elf, vm::cptr<void> context, u32 size, vm::ptr<CellSpursTaskLsPattern> lsPattern, vm::ptr<CellSpursTaskArgument> argument)
 {
+	// EVERY TASK THE TITLE CREATES, and on which taskset.
+	cellSpurs.error("Thor CREATETASK: taskset=0x%x elf=0x%x arg=0x%x",
+		taskset.addr(), elf.addr(), argument.addr());
+
 	cellSpurs.warning("cellSpursCreateTask(taskset=*0x%x, taskID=*0x%x, elf=*0x%x, context=*0x%x, size=0x%x, lsPattern=*0x%x, argument=*0x%x)", taskset, taskId, elf, context, size, lsPattern, argument);
 
 	if (!taskset)
@@ -4269,6 +6728,11 @@ s32 cellSpursCreateTask(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, vm::
 	if (rc != CELL_OK)
 	{
 		return rc;
+	}
+
+	if (Emu.GetTitleID() == "BLUS30357" && elf.addr() == 0x018c1000u)
+	{
+		thor::arm_transformers_physx_spu_census(taskset.addr(), *taskId, elf.addr());
 	}
 
 	rc = _spurs::task_start(ppu, taskset, *taskId);
@@ -4299,6 +6763,24 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 		return CELL_SPURS_TASK_ERROR_INVAL;
 	}
 
+	// TRACE THE EDGEZLIB WAKE WITHOUT CHANGING ITS STATE.
+	//
+	// The Transformers loader submits compressed reads to the edgeZlib task on
+	// this taskset. The PPU pushes one LFQueue item and sends task 0 a signal,
+	// but the task does not dispatch again. Keep this trace bounded because this
+	// function is also used by high-frequency render queues.
+	static std::atomic<u32> s_edge_wakes{0};
+	const bool thor_trace_edge = taskset.addr() == 0x101b4e80u && taskId == 0;
+	const u32 thor_edge_index = thor_trace_edge ? s_edge_wakes++ : 0;
+	const bool thor_log_edge = thor_trace_edge && thor_edge_index < 8;
+	u32 thor_running = 0;
+	u32 thor_ready = 0;
+	u32 thor_pready = 0;
+	u32 thor_waiting = 0;
+	u32 thor_enabled = 0;
+	u32 thor_signalled_before = 0;
+	u32 thor_signalled_after = 0;
+
 	int signal;
 
 	ppu.state += cpu_flag::wait;
@@ -4314,6 +6796,16 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 
 			const u32 mask = (1u << 31) >> (taskId % 32);
 
+			if (thor_log_edge)
+			{
+				thor_running = running;
+				thor_ready = ready;
+				thor_pready = pready;
+				thor_waiting = waiting;
+				thor_enabled = enabled;
+				thor_signalled_before = signalled;
+			}
+
 			if ((running & waiting) || (ready & pready) ||
 				((signalled | waiting | pready | running | ready) & ~enabled) || !(enabled & mask))
 			{
@@ -4328,8 +6820,17 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 
 			signal = !!(~signalled & waiting & mask);
 			op.signalled[taskId / 32] = signalled | mask;
+			thor_signalled_after = signalled | mask;
 			return true;
 		});
+
+	if (thor_log_edge)
+	{
+		cellSpurs.error("Thor EDGE WAKE #%u: taskset=0x%x wid=%u task=%u signal=%d | run=%08x ready=%08x pready=%08x wait=%08x enabled=%08x signalled=%08x->%08x",
+			thor_edge_index, taskset.addr(), +taskset->wid, taskId, signal,
+			thor_running, thor_ready, thor_pready, thor_waiting, thor_enabled,
+			thor_signalled_before, thor_signalled_after);
+	}
 
 	switch (signal)
 	{
@@ -4337,11 +6838,23 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 	case 1:
 	{
 		auto spurs = +taskset->spurs;
+		const u32 wid = +taskset->wid;
 
 		static_cast<void>(ppu.test_stopped());
 
 		ppu_execute<&cellSpursSendWorkloadSignal>(ppu, spurs, +taskset->wid);
 		auto rc = ppu_execute<&cellSpursWakeUp>(ppu, spurs);
+
+		if (thor_log_edge)
+		{
+			cellSpurs.error("Thor EDGE GATE #%u: spurs=0x%x wid=%u rc=0x%x | signal1=%04x state=%u ready=%u current=%u pending=%u max=%u nspus=%u",
+				thor_edge_index, spurs.addr(), wid, rc,
+				+spurs->wklSignal1.load(), +spurs->wklState(wid),
+				+spurs->wklReadyCount1[wid].load(), +spurs->wklCurrentContention[wid],
+				+spurs->wklPendingContention[wid], +spurs->wklMaxContention[wid].load(),
+				+spurs->nSpus);
+		}
+
 		if (rc + 0u == CELL_SPURS_POLICY_MODULE_ERROR_STAT)
 		{
 			return CELL_SPURS_TASK_ERROR_STAT;
@@ -4377,27 +6890,22 @@ s32 _cellSpursSendSignal(ppu_thread& ppu, vm::ptr<CellSpursTaskset> taskset, u32
 // is not to write a task scheduler. It is to carry six values across three
 // calls.
 //
-// ## Why we are allowed to choose the layout
+// ## The private HLE layout
 //
 // `CellSpursTaskAttribute` is declared `u8 reserved[256]` - an OPAQUE buffer.
-// Every function that touches it is HLE and therefore ours: the initializer
-// writes it, the exit-code setter modifies it, the creator reads it. The guest
-// only passes the pointer between our functions and never inspects the bytes,
-// because on real firmware those bytes are private to libsre as well.
+// The initializer installs the private HLE view. The exit-code setter modifies
+// the view, and the creator reads it.
 //
-// So the layout below is ours to define. It carries a magic, so a buffer that
-// never passed through our initializer is detected instead of silently misread.
+// The view carries a magic, so an uninitialized buffer is detected instead of
+// being read silently.
 //
-// ## The argument order is a HYPOTHESIS until hardware says otherwise
+// ## The argument order is verified
 //
-// This tree carries no prototype for these calls - the declarations sit
-// commented out at the top of this file with empty parameter lists. The order
-// used here follows `_cellSpursTasksetAttributeInitialize`, which IS implemented
-// and takes (attribute, revision, sdk_version, ...). So every one of these
-// functions also logs its raw incoming GPRs, and ONE run settles the ABI rather
-// than letting a guess survive into a measurement. If r4 is not a small revision
-// number, or r5 does not look like an SDK version, the order here is wrong and
-// the log will say so plainly.
+// The decrypted BLUS30357 caller sets r3 through r8 immediately before the
+// import call. It does not set r9 or r10. The six values are attribute,
+// revision, SDK version, ELF, context descriptor, and the direct context size.
+// The descriptor carries {context, size, LS-pattern address}. The raw GPR log
+// remains as a check for other titles.
 struct thor_spurs_task_attr
 {
 	static constexpr u32 c_magic = 0x54415454; // 'TATT'
@@ -4595,10 +7103,10 @@ s32 cellSpursTaskGenerateLsPattern()
 	return CELL_OK;
 }
 
-s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, u32 revision, u32 sdk_version, vm::cptr<void> elf, u64 ea_context, u32 size_context, vm::cptr<CellSpursTaskLsPattern> ls_pattern, vm::cptr<CellSpursTaskArgument> argument)
+s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttribute> attribute, u32 revision, u32 sdk_version, vm::cptr<void> elf, u64 ea_context, u32 size_context)
 {
-	cellSpurs.warning("_cellSpursTaskAttributeInitialize(attribute=*0x%x, revision=%d, sdk_version=0x%x, elf=*0x%x, ea_context=0x%llx, size_context=0x%x, ls_pattern=*0x%x, argument=*0x%x)",
-		attribute, revision, sdk_version, elf, ea_context, size_context, ls_pattern, argument);
+	cellSpurs.warning("_cellSpursTaskAttributeInitialize(attribute=*0x%x, revision=%d, sdk_version=0x%x, elf=*0x%x, ea_context=0x%llx, size_context=0x%x)",
+		attribute, revision, sdk_version, elf, ea_context, size_context);
 	thor_log_task_abi(ppu, "_cellSpursTaskAttributeInitialize");
 
 	if (!attribute)
@@ -4634,9 +7142,10 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	//
 	// Two big-endian u32s: 0x10370080 and 0x0003d400. The first IS 128-byte
 	// aligned. The second is 0x3d400, which is the very constant create_task
-	// compares the context size against. So r7 points at a {context, size} pair
-	// rather than being the context, and reading through it produces values that
-	// satisfy every check that direct use fails.
+	// compares the context size against. The third u32 is the LS-pattern address.
+	// So r7 points at a {context, size, pattern} descriptor rather than being the
+	// context, and reading through it produces values that satisfy every check
+	// that direct use fails.
 	//
 	// That is inferred from ONE title. So it is applied only when the indirection
 	// actually looks right, the direct reading is kept as the fallback, and the
@@ -4644,21 +7153,49 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	// show itself immediately instead of silently creating a broken task.
 	u32 resolved_context = static_cast<u32>(ea_context);
 	u32 resolved_size = size_context;
+	u32 resolved_pattern_ea = 0;
 	const char* how = "direct";
 
+	// A ZERO-SIZE CONTEXT IS NO CONTEXT.
+	//
+	// BLUS30357 calls this with r8 = sizeContext = 0. `_spurs::create_task`
+	// guards its whole validation block on `if (context)`, so a null context is
+	// the path that SUCCEEDS - it simply means the task has no save area. The
+	// indirection heuristic below instead synthesises a context out of a stack
+	// pointer, and the invented {ea, size} then fails the very checks the null
+	// path would have skipped:
+	//
+	//   CREATETASK-INVAL ls-blocks-exceed-alloc:   context=0x10989380 size=0x1c00
+	//   CREATETASK-INVAL ls-pattern-hits-mgmt-area: context=0x1094ba00 size=0x1c00
+	//
+	// create_task then returns 0x80410902 and cellSpursCreateTaskWithAttribute
+	// fails, so the title's worker task is never created at all.
+	//
+	//   debug.rpcsx.thor.task_attr_fix = 0 restores the previous behaviour
+	// RETRACTED: "sizeContext == 0 means no context".
+	//
+	// r8 is 0, but r7 points at a descriptor whose first two fields read
+	// {0x10989380, 0x1c00} - a 128-byte aligned address and a sane size - so the
+	// context is REAL and the indirection below finds it. Dropping it gave tasks
+	// no save area, and measured over three runs the draw count fell from 914
+	// quads to 0 while task starts rose 2 -> 3. The old code read r9 as the LS
+	// pattern address. Ghidra proves that r9 is stale and the descriptor field is
+	// the real source.
 	if (resolved_context && (resolved_context % 128) != 0 &&
-		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 8))
+		vm::check_addr(resolved_context, vm::page_info_t::page_readable, 12))
 	{
-		const auto pair = vm::ptr<be_t<u32>>::make(resolved_context);
-		const u32 indirect_ea = pair[0];
-		const u32 indirect_size = pair[1];
+		const auto descriptor = vm::ptr<be_t<u32>>::make(resolved_context);
+		const u32 indirect_ea = descriptor[0];
+		const u32 indirect_size = descriptor[1];
+		const u32 indirect_pattern_ea = descriptor[2];
 
 		if (indirect_ea && (indirect_ea % 128) == 0 && indirect_size >= CELL_SPURS_TASK_EXECUTION_CONTEXT_SIZE &&
 			vm::check_addr(indirect_ea, vm::page_info_t::page_readable, 128))
 		{
 			resolved_context = indirect_ea;
 			resolved_size = indirect_size;
-			how = "indirect via {context,size} pair";
+			resolved_pattern_ea = indirect_pattern_ea;
+			how = "indirect via {context,size,pattern} descriptor";
 		}
 	}
 
@@ -4666,52 +7203,97 @@ s32 _cellSpursTaskAttributeInitialize(ppu_thread& ppu, vm::ptr<CellSpursTaskAttr
 	{
 		// Still unusable. A null context is LEGAL and means "no save area", which
 		// beats handing create_task an address it will reject outright.
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: context 0x%x is not 128-byte aligned and no valid pair was found, continuing without a context", resolved_context);
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: context 0x%x is not 128-byte aligned and no valid descriptor was found, continuing without a context", resolved_context);
 		resolved_context = 0;
 		resolved_size = 0;
 		how = "dropped";
 	}
 
-	cellSpurs.error("_cellSpursTaskAttributeInitialize: context resolved %s -> ea=0x%x size=0x%x", how, resolved_context, resolved_size);
+	cellSpurs.error("_cellSpursTaskAttributeInitialize: context resolved %s -> ea=0x%x size=0x%x pattern=0x%x",
+		how, resolved_context, resolved_size, resolved_pattern_ea);
 
 	view->ea_context = resolved_context;
 	view->size_context = resolved_size;
 
-	// VALIDATE BEFORE DEREFERENCING, because the tail of this signature is
-	// inferred rather than known.
-	//
-	// The ABI probe on hardware returned, for BLUS30357:
-	//
-	//   r3=0xd0040470 (attribute)  r4=0x1 (revision)  r5=0x300000 (sdk_version)
-	//   r6=0x177ec80  -> 7f 45 4c 46, the ELF header, so r6 IS eaElf
-	//   r7=0xd0040460 (context, on the stack)         r8=0x0 (sizeContext)
-	//   r9=0x170a258  (lsPattern)                     r10=0x7
-	//
-	// Seven of the eight match the order `cellSpursCreateTask` already uses. The
-	// eighth does not: 0x7 is not an address, and dereferencing it aborted this
-	// function outright - "PPU: Function aborted", which stopped the boot.
-	//
-	// Either the call takes seven arguments and r10 is leftover, or it takes eight
-	// and this title passes nothing meaningful. Both readings agree on what to do:
-	// treat an implausible pointer as absent. A guest pointer must therefore be
-	// CHECKED, not merely non-null, and a rejected one is logged so the next run
-	// can tell "the game passed nothing" from "the order is still wrong".
-	if (ls_pattern && vm::check_addr(ls_pattern.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern)))
+	// The local title helpers first derive a pattern from the ELF load segments.
+	// They then add the stack range, store the pattern address at descriptor
+	// offset 8, and calculate the context size from the set bit count. Therefore,
+	// a real caller pattern uses no SPURS management block and its bit count
+	// equals the number of blocks in the context allocation.
+	CellSpursTaskLsPattern caller_pattern{};
+	const bool caller_pattern_readable = resolved_pattern_ea && !(resolved_pattern_ea & 0xFu) &&
+		vm::check_addr(resolved_pattern_ea, vm::page_info_t::page_readable, sizeof(CellSpursTaskLsPattern));
+
+	if (caller_pattern_readable)
 	{
-		view->ls_pattern = *ls_pattern;
-	}
-	else if (ls_pattern)
-	{
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: ls_pattern=0x%x is not readable memory, treating as absent", ls_pattern.addr());
+		caller_pattern = *vm::cptr<CellSpursTaskLsPattern>::make(resolved_pattern_ea);
 	}
 
-	if (argument && vm::check_addr(argument.addr(), vm::page_info_t::page_readable, sizeof(CellSpursTaskArgument)))
+	const u32 alloc_blocks = resolved_size > 0x3D400u ? 0x7Au
+		: (resolved_size >= 0x400u ? ((resolved_size - 0x400u) >> 11) : 0u);
+	const v128 caller_pattern_128 = v128::from64r(caller_pattern._u64[0], caller_pattern._u64[1]);
+	const u32 caller_blocks = rx::popcnt128(caller_pattern_128._u);
+	const bool caller_uses_management =
+		(caller_pattern_128 & v128::from32r(0xFC000000)) != v128::from32(0);
+	const bool caller_pattern_ok = caller_pattern_readable && resolved_context && alloc_blocks &&
+		caller_blocks == alloc_blocks && !caller_uses_management;
+
+	if (caller_pattern_ok)
 	{
-		view->argument = *argument;
+		view->ls_pattern = caller_pattern;
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: kept caller LS pattern for %u blocks -> %016llx%016llx",
+			caller_blocks, +view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
 	}
-	else if (argument)
+	else if (thor_task_attr_fix())
 	{
-		cellSpurs.error("_cellSpursTaskAttributeInitialize: argument=0x%x is not readable memory, treating as absent", argument.addr());
+		// Keep a bounded fallback for callers that do not build a pattern first.
+		//
+		// Leaving it zeroed passes create_task's validation and then kills the
+		// title: a zero pattern saves no local store, so a task resumed on a
+		// DIFFERENT SPU than it ran on gets that SPU's stale LS, branches into
+		// zeroed memory and dies -
+		//
+		//   SPU[0x0000100] (CellSpursKernel0) [0x31c44] SIG: Thread terminated
+		//   due to fatal error: Unknown STOP code: 0x0 (op=0x0)
+		//
+		// op=0x0 is an all-zero instruction, i.e. executing cleared LS. The
+		// control run with the fix off shows no such error, so this was ours.
+		//
+		// spursTasksetDispatch already names the right value: it skips reloading
+		// the ELF only when the pattern is exactly this, which is blocks 6..127 -
+		// the whole task area with the six SPURS management blocks masked off.
+		// It is 122 blocks, exactly alloc_ls_blocks for the 0x3d400 context the
+		// descriptor indirection reads, so it satisfies both create_task checks and
+		// makes a resumed task restore its full state.
+		//
+		// The full pattern only fits a context that can hold 122 blocks. This
+		// title also creates tasks with a 0x1c00 context, which allows just 3,
+		// and asking for 122 there fails create_task's block-count check. For
+		// those, save the TOP alloc blocks: the pattern is then not the magic
+		// value, so dispatch reloads the ELF and the code comes back by itself -
+		// what cannot be reconstructed is the mutable state, and the task stack
+		// sits at the top of local store (sp=0x3fe70 on the observed callsite).
+		//
+		// Bit mapping, verified against the magic constant above: block i < 64 is
+		// bit (63 - i) of _u64[0], so blocks 6..63 give 0x03FFFFFFFFFFFFFF; block
+		// i >= 64 is bit (127 - i) of _u64[1], so the top N blocks are the low N
+		// bits of _u64[1].
+		if (alloc_blocks >= 122)
+		{
+			view->ls_pattern._u64[0] = 0x03FFFFFFFFFFFFFFull;
+			view->ls_pattern._u64[1] = 0xFFFFFFFFFFFFFFFFull;
+		}
+		else
+		{
+			const u32 n = std::min<u32>(alloc_blocks, 64);
+
+			view->ls_pattern._u64[0] = 0;
+			view->ls_pattern._u64[1] = n ? (n == 64 ? ~0ull : ((1ull << n) - 1)) : 0ull;
+		}
+
+		cellSpurs.error("_cellSpursTaskAttributeInitialize: rejected caller LS pattern (%u/%u blocks, management=%u); synthesised -> %016llx%016llx",
+			caller_blocks, alloc_blocks, caller_uses_management ? 1u : 0u,
+			+view->ls_pattern._u64[0], +view->ls_pattern._u64[1]);
 	}
 
 	return CELL_OK;
@@ -4881,7 +7463,7 @@ s32 cellSpursTasksetUnsetExceptionEventHandler(vm::ptr<CellSpursTaskset> taskset
 
 s32 cellSpursLookUpTasksetAddress(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::pptr<CellSpursTaskset> taskset, u32 id)
 {
-	cellSpurs.warning("cellSpursLookUpTasksetAddress(spurs=*0x%x, taskset=**0x%x, id=0x%x)", spurs, taskset, id);
+	cellSpurs.trace("cellSpursLookUpTasksetAddress(spurs=*0x%x, taskset=**0x%x, id=0x%x)", spurs, taskset, id);
 
 	if (!taskset)
 	{
@@ -4992,6 +7574,316 @@ s32 _spurs::check_job_chain_attribute(u32 sdkVer, vm::cptr<u64> jcEntry, u16 siz
 	return CELL_OK;
 }
 
+// SUPPLY THE REAL JOB CHAIN POLICY MODULE INSTEAD OF PORTING IT.
+//
+// This title renders through job chains. Under HLE, libsre.sprx is never
+// mapped (`sys_prx: Ignored module`), so the job chain policy module - which
+// lives inside it - is not in guest memory, and `create_job_chain` passed a
+// NULL workload image. The SPU kernel then ran whatever the previous policy
+// module had left at local store 0xA00.
+//
+// The kernel's workload dispatch already knows how to run a REAL module: its
+// `default` arm does `memcpy(LS 0xA00, wklInfo->addr, wklInfo->size)`. So the
+// module does not have to be reimplemented - it has to be FOUND and staged.
+//
+// MEASURED, from an LLE boot where the title renders: the module occupies
+// local store 0xA00..0x2C00, exactly 0x2200 bytes, and those bytes appear
+// VERBATIM in decrypted libsre at offset 0x21580 - no relocation is applied at
+// load, so a straight copy is correct. The 32-byte signature below is unique
+// in the file, so it is searched for rather than trusting a fixed offset
+// across firmware versions.
+//
+// It is identified as the job chain module and not the taskset one because the
+// taskset module's 0xA70 is its syscall entry beginning `stqa lr,0x2c80`
+// (here 0xa70 is `lr r3,r80`), and the taskset LS-clear bound `ila r39,0x3d000`
+// appears nowhere in it.
+// STAGE THE REAL SPURS KERNEL, SO THE WHOLE SPU SIDE IS GENUINE CODE.
+//
+// Every remaining job chain failure has been our HLE kernel not matching what
+// a real Sony policy module expects: a stale HLE stub shadowing LS 0xA00, a
+// consumed signal reported in the entry poll status, a ready count nobody
+// seeded, an lv2 stop nobody implemented. Each was real and each only moved the
+// failure, because the module is genuine code being run against an
+// approximation of the kernel it was written for.
+//
+// libsre contains the kernels too. Staging them removes that entire class of
+// problem: the SPU runs Sony's kernel AND Sony's policy modules, and only the
+// PPU side stays HLE.
+//
+// The two kernels are found by ELF header rather than by byte signature - their
+// loadable segment begins with the zeroed kernel-context area, so the first
+// bytes are not distinctive. e_machine 23 is SPU; e_entry distinguishes them,
+// and those entries are exactly the addresses the HLE path hooks:
+//
+//     kernel1  entry 0x818  PT_LOAD vaddr 0x100 size 0x780
+//     kernel2  entry 0x848  PT_LOAD vaddr 0x100 size 0x790
+//
+//   debug.rpcsx.thor.real_spu_kernel = 1   (use with hle_spurs_kernel = 0)
+static bool thor_real_spu_kernel() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.real_spu_kernel", v) > 0 && v[0] && v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
+// Returns the guest address of the staged loadable segment, 0 on failure.
+// `want_entry` selects the kernel; `out_size` receives the segment size.
+// Public wrapper: the SPU side needs the same staged payload to fill the
+// kernel CODE region of local store. Cached by thor_spurs_kernel_image itself
+// through vm::alloc, so repeated calls are cheap after the first.
+u32 thor_spurs_kernel_code(u32 want_entry, u32& out_size) noexcept
+{
+	static u32 s_addr[2]{};
+	static u32 s_size[2]{};
+
+	const u32 i = want_entry == 0x848u ? 1u : 0u;
+
+	if (!s_addr[i])
+	{
+		s_addr[i] = thor_spurs_kernel_image(want_entry, s_size[i]);
+	}
+
+	out_size = s_size[i];
+	return s_addr[i];
+}
+
+static u32 thor_spurs_kernel_image(u32 want_entry, u32& out_size) noexcept
+{
+	out_size = 0;
+
+	fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+	if (!self)
+	{
+		cellSpurs.error("Thor KERNEL: cannot open libsre.sprx");
+		return 0;
+	}
+
+	fs::file dec = decrypt_self(self);
+
+	if (!dec)
+	{
+		cellSpurs.error("Thor KERNEL: cannot decrypt libsre.sprx");
+		return 0;
+	}
+
+	dec.seek(0);
+	const std::vector<u8> b = dec.to_vector<u8>();
+
+	const auto rd32 = [&](usz o) -> u32
+	{
+		return (u32{b[o]} << 24) | (u32{b[o + 1]} << 16) | (u32{b[o + 2]} << 8) | u32{b[o + 3]};
+	};
+	const auto rd16 = [&](usz o) -> u16
+	{
+		return static_cast<u16>((u32{b[o]} << 8) | u32{b[o + 1]});
+	};
+
+	static const u8 elfmag[7] = { 0x7f, 'E', 'L', 'F', 0x01, 0x02, 0x01 };
+
+	for (usz off = 0; off + 0x40 < b.size(); off++)
+	{
+		if (std::memcmp(b.data() + off, elfmag, sizeof(elfmag)) != 0)
+		{
+			continue;
+		}
+
+		if (rd16(off + 0x12) != 23 || rd32(off + 0x18) != want_entry)   // e_machine, e_entry
+		{
+			continue;
+		}
+
+		const u32 phoff = rd32(off + 0x1C);
+		const u16 phentsize = rd16(off + 0x2A);
+		const u16 phnum = rd16(off + 0x2C);
+
+		for (u16 i = 0; i < phnum; i++)
+		{
+			const usz ph = off + phoff + usz{i} * phentsize;
+
+			if (ph + 0x20 > b.size() || rd32(ph) != 1)   // PT_LOAD
+			{
+				continue;
+			}
+
+			const u32 p_off = rd32(ph + 0x04);
+			const u32 p_vaddr = rd32(ph + 0x08);
+			const u32 p_filesz = rd32(ph + 0x10);
+
+			if (p_vaddr != 0x100 || !p_filesz || off + p_off + p_filesz > b.size())
+			{
+				continue;
+			}
+
+			const u32 mem = vm::alloc(align<u32>(p_filesz, 128), vm::main);
+
+			if (!mem)
+			{
+				cellSpurs.error("Thor KERNEL: could not allocate %u bytes", p_filesz);
+				return 0;
+			}
+
+			std::memcpy(vm::base(mem), b.data() + off + p_off, p_filesz);
+			out_size = p_filesz;
+
+			cellSpurs.error("Thor KERNEL: staged the real SPURS kernel entry=0x%x at 0x%x "
+				"(%u bytes, libsre elf at 0x%x)", want_entry, mem, p_filesz, static_cast<u32>(off));
+			return mem;
+		}
+	}
+
+	cellSpurs.error("Thor KERNEL: no SPU image with entry 0x%x found in libsre", want_entry);
+	return 0;
+}
+
+static u32 thor_jobchain_pm_image(u32& out_size) noexcept
+{
+	static u32 s_size = 0;
+
+	static const u32 s_addr = [&]() -> u32
+	{
+		// WHICH MODULE. libsre holds several SPU policy modules back to back, each
+		// starting with a 16-byte magic of four dead `ila r2,imm` words:
+		//
+		//   0x021580  module A (0x2200)  - has the system-service path (wklCurrentId
+		//                                  == 0x20) and no job execution at all
+		//   0x023780  module B (0x1c00)  - holds the register-indirect jumps
+		//                                  (bi r6/r7/r5/r2) and six MFC GETs
+		//   0x025380  'SPURSTASK MODULE' - the taskset policy module
+		//
+		// A was picked first and may be the wrong one: under LLE the job chain EA is
+		// worked by code at pcs (0x0e90, 0x1238, 0x12a0) that are not MFC sites in A,
+		// so LLE has a different image at LS 0xa00.
+		//
+		//   debug.rpcsx.thor.jobchain_pm_variant = A (default) | B
+		static const u8 sig_a[32] = {
+			0x42, 0x37, 0x70, 0x02, 0x42, 0x83, 0x7e, 0x82, 0x42, 0x71, 0xf1, 0x02, 0x43, 0x3a, 0x67, 0x82,
+			0x40, 0x80, 0x00, 0x07, 0x12, 0x00, 0x07, 0x0a, 0x43, 0xff, 0xf8, 0x0a, 0x1c, 0x37, 0x01, 0x86,
+		};
+
+		static const u8 sig_b[32] = {
+			0x43, 0x06, 0xdc, 0x02, 0x43, 0x22, 0xb6, 0x82, 0x42, 0x5c, 0xcb, 0x02, 0x42, 0x82, 0x87, 0x82,
+			0x40, 0x96, 0x28, 0x01, 0x12, 0x02, 0x96, 0x94, 0x33, 0x83, 0xb5, 0x11, 0x30, 0x80, 0x38, 0x10,
+		};
+
+		// Variant C is the REAL job chain policy module, identified by measurement:
+		// under LLE the module resident at LS 0xa00 when the job chain (0x01eca280),
+		// its command list (0x01eca480) and 0x01eca100 are worked atomically has the
+		// magic 43 6e 84 02 42 56 96 82. Neither A nor B. It lives at libsre 0x2a280,
+		// past the taskset module, outside the window originally searched.
+		//
+		// Size 0x4000: the word at module+0x3f00 is 0x00004000, it carries a "JobC"
+		// marker at +0x3cb0, and 0xa00 + 0x4000 == 0x4a00, exactly where
+		// SpursJobChainContext sits (see spursJobChainEntry). Three independent
+		// agreements.
+		static const u8 sig_c[32] = {
+			0x43, 0x6e, 0x84, 0x02, 0x42, 0x56, 0x96, 0x82, 0x43, 0xd9, 0xe3, 0x02, 0x43, 0xf7, 0x5f, 0x82,
+			0x40, 0x80, 0x00, 0x05, 0x43, 0xff, 0xf8, 0x02, 0x43, 0xff, 0xe8, 0x01, 0x20, 0xff, 0xfe, 0x05,
+		};
+
+		char variant = 'C';
+#ifdef __ANDROID__
+		{
+			char v[PROP_VALUE_MAX]{};
+			if (__system_property_get("debug.rpcsx.thor.jobchain_pm_variant", v) > 0 && v[0])
+			{
+				variant = (v[0] >= 'a' && v[0] <= 'z') ? static_cast<char>(v[0] - 32) : v[0];
+			}
+		}
+#endif
+
+		bool want_b = (variant == 'B');
+		const u8* const sig = variant == 'C' ? sig_c : (want_b ? sig_b : sig_a);
+
+		// SIZE OF THE JOB CHAIN POLICY MODULE. 0x2200 is correct - do not "fix" it.
+		//
+		// It was briefly changed to 0x4000 on the theory that 0xa00 + 0x4000 lands
+		// exactly on SpursJobChainContext at 0x4a00, and that the module had been
+		// truncated. That theory was WRONG, twice over:
+		//
+		//  1. There is a module boundary at +0x2200. The image ends with the ASCII
+		//     string "SYS " at +0x21e8 followed by zero padding, and unrelated code
+		//     begins at +0x2200. libsre stores its SPU modules back to back, so a
+		//     larger copy simply appends the NEXT module.
+		//  2. The module DMAs into LS 0x2c80 and 0x2d80 (ila r8,0x2c80 at LS 0x2240,
+		//     ila r24,0x2d80 at 0x2378). Those are scratch buffers 0x80 past the end
+		//     of a 0x2200 image. At 0x4000 they land INSIDE the copied bytes and the
+		//     module DMAs over itself.
+		//
+		// The 1910 instructions past +0x2200 are a different module, which is why
+		// nothing in this one ever branches there: every reference into that range
+		// is an `ila` of a scratch address, never a branch target.
+		const u32 pm_size = variant == 'C' ? 0x4000u : (want_b ? 0x1c00u : 0x2200u);
+
+		fs::file self{vfs::get("/dev_flash/sys/external/libsre.sprx")};
+
+		if (!self)
+		{
+			cellSpurs.error("Thor JOBCHAIN: cannot open libsre.sprx - job chains will not run");
+			return 0;
+		}
+
+		fs::file dec = decrypt_self(self);
+
+		if (!dec)
+		{
+			cellSpurs.error("Thor JOBCHAIN: cannot decrypt libsre.sprx - job chains will not run");
+			return 0;
+		}
+
+		dec.seek(0);
+		const std::vector<u8> bytes = dec.to_vector<u8>();
+
+		if (bytes.size() < pm_size)
+		{
+			cellSpurs.error("Thor JOBCHAIN: decrypted libsre is only %u bytes", static_cast<u32>(bytes.size()));
+			return 0;
+		}
+
+		const auto it = std::search(bytes.begin(), bytes.end(), sig, sig + 32);
+
+		if (it == bytes.end())
+		{
+			cellSpurs.error("Thor JOBCHAIN: policy module signature not found in libsre "
+				"(different firmware?) - job chains will not run");
+			return 0;
+		}
+
+		const usz off = static_cast<usz>(it - bytes.begin());
+
+		if (off + pm_size > bytes.size())
+		{
+			cellSpurs.error("Thor JOBCHAIN: module at 0x%x runs past end of libsre", static_cast<u32>(off));
+			return 0;
+		}
+
+		const u32 mem = vm::alloc(pm_size, vm::main);
+
+		if (!mem)
+		{
+			cellSpurs.error("Thor JOBCHAIN: could not allocate %u bytes for the policy module", pm_size);
+			return 0;
+		}
+
+		std::memcpy(vm::base(mem), bytes.data() + off, pm_size);
+		s_size = pm_size;
+
+		cellSpurs.error("Thor JOBCHAIN: staged the real policy module at 0x%x "
+			"(%u bytes, variant %s, found in libsre at 0x%x)", mem, pm_size, variant == 'C' ? "C" : (want_b ? "B" : "A"), static_cast<u32>(off));
+		return mem;
+	}();
+
+	out_size = s_size;
+	return s_addr;
+}
+
 s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<CellSpursJobChain> jobChain, vm::cptr<u64> jobChainEntry, u16 sizeJob, u16 maxGrabbedJob, vm::cptr<u8[8]> prio, u32 maxContention, b8 autoReadyCount, u32 tag1, u32 tag2, u32 HaltOnError, vm::cptr<char> name, u32 param_13, u32 param_14)
 {
 	const s32 sdkVer = _spurs::get_sdk_version();
@@ -5004,7 +7896,36 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	jobChain->tag2 = static_cast<u8>(tag2);
 	jobChain->isHalted = false;
 	jobChain->maxGrabbedJob = maxGrabbedJob;
+
+	// THE STRIDE OF A JOB DESCRIPTOR. It was never written.
+	//
+	// `sizeJob` arrives as a parameter and this function assigned spurs, jmVer,
+	// tag1, tag2, isHalted, maxGrabbedJob, pc, cause, error and workloadId - and
+	// then dropped this one field on the floor. So every job chain reached the
+	// SPU with sizeJobDescriptor = 0.
+	//
+	// MEASURED, decoding the structure the policy module DMAs in, at the moment
+	// the workload is dispatched:
+	//
+	//     jc=0x1eca280 pc=0x01eca480 isHalted=0 maxGrabbedJob=16 workloadId=6
+	//     spurs=0x01e97a80 sizeJobDescriptor=0
+	//
+	// Everything the module checks is valid except this. A descriptor stride of
+	// zero means it cannot fetch a single job - the DMA it would issue has zero
+	// length - so it returns to the kernel immediately having done nothing,
+	// which is exactly the observed behaviour: the real module loads at LS 0xA00,
+	// is entered, faults nowhere, and exits at once.
+	jobChain->sizeJobDescriptor = sizeJob;
+
+	// SAME CLASS, SAME FUNCTION: `autoReadyCount` is a parameter and was also
+	// never stored. Auditing this function against its own signature, it receives
+	// sizeJob, maxGrabbedJob, autoReadyCount and HaltOnError, and wrote only
+	// maxGrabbedJob. Measured effect of the two it dropped: the job chain reached
+	// the SPU with sizeJobDescriptor = 0 and autoReadyCount = 0.
+	jobChain->autoReadyCount = autoReadyCount;
 	jobChain->pc = jobChainEntry;
+
+	thor_jobchain_publish_jobs(jobChain, "create");
 
 	auto as_job_error = [](s32 error) -> s32
 	{
@@ -5021,7 +7942,16 @@ s32 _spurs::create_job_chain(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, vm::ptr<
 	vm::var<u32> wid;
 
 	// TODO
-	if (auto err = _cellSpursWorkloadAttributeInitialize(ppu, +attr_wkl, 1, SYS_PROCESS_PARAM_VERSION_330_0, vm::null, 0, jobChain.addr(), prio, 1, maxContention))
+	u32 jc_pm_size = 0;
+	const u32 jc_pm_addr = thor_jobchain_pm_image(jc_pm_size);
+
+	if (auto err = _cellSpursWorkloadAttributeInitialize(ppu, +attr_wkl, 1, SYS_PROCESS_PARAM_VERSION_330_0,
+			// The REAL policy module when it can be staged from libsre, so the
+			// kernel's `default` dispatch arm copies it to LS 0xA00 and runs it.
+			// Falls back to the sentinel, which exits the workload cleanly and says
+			// so, rather than to a null image that ran stale local store.
+			vm::cptr<void>::make(jc_pm_addr ? jc_pm_addr : +SPURS_IMG_ADDR_JOBCHAIN_PM), jc_pm_size,
+			jobChain.addr(), prio, 1, maxContention))
 	{
 		return as_job_error(err);
 	}
@@ -5148,7 +8078,7 @@ s32 cellSpursJoinJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 
 s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, u8 numReadyCount)
 {
-	cellSpurs.trace("cellSpursKickJobChain(jobChain=*0x%x, numReadyCount=0x%x)", jobChain, numReadyCount);
+	cellSpurs.error("cellSpursKickJobChain(jobChain=*0x%x, numReadyCount=0x%x)", jobChain, numReadyCount);
 
 	if (!jobChain)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
@@ -5164,6 +8094,8 @@ s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, 
 
 	if (jobChain->jmVer > CELL_SPURS_JOB_REVISION_1)
 		return CELL_SPURS_JOB_ERROR_PERM;
+
+	thor_jobchain_publish_jobs(jobChain, "kick");
 
 	if (jobChain->autoReadyCount)
 		ppu_execute<&cellSpursReadyCountStore>(ppu, spurs, wid, numReadyCount);
@@ -5182,7 +8114,7 @@ s32 cellSpursKickJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain, 
 
 s32 _cellSpursJobChainAttributeInitialize(u32 jmRevsion, u32 sdkRevision, vm::ptr<CellSpursJobChainAttribute> attr, vm::cptr<u64> jobChainEntry, u16 sizeJobDescriptor, u16 maxGrabbedJob, vm::cptr<u8[8]> priorityTable, u32 maxContention, b8 autoRequestSpuCount, u32 tag1, u32 tag2, b8 isFixedMemAlloc, u32 maxSizeJobDescriptor, u32 initialRequestSpuCount)
 {
-	cellSpurs.trace("_cellSpursJobChainAttributeInitialize(jmRevsion=0x%x, sdkRevision=0x%x, attr=*0x%x, jobChainEntry=*0x%x, sizeJobDescriptor=0x%x, maxGrabbedJob=0x%x, priorityTable=*0x%x"
+	cellSpurs.error("_cellSpursJobChainAttributeInitialize(jmRevsion=0x%x, sdkRevision=0x%x, attr=*0x%x, jobChainEntry=*0x%x, sizeJobDescriptor=0x%x, maxGrabbedJob=0x%x, priorityTable=*0x%x"
 					", maxContention=%u, autoRequestSpuCount=%s, tag1=0x%x, tag2=0x%x, isFixedMemAlloc=%s, maxSizeJobDescriptor=0x%x, initialRequestSpuCount=%u)",
 		jmRevsion, sdkRevision, attr, jobChainEntry, sizeJobDescriptor, maxGrabbedJob, priorityTable, maxContention, autoRequestSpuCount, tag1, tag2, isFixedMemAlloc, maxSizeJobDescriptor, initialRequestSpuCount);
 
@@ -5362,7 +8294,7 @@ s32 cellSpursJobGuardInitialize(vm::ptr<CellSpursJobChain> jobChain, vm::ptr<Cel
 
 s32 cellSpursJobChainAttributeSetName(vm::ptr<CellSpursJobChainAttribute> attr, vm::cptr<char> name)
 {
-	cellSpurs.trace("cellSpursJobChainAttributeSetName(attr=*0x%x, name=*0x%x %s)", attr, name, name);
+	cellSpurs.error("cellSpursJobChainAttributeSetName(attr=*0x%x, name=*0x%x %s)", attr, name, name);
 
 	if (!attr || !name)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
@@ -5502,7 +8434,7 @@ s32 cellSpursJobGuardReset(vm::ptr<CellSpursJobGuard> jobGuard)
 
 s32 cellSpursRunJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 {
-	cellSpurs.trace("cellSpursRunJobChain(jobChain=*0x%x)", jobChain);
+	cellSpurs.error("cellSpursRunJobChain(jobChain=*0x%x)", jobChain);
 
 	if (!jobChain)
 		return CELL_SPURS_JOB_ERROR_NULL_POINTER;
@@ -5519,6 +8451,18 @@ s32 cellSpursRunJobChain(ppu_thread& ppu, vm::ptr<CellSpursJobChain> jobChain)
 		return CELL_SPURS_JOB_ERROR_PERM;
 
 	const auto spurs = +jobChain->spurs;
+
+	thor_jobchain_dump_descriptors(jobChain, "run");
+	thor_jobchain_publish_jobs(jobChain, "run");
+
+	// Seed the ready count so the module is entered with POLL_STATUS_READYCOUNT
+	// set and takes its work path instead of its idle path. See
+	// thor_jobchain_readycount.
+	if (const u32 seed = thor_jobchain_readycount())
+	{
+		ppu_execute<&cellSpursReadyCountStore>(ppu, spurs, wid, seed);
+	}
+
 	ppu_execute<&cellSpursSendWorkloadSignal>(ppu, spurs, wid);
 
 	const auto err = ppu_execute<&cellSpursWakeUp>(ppu, spurs);

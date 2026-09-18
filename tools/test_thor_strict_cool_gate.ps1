@@ -23,10 +23,23 @@ foreach ($fragment in @(
     'Write-Output $captureDir',
     '"failure-pid.txt" @("shell", "pidof $Package")',
     '$failure.Exception.Data["ThorCaptureDirectory"] = $captureDir'
+    'function Assert-ThorStrictColdStartGate'
+    '$launchLimitC = 70.0'
+    'gate=fixed-silicon-only'
+    'if ([double]$snapshot.silicon_temperature_c -ge $launchLimitC)'
+    'if ($Profile -eq "strict-cool-gate") {'
+    'Assert-ThorStrictColdStartGate "pre-run"'
+    'if ($Profile -ne "strict-cool-gate") {'
 )) {
     if (-not $macroSource.Contains($fragment)) {
         throw "Thor input macro is missing strict cool-gate contract: $fragment"
     }
+}
+
+$postRunIndex = $macroSource.LastIndexOf('if ($Profile -ne "strict-cool-gate") {')
+$postRunRuntimeIndex = $macroSource.LastIndexOf('Assert-ThorRuntimeThermalBudget "post-run"')
+if ($postRunIndex -lt 0 -or $postRunRuntimeIndex -le $postRunIndex) {
+    throw "The strict cool gate must skip the runtime near-limit guard after its one cold-start sample."
 }
 
 $strictGuardIndex = $macroSource.IndexOf('if ($Profile -eq "strict-cool-gate")')
@@ -40,10 +53,10 @@ $requiredWrapperFragments = @(
     '[string]$Action = "Status"',
     'Profile = "strict-cool-gate"',
     'ForceStop = $true',
-    'ThermalPreflightSamples = 3',
+    'ThermalPreflightSamples = 1',
     'ThermalPreflightIntervalSeconds = 2',
     'ThermalPreflightHeadroomC = 0',
-    'MaxLaunchSiliconTemperatureC = 35',
+    'MaxLaunchSiliconTemperatureC = 70',
     'ThermalPreflightMaxRiseC = 1',
     'MaxBatteryTemperatureC = 34',
     'MaxSkinTemperatureC = 40',
@@ -92,10 +105,10 @@ foreach ($line in @(
     'profile=strict-cool-gate',
     'boot_game=False',
     'force_stop=True',
-    'preflight_samples=3',
+    'preflight_samples=1',
     'preflight_interval_seconds=2',
     'preflight_headroom_c=0',
-    'max_launch_silicon_c=35',
+    'max_launch_silicon_c=70',
     'max_preflight_rise_c=1',
     'max_battery_c=34',
     'max_skin_c=40',
@@ -107,4 +120,4 @@ foreach ($line in @(
     }
 }
 
-Write-Output "Thor strict cool-gate contract passed: host-only status is exact, Run is no-boot/force-stop, and success/failure capture output is machine-readable with post-stop PID evidence."
+Write-Output "Thor strict cool-gate contract passed: one fixed-silicon sample below 70 C can run, other temperatures do not decide launch, Run is no-boot/force-stop, and success/failure capture output is machine-readable with post-stop PID evidence."

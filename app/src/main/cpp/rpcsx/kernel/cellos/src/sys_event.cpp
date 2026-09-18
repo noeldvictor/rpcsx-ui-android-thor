@@ -16,7 +16,85 @@
 
 #include "cellos/thor_ppu_wait.h"
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
+
 LOG_CHANNEL(sys_event);
+
+namespace {
+constexpr u64 thor_transformers_audio_queue_key = 0x80004d494f323221;
+constexpr u32 thor_transformers_audio_queue_trace_limit = 64;
+constexpr u32 thor_transformers_audio_wake_log_limit = 8;
+
+std::atomic<u32> g_thor_transformers_audio_queue_trace_seq{0};
+std::atomic<u32> g_thor_transformers_audio_wake_log_seq{0};
+
+bool thor_transformers_audio_queue_trace_enabled() noexcept {
+#ifdef __ANDROID__
+  static const bool s_on = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get(
+               "debug.rpcsx.thor.transformers_lwmutex_trace", value) > 0 &&
+           value[0] && value[0] != '0';
+  }();
+  return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+  return false;
+#endif
+}
+
+bool thor_transformers_audio_wake_fix_enabled() noexcept {
+#ifdef __ANDROID__
+  static const bool s_on = []() noexcept {
+    char value[PROP_VALUE_MAX]{};
+    return __system_property_get(
+               "debug.rpcsx.thor.transformers_audio_wake_fix", value) > 0 &&
+           value[0] && value[0] != '0';
+  }();
+  return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+  return false;
+#endif
+}
+
+void thor_transformers_audio_queue_trace(const lv2_event_queue &queue,
+                                         const char *action, u32 ppu_id,
+                                         s32 result,
+                                         const lv2_event *event = nullptr,
+                                         u32 wake_state_before = 0,
+                                         u32 wake_state_after = 0,
+                                         bool awake_result = false,
+                                         u32 forced_pending = 0) {
+  if (!thor_transformers_audio_queue_trace_enabled() ||
+      queue.key != thor_transformers_audio_queue_key) {
+    return;
+  }
+
+  const u32 sequence =
+      g_thor_transformers_audio_queue_trace_seq.fetch_add(
+          1, std::memory_order_relaxed);
+  if (sequence >= thor_transformers_audio_queue_trace_limit) {
+    return;
+  }
+
+  const u32 wait_ppu = queue.pq ? queue.pq->id : 0;
+  const u64 source = event ? std::get<0>(*event) : 0;
+  const u64 data1 = event ? std::get<1>(*event) : 0;
+  const u64 data2 = event ? std::get<2>(*event) : 0;
+  const u64 data3 = event ? std::get<3>(*event) : 0;
+
+  sys_event.error(
+      "Thor TWC AUDIOQ #%u: %s queue=0x%x key=0x%llx ppu=0x%x "
+      "wait_ppu=0x%x pending=%u/%u source=0x%llx data1=0x%llx "
+      "data2=0x%llx data3=0x%llx result=0x%x wake_state=0x%x->0x%x "
+      "awake=%u forced_pending=%u",
+      sequence, action, queue.id, queue.key, ppu_id, wait_ppu,
+      static_cast<u32>(queue.events.size()), queue.size, source, data1, data2,
+      data3, static_cast<u32>(result), wake_state_before, wake_state_after,
+      awake_result ? 1u : 0u, forced_pending);
+}
+} // namespace
 
 lv2_event_queue::lv2_event_queue(u32 protocol, s32 type, s32 size, u64 name,
                                  u64 ipc_key) noexcept
@@ -113,7 +191,12 @@ CellError lv2_event_queue::send(lv2_event event, bool *notified_thread,
 
   std::lock_guard lock(mutex);
 
+  thor_transformers_audio_queue_trace(*this, "SEND-ENTER", 0, CELL_OK,
+                                      &event);
+
   if (!exists) {
+    thor_transformers_audio_queue_trace(*this, "SEND-NOTCONN", 0,
+                                        CELL_ENOTCONN, &event);
     return CELL_ENOTCONN;
   }
 
@@ -121,9 +204,13 @@ CellError lv2_event_queue::send(lv2_event event, bool *notified_thread,
     if (events.size() < this->size + 0u) {
       // Save event
       events.emplace_back(event);
+      thor_transformers_audio_queue_trace(*this, "SEND-STORED", 0, CELL_OK,
+                                          &event);
       return {};
     }
 
+    thor_transformers_audio_queue_trace(*this, "SEND-FULL", 0, CELL_EBUSY,
+                                        &event);
     return CELL_EBUSY;
   }
 
@@ -145,7 +232,32 @@ CellError lv2_event_queue::send(lv2_event event, bool *notified_thread,
 
     std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) = event;
 
-    awake(&ppu);
+    const u32 wake_state_before =
+        static_cast<u32>((+ppu.state).raw());
+    const bool awake_result = awake(&ppu);
+    const u32 forced_pending =
+        thor_transformers_audio_wake_fix_enabled() &&
+                key == thor_transformers_audio_queue_key
+            ? lv2_obj::complete_deferred_wake(ppu)
+            : 0;
+    const u32 wake_state_after = static_cast<u32>((+ppu.state).raw());
+    thor_transformers_audio_queue_trace(*this, "SEND-WAKE", ppu.id, CELL_OK,
+                                        &event, wake_state_before,
+                                        wake_state_after, awake_result,
+                                        forced_pending);
+
+    if (forced_pending) {
+      const u32 sequence =
+          g_thor_transformers_audio_wake_log_seq.fetch_add(
+              1, std::memory_order_relaxed);
+      if (sequence < thor_transformers_audio_wake_log_limit) {
+        sys_event.error(
+            "Thor TWC AUDIO WAKE FIX: sample=%u queue=0x%x ppu=0x%x "
+            "state=0x%x->0x%x pending=%u",
+            sequence, id, ppu.id, wake_state_before, wake_state_after,
+            forced_pending);
+      }
+    }
 
     if (port &&
         ppu.prio.load().prio <
@@ -415,6 +527,9 @@ error_code sys_event_queue_receive(ppu_thread &ppu, u32 equeue_id,
 
         std::lock_guard lock(queue.mutex);
 
+        thor_transformers_audio_queue_trace(queue, "RECV-ENTER", ppu.id,
+                                            CELL_OK);
+
         // "/dev_flash/vsh/module/msmw2.sprx" seems to rely on some cryptic
         // shared memory behaviour that we don't emulate correctly
         // This is a hack to avoid waiting for 1m40s every time we boot vsh
@@ -428,12 +543,17 @@ error_code sys_event_queue_receive(ppu_thread &ppu, u32 equeue_id,
         if (queue.events.empty()) {
           queue.sleep(ppu, timeout);
           lv2_obj::emplace(queue.pq, &ppu);
+          thor_transformers_audio_queue_trace(queue, "RECV-WAIT", ppu.id,
+                                              CELL_EBUSY);
           return CELL_EBUSY;
         }
 
+        const lv2_event event = queue.events.front();
         std::tie(ppu.gpr[4], ppu.gpr[5], ppu.gpr[6], ppu.gpr[7]) =
-            queue.events.front();
+            event;
         queue.events.pop_front();
+        thor_transformers_audio_queue_trace(queue, "RECV-READY", ppu.id,
+                                            CELL_OK, &event);
         return {};
       });
 

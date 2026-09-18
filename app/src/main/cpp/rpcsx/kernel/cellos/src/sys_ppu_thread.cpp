@@ -520,6 +520,16 @@ error_code _sys_ppu_thread_create(ppu_thread &ppu, vm::ptr<u64> thread_id,
                          "(id=0x%x, func=*0x%x, rtoc=0x%x, user-tls=0x%x)",
                          ppu_name, tid, entry.addr, entry.rtoc, tls);
 
+#ifdef __ANDROID__
+  // FlipPump is the first stable title milestone shared by Transformers HLE
+  // and LLE. Capture on the creating main thread before this HLE call returns;
+  // LLE keeps FlipPump alive for only about 1.4 seconds, which a timer can miss.
+  if (ppu_name == "FlipPump") {
+    thor_dump_transformers_ppu_call_trace(
+        ppu, thor_ppu_call_trace_point::flip_pump);
+  }
+#endif
+
   ppu.check_state();
   *thread_id = tid;
   return CELL_OK;

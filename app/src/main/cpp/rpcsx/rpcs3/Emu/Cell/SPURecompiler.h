@@ -77,6 +77,16 @@ void spu_llvm_set_compile_context(spu_llvm_compile_context* context) noexcept;
 #endif
 
 u32 spu_reduced_loop_unroll_factor() noexcept;
+
+// debug.rpcsx.thor.spu_dec_dead_read: read the SPU decrementer only in the exit
+// iteration of a counted delay loop. See SPULLVMRecompiler.cpp, thor_dead_dec_read_shape.
+bool spu_dec_dead_read_enabled() noexcept;
+
+// Thor (2026-09-08): PUTLLC16 inline pattern installation, independent of the
+// accuracy setting. -1 follows the setting (accurate: never; not accurate: every
+// pattern the analyser finds, unfiltered), 0 never installs, 1 always installs.
+//   debug.rpcsx.thor.spu_putllc16 = 0 | 1
+int spu_putllc16_mode() noexcept;
 #if defined(ANDROID) && !defined(RPCSX_THOR_ES_SPU_EXPERIMENTS)
 inline constexpr bool spu_reduced_loop_reuse_enabled() noexcept
 {
@@ -92,6 +102,7 @@ bool spu_reduced_loop_reuse_enabled() noexcept;
 bool spu_dynamic_mfc_fast_enabled() noexcept;
 #endif
 bool spu_native_object_cache_enabled() noexcept;
+bool spu_runtime_native_object_cache_enabled() noexcept;
 
 class spu_item
 {
@@ -144,8 +155,8 @@ class spu_runtime
 	// Debug module output location
 	std::string m_cache_path;
 
-	// Exact final-IR native objects used only by the opted-in startup
-	// interpreter and cached-program preload paths.
+	// Exact final-IR native objects used by opted-in startup and Android ARM64
+	// runtime LLVM compilation paths.
 	std::string m_native_object_cache_path;
 
 public:

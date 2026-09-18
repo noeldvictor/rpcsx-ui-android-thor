@@ -122,6 +122,18 @@ foreach ($plainTarget in @('RPCSX.log"; Local = "cache/RPCSX.log', 'RPCSX.old.lo
     }
 }
 
+foreach ($serialFragment in @(
+    '[string]$Serial = ""',
+    '$requestedSerial = $env:ANDROID_SERIAL',
+    '$env:ANDROID_SERIAL = $DeviceSerial',
+    'Pass -Serial when more than one device is online',
+    '"- Device serial: $DeviceSerial"'
+)) {
+    if (-not $collector.Contains($serialFragment)) {
+        throw "Thor collector lost explicit device selection: $serialFragment"
+    }
+}
+
 if ($collector.Contains('RPCSX.log.gz')) {
     throw "Thor collector still expects the Android-only compressed duplicate."
 }

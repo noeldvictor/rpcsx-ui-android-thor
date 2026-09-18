@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_mem_watch.h"
 #include "rx/cpu/cell/ppu/Decoder.hpp"
 #include "util/JIT.h"
 #include "util/StrUtil.h"
@@ -291,6 +292,26 @@ private:
 // perf_monitor prints them. Delete this probe once the question is settled.
 atomic_t<u64> g_ppu_stcx_stale_128{0};
 atomic_t<u64> g_ppu_stcx_other_fail{0};
+
+// Keep the reservation generation that the preceding successful conditional
+// store recorded. Subtracting one generation here makes the next store fail
+// by exactly 128, even when no other thread changed the line.
+//
+//   debug.rpcsx.thor.ppu_cached_rtime_fix = 1
+static bool thor_ppu_cached_rtime_fix() noexcept
+{
+#ifdef ANDROID
+	static const bool enabled = []
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.ppu_cached_rtime_fix", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return enabled;
+#else
+	return false;
+#endif
+}
 
 // Budget for concurrent PPU LLVM compilation.
 //
@@ -3585,7 +3606,14 @@ static u64 get_thor_cpu_affinity_mask() noexcept
 #ifdef ANDROID
 		char value[PROP_VALUE_MAX]{};
 
-		if (__system_property_get("debug.rpcsx.thor.cpu_affinity_mask", value) > 0 && value[0])
+		// Per-class mask first (2026-09-08), then the shared one. The shared mask
+		// moved every guest thread to cpu3-7 at once and lost 4 FPS on Transformers
+		// by putting six polling SPUs on five big cores; the split keeps the PPU
+		// chain threads on the big cores and parks the SPUs elsewhere.
+		//   debug.rpcsx.thor.ppu_affinity_mask = 0x..   (PPU threads only)
+		//   debug.rpcsx.thor.cpu_affinity_mask = 0x..   (fallback, PPU and SPU)
+		for (const char* prop : {"debug.rpcsx.thor.ppu_affinity_mask", "debug.rpcsx.thor.cpu_affinity_mask"})
+		if (__system_property_get(prop, value) > 0 && value[0])
 		{
 			const unsigned long parsed = std::strtoul(value, nullptr, 0);
 
@@ -3606,6 +3634,12 @@ void ppu_thread::cpu_task()
 	if (const u64 thor_mask = get_thor_cpu_affinity_mask())
 	{
 		thread_ctrl::set_thread_affinity_mask(thor_mask);
+
+		static atomic_t<bool> s_thor_mask_logged{false};
+		if (!s_thor_mask_logged.exchange(true))
+		{
+			ppu_log.error("Thor: PPU affinity mask 0x%llx applied", thor_mask);
+		}
 	}
 
 	std::fesetround(FE_TONEAREST);
@@ -3935,6 +3969,319 @@ static thor_es_frame_poll_wait_mode get_initial_thor_es_frame_poll_wait_mode(u32
 		: thor_es_frame_poll_wait_mode::off;
 }
 
+static bool thor_ppu_call_trace_enabled() noexcept
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) > 0 &&
+		value[0] >= '1' && value[0] <= '5' && !value[1];
+#else
+	return false;
+#endif
+}
+
+static bool thor_transformers_counter_probe_enabled() noexcept
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	return __system_property_get("debug.rpcsx.thor.ppu_call_trace", value) == 1 &&
+		value[0] == '6';
+#else
+	return false;
+#endif
+}
+
+bool ppu_thor_transformers_counter_probe_range(u32 address, u32 size)
+{
+	if (!size || Emu.GetTitleID() != "BLUS30357" || !thor_transformers_counter_probe_enabled())
+	{
+		return false;
+	}
+
+	constexpr std::array<u32, 3> sites = {0x00fdcf20, 0x00fdcf74, 0x00fdcfa4};
+	const u64 end = static_cast<u64>(address) + size;
+	for (const u32 site : sites)
+	{
+		if (address <= site && site < end)
+		{
+			static atomic_t<bool> logged = false;
+			if (!logged.exchange(true))
+			{
+				ppu_log.notice("Thor Transformers counter probe enabled: entry=0x%x global_equal=0x%x object_equal=0x%x",
+					sites[0], sites[1], sites[2]);
+			}
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ppu_thor_transformers_counter_probe(ppu_thread& ppu, u64 r0, u64 r3, u64 r9,
+	u64 r29, u64 r30, u64 r31, u32 cia)
+{
+	if (!thor_transformers_counter_probe_enabled() || Emu.GetTitleID() != "BLUS30357")
+	{
+		return;
+	}
+
+	const auto ppu_name = ppu.ppu_tname.load();
+	if (!ppu_name || *ppu_name != "main_thread")
+	{
+		return;
+	}
+
+	constexpr u32 entry_cia = 0x00fdcf20;
+	constexpr u32 global_wait_cia = 0x00fdcf60;
+	constexpr u32 global_equal_cia = 0x00fdcf74;
+	constexpr u32 object_wait_cia = 0x00fdcf90;
+	constexpr u32 object_equal_cia = 0x00fdcfa4;
+	constexpr u64 invocation_limit = 32;
+	constexpr u64 wait_milestone_limit = 1024;
+	static atomic_t<u64> s_emulation_id = umax;
+	static atomic_t<u64> s_next_invocation = 0;
+	static atomic_t<u64> s_current_invocation = umax;
+	static atomic_t<u64> s_global_waits = 0;
+	static atomic_t<u64> s_object_waits = 0;
+	static atomic_t<u64> s_last_global_pair = umax;
+	static atomic_t<u64> s_last_object_pair = umax;
+
+	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+	if (s_emulation_id.load() != emulation_id && s_emulation_id.exchange(emulation_id) != emulation_id)
+	{
+		s_next_invocation.store(0);
+		s_current_invocation.store(umax);
+		s_global_waits.store(0);
+		s_object_waits.store(0);
+		s_last_global_pair.store(umax);
+		s_last_object_pair.store(umax);
+	}
+
+	const bool hle_spurs =
+		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
+	const char* const mode = hle_spurs ? "HLE" : "LLE";
+
+	auto read_pair = [](u32 first_address, u32 second_address)
+	{
+		const u32 first = vm::check_addr<4>(first_address) ? vm::read32(first_address) : umax;
+		const u32 second = vm::check_addr<4>(second_address) ? vm::read32(second_address) : umax;
+		return std::pair{first, second};
+	};
+
+	if (cia == entry_cia)
+	{
+		const u64 invocation = s_next_invocation.fetch_add(1);
+		s_current_invocation.store(invocation);
+		s_global_waits.store(0);
+		s_object_waits.store(0);
+		s_last_global_pair.store(umax);
+		s_last_object_pair.store(umax);
+		if (invocation < invocation_limit)
+		{
+			ppu_log.error("Thor Transformers COUNTER: mode=%s emulation_id=%llu invocation=%llu event=ENTRY cia=0x%08x r3=0x%llx r30=0x%llx",
+				mode, emulation_id, invocation, cia, r3, r30);
+		}
+		return;
+	}
+
+	const u64 invocation = s_current_invocation.load();
+	if (invocation == umax || invocation >= invocation_limit)
+	{
+		return;
+	}
+
+	u32 first_address = 0;
+	u32 second_address = 0;
+	const char* event = nullptr;
+	u64 waits = 0;
+	bool must_log = true;
+
+	if (cia == global_wait_cia || cia == global_equal_cia)
+	{
+		const u32 global_base = static_cast<u32>(r30) + 0x20000u;
+		first_address = global_base - 0x638cu;
+		second_address = global_base - 0x6390u;
+		if (cia == global_wait_cia)
+		{
+			event = "GLOBAL_WAIT";
+			waits = s_global_waits.fetch_add(1) + 1;
+		}
+		else
+		{
+			event = "GLOBAL_EQUAL";
+			waits = s_global_waits.load();
+		}
+	}
+	else if (cia == object_wait_cia || cia == object_equal_cia)
+	{
+		first_address = static_cast<u32>(r31) + 4u;
+		second_address = static_cast<u32>(r31);
+		if (cia == object_wait_cia)
+		{
+			event = "OBJECT_WAIT";
+			waits = s_object_waits.fetch_add(1) + 1;
+		}
+		else
+		{
+			event = "OBJECT_EQUAL";
+			waits = s_object_waits.load();
+		}
+	}
+	else
+	{
+		return;
+	}
+
+	const auto [first, second] = read_pair(first_address, second_address);
+	const u64 pair = static_cast<u64>(first) << 32 | second;
+	if (cia == global_wait_cia)
+	{
+		const u64 previous_pair = s_last_global_pair.exchange(pair);
+		must_log = pair != previous_pair || waits <= 4 ||
+			(waits <= wait_milestone_limit && (waits & (waits - 1)) == 0);
+	}
+	else if (cia == object_wait_cia)
+	{
+		const u64 previous_pair = s_last_object_pair.exchange(pair);
+		must_log = pair != previous_pair || waits <= 4 ||
+			(waits <= wait_milestone_limit && (waits & (waits - 1)) == 0);
+	}
+
+	if (must_log)
+	{
+		ppu_log.error("Thor Transformers COUNTER: mode=%s emulation_id=%llu invocation=%llu event=%s cia=0x%08x waits=%llu first=0x%08x:0x%08x second=0x%08x:0x%08x r0=0x%llx r9=0x%llx r29=0x%llx r30=0x%llx r31=0x%llx",
+			mode, emulation_id, invocation, event, cia, waits, first_address, first,
+			second_address, second, r0, r9, r29, r30, r31);
+	}
+}
+
+void thor_dump_transformers_ppu_call_trace(ppu_thread& ppu, thor_ppu_call_trace_point point)
+{
+#ifdef ANDROID
+	char value[PROP_VALUE_MAX]{};
+	if (__system_property_get("debug.rpcsx.thor.ppu_call_trace", value) <= 0 ||
+		!value[0] || value[0] == '0')
+	{
+		return;
+	}
+
+	const bool hle_spurs =
+		g_cfg.core.libraries_control.get_set().count("libsre.sprx:hle") != 0;
+	const auto ppu_name = ppu.ppu_tname.load();
+	if (Emu.GetTitleID() != "BLUS30357" || !ppu_name || *ppu_name != "main_thread" ||
+		ppu.syscall_history.data.size() <= 1)
+	{
+		return;
+	}
+
+	const char* mode = nullptr;
+	std::atomic<u64>* captured_emulation_id = nullptr;
+	static std::atomic<u64> s_flip_emulation_id{umax};
+	static std::atomic<u64> s_boundary_emulation_id{umax};
+	static std::atomic<u64> s_net_emulation_id{umax};
+	static std::atomic<u64> s_wait_emulation_id{umax};
+	static std::atomic<u64> s_poll_emulation_id{umax};
+
+	switch (point)
+	{
+	case thor_ppu_call_trace_point::flip_pump:
+		if (value[0] != '1')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_FLIP" : "LLE_FLIP";
+		captured_emulation_id = &s_flip_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::hle_stall:
+		if (value[0] == '4')
+		{
+			mode = hle_spurs ? "HLE_WAIT" : "LLE_WAIT";
+			captured_emulation_id = &s_wait_emulation_id;
+			break;
+		}
+		if (value[0] != '2' || !hle_spurs)
+		{
+			return;
+		}
+		mode = "HLE_STALL";
+		captured_emulation_id = &s_boundary_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::lle_voice:
+		if (value[0] != '2' || hle_spurs)
+		{
+			return;
+		}
+		mode = "LLE_VOICE";
+		captured_emulation_id = &s_boundary_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::net_module:
+		if (value[0] != '3')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_NET" : "LLE_NET";
+		captured_emulation_id = &s_net_emulation_id;
+		break;
+	case thor_ppu_call_trace_point::counter_poll:
+		if (value[0] != '5')
+		{
+			return;
+		}
+		mode = hle_spurs ? "HLE_POLL" : "LLE_POLL";
+		captured_emulation_id = &s_poll_emulation_id;
+		break;
+	}
+
+	const u64 emulation_id = static_cast<u64>(Emu.GetEmulationIdentifier());
+	const u64 previous_emulation_id = captured_emulation_id->exchange(emulation_id);
+
+	if (previous_emulation_id == emulation_id)
+	{
+		return;
+	}
+
+	const auto call_stack = ppu.dump_callstack_list();
+
+	ppu_log.error("Thor PPU CALL TRACE EVENT: point=%u mode=%s history_size=%u index=%llu "
+		"emulation_id=%llu previous_emulation_id=%llu cia=0x%08x lr=0x%llx sp=0x%llx "
+		"stack_count=%u r0=0x%llx r9=0x%llx r30=0x%llx r31=0x%llx",
+		static_cast<u32>(point), mode, static_cast<u32>(ppu.syscall_history.data.size()),
+		ppu.syscall_history.index, emulation_id, previous_emulation_id, +ppu.cia, +ppu.lr,
+		ppu.gpr[1], static_cast<u32>(call_stack.size()), ppu.gpr[0], ppu.gpr[9],
+		ppu.gpr[30], ppu.gpr[31]);
+
+	ppu_log.error("Thor PPU CALL TRACE STACK BEGIN: mode=%s count=%u", mode,
+		static_cast<u32>(call_stack.size()));
+	for (usz frame = 0; frame < call_stack.size(); frame++)
+	{
+		ppu_log.error("Thor PPU CALL TRACE STACK: frame=%u from=0x%08x sp=0x%08x",
+			static_cast<u32>(frame), call_stack[frame].first, call_stack[frame].second);
+	}
+	ppu_log.error("Thor PPU CALL TRACE STACK END");
+
+	const u64 history_index = ppu.syscall_history.index;
+	const u64 count = std::min<u64>(history_index, ppu.syscall_history.data.size());
+	const u64 first = history_index - count;
+
+	ppu_log.error("Thor PPU CALL TRACE BEGIN: mode=%s count=%llu index=%llu cia=0x%08x",
+		mode, count, history_index, +ppu.cia);
+
+	for (u64 seq = first; seq < history_index; seq++)
+	{
+		const auto& entry = ppu.syscall_history.data[seq % ppu.syscall_history.data.size()];
+		ppu_log.error("Thor PPU CALL TRACE: seq=%llu cia=0x%08x func=%s rc=0x%llx "
+			"r3=0x%llx r4=0x%llx r5=0x%llx r6=0x%llx",
+			seq, static_cast<u32>(entry.cia), entry.func_name ? entry.func_name : "<null>",
+			entry.error, entry.args[0], entry.args[1], entry.args[2], entry.args[3]);
+	}
+
+	ppu_log.error("Thor PPU CALL TRACE END");
+#else
+	static_cast<void>(ppu);
+	static_cast<void>(point);
+#endif
+}
+
 ppu_thread::~ppu_thread()
 {
 }
@@ -3967,9 +4314,10 @@ ppu_thread::ppu_thread(const ppu_thread_params& param, std::string_view name, u3
 		state += cpu_flag::memory;
 	}
 
-	call_history.data.resize(g_cfg.core.ppu_call_history ? call_history_max_size : 1);
-	syscall_history.data.resize(g_cfg.core.ppu_call_history ? syscall_history_max_size : 1);
-	syscall_history.count_debug_arguments = static_cast<u32>(g_cfg.core.ppu_call_history ? std::size(syscall_history.data[0].args) : 0);
+	const bool record_call_history = g_cfg.core.ppu_call_history || thor_ppu_call_trace_enabled();
+	call_history.data.resize(record_call_history ? call_history_max_size : 1);
+	syscall_history.data.resize(record_call_history ? syscall_history_max_size : 1);
+	syscall_history.count_debug_arguments = static_cast<u32>(record_call_history ? std::size(syscall_history.data[0].args) : 0);
 
 #ifdef __APPLE__
 	pthread_jit_write_protect_np(true);
@@ -4075,9 +4423,10 @@ ppu_thread::ppu_thread(utils::serial& ar)
 		atomic_t<u32> inited = false;
 	};
 
-	call_history.data.resize(g_cfg.core.ppu_call_history ? call_history_max_size : 1);
-	syscall_history.data.resize(g_cfg.core.ppu_call_history ? syscall_history_max_size : 1);
-	syscall_history.count_debug_arguments = static_cast<u32>(g_cfg.core.ppu_call_history ? std::size(syscall_history.data[0].args) : 0);
+	const bool record_call_history = g_cfg.core.ppu_call_history || thor_ppu_call_trace_enabled();
+	call_history.data.resize(record_call_history ? call_history_max_size : 1);
+	syscall_history.data.resize(record_call_history ? syscall_history_max_size : 1);
+	syscall_history.count_debug_arguments = static_cast<u32>(record_call_history ? std::size(syscall_history.data[0].args) : 0);
 
 	if (version >= 2 && !g_fxo->get<save_lv2_tag>().loaded.exchange(true))
 	{
@@ -4621,7 +4970,8 @@ static void ppu_trace(u64 addr)
 template <typename T>
 static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 {
-	perf_meter<"LARX"_u32> perf0;
+	// Destructor-only unless perf_report is on. See perf_meter(std::nullptr_t).
+	perf_meter<"LARX"_u32> perf0(nullptr);
 
 	// Do not allow stores accessed from the same cache line to past reservation load
 	atomic_fence_seq_cst();
@@ -4697,12 +5047,17 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 		ppu.use_full_rdata = false;
 	}
 
+	// last_faddr is zero unless a conditional store failed on this thread, so
+	// the timestamp that the window test below needs is meaningful only on that
+	// path. Read the counter there, not on every LARX (ARMSX3 2f0ce7786).
+	const u64 larx_tsc = (addr & addr_mask) == (ppu.last_faddr & addr_mask) ? rx::get_tsc() : 0;
+
 	if (ppu_log.trace && (addr & addr_mask) == (ppu.last_faddr & addr_mask))
 	{
-		ppu_log.trace(u8"LARX after fail: addr=0x%x, faddr=0x%x, time=%u c", addr, ppu.last_faddr, (perf0.get() - ppu.last_ftsc));
+		ppu_log.trace(u8"LARX after fail: addr=0x%x, faddr=0x%x, time=%u c", addr, ppu.last_faddr, (larx_tsc - ppu.last_ftsc));
 	}
 
-	if ((addr & addr_mask) == (ppu.last_faddr & addr_mask) && (perf0.get() - ppu.last_ftsc) < 600 && (vm::reservation_acquire(addr) & -128) == ppu.last_ftime)
+	if ((addr & addr_mask) == (ppu.last_faddr & addr_mask) && (larx_tsc - ppu.last_ftsc) < 600 && (vm::reservation_acquire(addr) & -128) == ppu.last_ftime)
 	{
 		be_t<u64> rdata;
 		std::memcpy(&rdata, &ppu.rdata[addr & 0x78], 8);
@@ -4730,7 +5085,10 @@ static T ppu_load_acquire_reservation(ppu_thread& ppu, u32 addr)
 	{
 		// Reload "cached" reservation of previous succeeded conditional store
 		// This seems like a hardware feature according to cellSpursAddUrgentCommand function
-		ppu.rtime -= 128;
+		if (!thor_ppu_cached_rtime_fix())
+		{
+			ppu.rtime -= 128;
+		}
 	}
 	else
 	{
@@ -4981,7 +5339,9 @@ const auto ppu_stcx_accurate_tx = build_function_asm<u64 (*)(u32 raddr, u64 rtim
 template <typename T>
 static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 {
-	perf_meter<"STCX"_u32> perf0;
+	// Never read in this function; only the destructor touches it, and only
+	// under perf_report. See perf_meter(std::nullptr_t).
+	perf_meter<"STCX"_u32> perf0(nullptr);
 
 	if (addr % sizeof(T))
 	{
@@ -4990,6 +5350,12 @@ static bool ppu_store_reservation(ppu_thread& ppu, u32 addr, u64 reg_value)
 
 	auto& data = vm::_ref<atomic_be_t<u64>>(addr & -8);
 	auto& res = vm::reservation_acquire(addr);
+
+	// Thor MEMWATCH: a PPU conditional store on the watched word.
+	if (thor::mem_watch::armed()) [[unlikely]]
+	{
+		thor::mem_watch::on_range(sizeof(T) == 4 ? "PPU stwcx" : "PPU stdcx", addr, sizeof(T), ppu.id, ppu.cia);
+	}
 	const u64 rtime = ppu.rtime;
 
 	be_t<u64> old_data = 0;
@@ -6543,6 +6909,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						   })},
 			{"__resupdate", reinterpret_cast<u64>(vm::reservation_update)},
 			{"__resinterp", reinterpret_cast<u64>(ppu_reservation_fallback)},
+			{"__thor_transformers_counter_probe", reinterpret_cast<u64>(ppu_thor_transformers_counter_probe)},
 #if !defined(ANDROID) || defined(RPCSX_THOR_ES_PPU_EXPERIMENTS)
 			{"__thor_es_command_interp", reinterpret_cast<u64>(ppu_thor_es_command_interp)},
 			{"__thor_es_command9_probe", reinterpret_cast<u64>(ppu_thor_es_command9_probe)},
@@ -7201,8 +7568,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				// ARM64 PPU codegen changes. Never re-toggle an old one: that collides
 				// with hashes already on disk from an earlier build.
 				arm64_codegen_v1,
+				thor_transformers_counter_probe_v1,
 
-				bitset_last = arm64_codegen_v1,
+				bitset_last = thor_transformers_counter_probe_v1,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -7269,6 +7637,14 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			if (has_thor_es_async_draw_barrier)
 				settings += ppu_settings::thor_es_async_draw_barrier_v8;
 #endif
+			bool has_thor_transformers_counter_probe = false;
+			for (const ppu_function& f : part.get_funcs())
+			{
+				has_thor_transformers_counter_probe |=
+					ppu_thor_transformers_counter_probe_range(f.addr, f.size);
+			}
+			if (has_thor_transformers_counter_probe)
+				settings += ppu_settings::thor_transformers_counter_probe_v1;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
 

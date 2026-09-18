@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 
 #include "util/mutex.h"
 #include "VKRenderPass.h"
@@ -393,6 +394,7 @@ namespace vk
 		}
 		else if (renderpass_info.pass != VK_NULL_HANDLE)
 		{
+			::thor::rsx_counters::g_rp_end_switch++;
 			end_renderpass(cmd);
 		}
 
@@ -414,6 +416,8 @@ namespace vk
 		VK_GET_SYMBOL(vkCmdBeginRenderPass)(cmd, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
 		renderpass_info = {pass, target};
 		vk::thor::rsx_auditor::record_renderpass_begin();
+		// Thor: counts vkCmdBeginRenderPass, after the same-pass early-out above.
+		::thor::rsx_counters::g_render_passes++;
 	}
 
 	void begin_renderpass(VkDevice dev, const vk::command_buffer& cmd, u64 renderpass_key, VkFramebuffer target, const coordu& framebuffer_region)

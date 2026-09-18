@@ -11,7 +11,74 @@
 
 #include <cmath>
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif
+
 LOG_CHANNEL(cellAudio);
+
+namespace
+{
+constexpr u32 thor_transformers_audio_trace_limit = 64;
+
+std::atomic<u32> g_thor_transformers_audio_trace_seq{0};
+
+bool thor_transformers_audio_trace_enabled() noexcept
+{
+#ifdef __ANDROID__
+	static const bool s_on = []() noexcept
+	{
+		char value[PROP_VALUE_MAX]{};
+		return __system_property_get("debug.rpcsx.thor.transformers_lwmutex_trace", value) > 0 &&
+			value[0] && value[0] != '0';
+	}();
+	return s_on && Emu.GetTitleID() == "BLUS30357";
+#else
+	return false;
+#endif
+}
+
+u32 thor_transformers_audio_trace_next() noexcept
+{
+	if (!thor_transformers_audio_trace_enabled())
+	{
+		return thor_transformers_audio_trace_limit;
+	}
+
+	return g_thor_transformers_audio_trace_seq.fetch_add(1, std::memory_order_relaxed);
+}
+
+void thor_transformers_audio_trace_set(u64 key, u32 flags, u8 start_period,
+	const lv2_event_queue& queue, u64 source)
+{
+	const u32 sequence = thor_transformers_audio_trace_next();
+	if (sequence >= thor_transformers_audio_trace_limit)
+	{
+		return;
+	}
+
+	cellAudio.error(
+		"Thor TWC AUDIO #%u: SET key=0x%llx queue=0x%x queue_key=0x%llx "
+		"source=0x%llx flags=0x%x start_period=%u",
+		sequence, key, queue.id, queue.key, source, flags, start_period);
+}
+
+void thor_transformers_audio_trace_send(u8 period,
+	const lv2_event_queue& queue, u64 source, u64 data3, CellError result)
+{
+	const u32 sequence = thor_transformers_audio_trace_next();
+	if (sequence >= thor_transformers_audio_trace_limit)
+	{
+		return;
+	}
+
+	cellAudio.error(
+		"Thor TWC AUDIO #%u: SEND period=%u queue=0x%x queue_key=0x%llx "
+		"source=0x%llx data1=0x%x data3=0x%llx result=0x%x",
+		sequence, period, queue.id, queue.key, source,
+		static_cast<u32>(CELL_AUDIO_EVENT_MIX), data3, result);
+}
+}
 
 extern atomic_t<recording_mode> g_recording_mode;
 
@@ -612,7 +679,10 @@ void cell_audio_thread::advance(u64 timestamp)
 	for (u32 i = 0; i < queue_count; i++)
 	{
 		lv2_obj::notify_all_t notify;
-		queues[i]->send(event_sources[i], CELL_AUDIO_EVENT_MIX, 0, event_data3[i]);
+		const CellError result = queues[i]->send(
+			event_sources[i], CELL_AUDIO_EVENT_MIX, 0, event_data3[i]);
+		thor_transformers_audio_trace_send(event_period, *queues[i],
+			event_sources[i], event_data3[i], result);
 	}
 }
 
@@ -1755,9 +1825,13 @@ error_code AudioSetNotifyEventQueue(ppu_thread& ppu, u64 key, u32 iFlags)
 	}
 
 	// Set unique source associated with the key
+	const u64 source = ((process_getpid() + u64{}) << 32) +
+		lv2_event_port::id_base + (g_audio.key_count++ * lv2_event_port::id_step);
+	thor_transformers_audio_trace_set(
+		key, iFlags, g_audio.event_period, *q, source);
 	g_audio.keys.push_back({.start_period = g_audio.event_period,
 		.flags = iFlags,
-		.source = ((process_getpid() + u64{}) << 32) + lv2_event_port::id_base + (g_audio.key_count++ * lv2_event_port::id_step),
+		.source = source,
 		.ack_timestamp = 0,
 		.port = std::move(q)});
 

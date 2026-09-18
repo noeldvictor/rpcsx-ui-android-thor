@@ -1,0 +1,170 @@
+Program: spu-hot-window-image.bin
+Language: SPU:BE:128:default
+WindowBytes: 0xa0
+
+==== 0x1cd8 (00001c38..00001d78) ====
+   00001c38: brz r93,0x00001c40    ; flow fall=00001c3c target=00001c40
+   00001c3c: stopd    ; flow fall=00001c40
+   00001c40: lqr r93,0x2c8    ; flow fall=00001c44
+   00001c44: lqr r3,0x2cf    ; flow fall=00001c48
+   00001c48: rotqbyi r4,r93,0x8    ; flow fall=00001c4c
+   00001c4c: brsl lr,0x00000c40    ; flow fall=00001c50 target=00000c40
+   00001c50: brsl lr,0x000013b0    ; flow fall=00001c54 target=000013b0
+   00001c54: lnop    ; flow fall=00001c58
+   00001c58: andi r2,r3,0x10    ; flow fall=00001c5c
+   00001c5c: hbrr    ; flow fall=00001c60
+   00001c60: lr r5,r3    ; flow fall=00001c64
+   00001c64: stqd lr,0x10(sp)    ; flow fall=00001c68
+   00001c68: lr r7,r4    ; flow fall=00001c6c
+   00001c6c: stqd r80,-0x10(sp)    ; flow fall=00001c70
+   00001c70: stqd sp,-0x30(sp)    ; flow fall=00001c74
+   00001c74: ai sp,sp,-0x30    ; flow fall=00001c78
+   00001c78: brz r2,0x00001c84    ; flow fall=00001c7c target=00001c84
+   00001c7c: andi r5,r3,0xf    ; flow fall=00001c80
+   00001c80: br 0x00001c98    ; flow target=00001c98
+   00001c84: il r4,-0x1    ; flow fall=00001c88
+   00001c88: il r3,0x2    ; flow fall=00001c8c
+   00001c8c: wrch r4,ch22    ; flow fall=00001c90
+   00001c90: wrch r3,ch23    ; flow fall=00001c94
+   00001c94: rdch r2,ch24    ; flow fall=00001c98
+   00001c98: shli r10,r5,0x2    ; flow fall=00001c9c
+   00001c9c: ila r11,0x1cc4    ; flow fall=00001ca0
+   00001ca0: clgti r5,r5,0x4    ; flow fall=00001ca4
+   00001ca4: ilhu r6,-0x7fbf    ; flow fall=00001ca8
+   00001ca8: a r9,r10,r11    ; flow fall=00001cac
+   00001cac: lqx r8,r11,r10    ; flow fall=00001cb0
+   00001cb0: iohl r6,0x903    ; flow fall=00001cb4
+   00001cb4: rotqby r2,r8,r9    ; flow fall=00001cb8
+   00001cb8: nop r127    ; flow fall=00001cbc
+   00001cbc: brnz r5,0x00001eb0    ; flow fall=00001cc0 target=00001eb0
+   00001cc0: bi r2
+   00001cc4: stop 0x1cd8    ; flow fall=00001cc8
+   00001cc8: stop 0x1d34    ; flow fall=00001ccc
+   00001ccc: stop 0x1d80    ; flow fall=00001cd0
+   00001cd0: stop 0x1db8    ; flow fall=00001cd4
+   00001cd4: stop 0x1dfc    ; flow fall=00001cd8
+=> 00001cd8: lqr r12,0x4be    ; flow fall=00001cdc
+   00001cdc: rotqbyi r7,r12,0x4    ; flow fall=00001ce0
+   00001ce0: ceqi r6,r7,0x4    ; flow fall=00001ce4
+   00001ce4: brz r6,0x00001cfc    ; flow fall=00001ce8 target=00001cfc
+   00001ce8: il r6,0x0    ; flow fall=00001cec
+   00001cec: lqr r13,0x2a1    ; flow fall=00001cf0
+   00001cf0: lqr r4,0x2b8    ; flow fall=00001cf4
+   00001cf4: rotqbyi r3,r13,0x8    ; flow fall=00001cf8
+   00001cf8: br 0x00001d24    ; flow target=00001d24
+   00001cfc: il r3,0x0    ; flow fall=00001d00
+   00001d00: il r4,0x0    ; flow fall=00001d04
+   00001d04: fsmbi r5,0x0    ; flow fall=00001d08
+   00001d08: brsl lr,0x00000e40    ; flow fall=00001d0c target=00000e40
+   00001d0c: lqr r6,0x4ad    ; flow fall=00001d10
+   00001d10: lr r3,r6    ; flow fall=00001d14
+   00001d14: shlqbyi r14,r6,0x4    ; flow fall=00001d18
+   00001d18: brz r14,0x00001e40    ; flow fall=00001d1c target=00001e40
+   00001d1c: lqr r4,0x2ad    ; flow fall=00001d20
+   00001d20: rotqbyi r6,r6,0x8    ; flow fall=00001d24
+   00001d24: lqr r5,0x4ab    ; flow fall=00001d28
+   00001d28: rotqbyi r4,r4,0x4    ; flow fall=00001d2c
+   00001d2c: brsl lr,0x00001438    ; flow fall=00001d30 target=00001438
+   00001d30: br 0x00001e40    ; flow target=00001e40
+   00001d34: brsl lr,0x00001350    ; flow fall=00001d38 target=00001350
+   00001d38: il r4,0x0    ; flow fall=00001d3c
+   00001d3c: fsmbi r5,0x0    ; flow fall=00001d40
+   00001d40: lr r80,r3    ; flow fall=00001d44
+   00001d44: il r3,0x3    ; flow fall=00001d48
+   00001d48: brsl lr,0x00000e40    ; flow fall=00001d4c target=00000e40
+   00001d4c: andi r15,r80,0xff    ; flow fall=00001d50
+   00001d50: or r80,r15,r3    ; flow fall=00001d54
+   00001d54: brz r80,0x00001e9c    ; flow fall=00001d58 target=00001e9c
+   00001d58: brsl lr,0x000014d0    ; flow fall=00001d5c target=000014d0
+   00001d5c: lr r6,r3    ; flow fall=00001d60
+   00001d60: brnz r3,0x00001eb0    ; flow fall=00001d64 target=00001eb0
+   00001d64: il r3,0x1    ; flow fall=00001d68
+   00001d68: il r4,0x0    ; flow fall=00001d6c
+   00001d6c: fsmbi r5,0x0    ; flow fall=00001d70
+   00001d70: brsl lr,0x00000e40    ; flow fall=00001d74 target=00000e40
+   00001d74: lqr r2,0x297    ; flow fall=00001d78
+   00001d78: il r8,0x3    ; flow fall=00001d7c
+
+==== 0x1d34 (00001c94..00001dd4) ====
+   00001c94: rdch r2,ch24    ; flow fall=00001c98
+   00001c98: shli r10,r5,0x2    ; flow fall=00001c9c
+   00001c9c: ila r11,0x1cc4    ; flow fall=00001ca0
+   00001ca0: clgti r5,r5,0x4    ; flow fall=00001ca4
+   00001ca4: ilhu r6,-0x7fbf    ; flow fall=00001ca8
+   00001ca8: a r9,r10,r11    ; flow fall=00001cac
+   00001cac: lqx r8,r11,r10    ; flow fall=00001cb0
+   00001cb0: iohl r6,0x903    ; flow fall=00001cb4
+   00001cb4: rotqby r2,r8,r9    ; flow fall=00001cb8
+   00001cb8: nop r127    ; flow fall=00001cbc
+   00001cbc: brnz r5,0x00001eb0    ; flow fall=00001cc0 target=00001eb0
+   00001cc0: bi r2
+   00001cc4: stop 0x1cd8    ; flow fall=00001cc8
+   00001cc8: stop 0x1d34    ; flow fall=00001ccc
+   00001ccc: stop 0x1d80    ; flow fall=00001cd0
+   00001cd0: stop 0x1db8    ; flow fall=00001cd4
+   00001cd4: stop 0x1dfc    ; flow fall=00001cd8
+   00001cd8: lqr r12,0x4be    ; flow fall=00001cdc
+   00001cdc: rotqbyi r7,r12,0x4    ; flow fall=00001ce0
+   00001ce0: ceqi r6,r7,0x4    ; flow fall=00001ce4
+   00001ce4: brz r6,0x00001cfc    ; flow fall=00001ce8 target=00001cfc
+   00001ce8: il r6,0x0    ; flow fall=00001cec
+   00001cec: lqr r13,0x2a1    ; flow fall=00001cf0
+   00001cf0: lqr r4,0x2b8    ; flow fall=00001cf4
+   00001cf4: rotqbyi r3,r13,0x8    ; flow fall=00001cf8
+   00001cf8: br 0x00001d24    ; flow target=00001d24
+   00001cfc: il r3,0x0    ; flow fall=00001d00
+   00001d00: il r4,0x0    ; flow fall=00001d04
+   00001d04: fsmbi r5,0x0    ; flow fall=00001d08
+   00001d08: brsl lr,0x00000e40    ; flow fall=00001d0c target=00000e40
+   00001d0c: lqr r6,0x4ad    ; flow fall=00001d10
+   00001d10: lr r3,r6    ; flow fall=00001d14
+   00001d14: shlqbyi r14,r6,0x4    ; flow fall=00001d18
+   00001d18: brz r14,0x00001e40    ; flow fall=00001d1c target=00001e40
+   00001d1c: lqr r4,0x2ad    ; flow fall=00001d20
+   00001d20: rotqbyi r6,r6,0x8    ; flow fall=00001d24
+   00001d24: lqr r5,0x4ab    ; flow fall=00001d28
+   00001d28: rotqbyi r4,r4,0x4    ; flow fall=00001d2c
+   00001d2c: brsl lr,0x00001438    ; flow fall=00001d30 target=00001438
+   00001d30: br 0x00001e40    ; flow target=00001e40
+=> 00001d34: brsl lr,0x00001350    ; flow fall=00001d38 target=00001350
+   00001d38: il r4,0x0    ; flow fall=00001d3c
+   00001d3c: fsmbi r5,0x0    ; flow fall=00001d40
+   00001d40: lr r80,r3    ; flow fall=00001d44
+   00001d44: il r3,0x3    ; flow fall=00001d48
+   00001d48: brsl lr,0x00000e40    ; flow fall=00001d4c target=00000e40
+   00001d4c: andi r15,r80,0xff    ; flow fall=00001d50
+   00001d50: or r80,r15,r3    ; flow fall=00001d54
+   00001d54: brz r80,0x00001e9c    ; flow fall=00001d58 target=00001e9c
+   00001d58: brsl lr,0x000014d0    ; flow fall=00001d5c target=000014d0
+   00001d5c: lr r6,r3    ; flow fall=00001d60
+   00001d60: brnz r3,0x00001eb0    ; flow fall=00001d64 target=00001eb0
+   00001d64: il r3,0x1    ; flow fall=00001d68
+   00001d68: il r4,0x0    ; flow fall=00001d6c
+   00001d6c: fsmbi r5,0x0    ; flow fall=00001d70
+   00001d70: brsl lr,0x00000e40    ; flow fall=00001d74 target=00000e40
+   00001d74: lqr r2,0x297    ; flow fall=00001d78
+   00001d78: il r8,0x3    ; flow fall=00001d7c
+   00001d7c: br 0x00001e48    ; flow target=00001e48
+   00001d80: il r3,-0x1    ; flow fall=00001d84
+   00001d84: fsmbi r4,0x0    ; flow fall=00001d88
+   00001d88: il r5,0x0    ; flow fall=00001d8c
+   00001d8c: brsl lr,0x00000e40    ; flow fall=00001d90 target=00000e40
+   00001d90: brnz r3,0x00001e9c    ; flow fall=00001d94 target=00001e9c
+   00001d94: brsl lr,0x000014d0    ; flow fall=00001d98 target=000014d0
+   00001d98: lr r6,r3    ; flow fall=00001d9c
+   00001d9c: brnz r3,0x00001eb0    ; flow fall=00001da0 target=00001eb0
+   00001da0: il r3,0x2    ; flow fall=00001da4
+   00001da4: fsmbi r4,0x0    ; flow fall=00001da8
+   00001da8: il r5,0x0    ; flow fall=00001dac
+   00001dac: brsl lr,0x00000e40    ; flow fall=00001db0 target=00000e40
+   00001db0: brz r3,0x00001ea4    ; flow fall=00001db4 target=00001ea4
+   00001db4: br 0x00001e9c    ; flow target=00001e9c
+   00001db8: brsl lr,0x00001350    ; flow fall=00001dbc target=00001350
+   00001dbc: il r4,0x0    ; flow fall=00001dc0
+   00001dc0: lr r80,r3    ; flow fall=00001dc4
+   00001dc4: fsmbi r5,0x0    ; flow fall=00001dc8
+   00001dc8: il r3,0x3    ; flow fall=00001dcc
+   00001dcc: brsl lr,0x00000e40    ; flow fall=00001dd0 target=00000e40
+   00001dd0: ceqbi r23,r80,0x0    ; flow fall=00001dd4
+   00001dd4: hbrr    ; flow fall=00001dd8
+

@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 #include "VKAsyncScheduler.h"
 #include "VKCompute.h"
 #include "VKDMA.h"
@@ -62,6 +63,7 @@ namespace vk
 
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_texture++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -227,6 +229,7 @@ namespace vk
 
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_texture++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -354,6 +357,7 @@ namespace vk
 
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_texture++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -498,6 +502,7 @@ namespace vk
 
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_texture++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -539,6 +544,7 @@ namespace vk
 
 		if (vk::is_renderpass_open(cmd))
 		{
+			::thor::rsx_counters::g_rp_end_texture++;
 			vk::end_renderpass(cmd);
 		}
 
@@ -923,6 +929,7 @@ namespace vk
 		{
 			if (vk::is_renderpass_open(primary_cb))
 			{
+				::thor::rsx_counters::g_rp_end_texture++;
 				vk::end_renderpass(primary_cb);
 			}
 

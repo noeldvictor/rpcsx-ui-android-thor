@@ -1,4 +1,5 @@
 #pragma once
+#include "Emu/thor_mem_watch.h"
 
 #include <util/types.hpp>
 #include "Emu/RSX/RSXThread.h"
@@ -58,6 +59,7 @@ namespace rsx
 			}
 
 			vm::_ref<RsxSemaphore>(address).val = data;
+			thor::mem_watch::on_word(FlushDMA ? (FlushPipe ? "RSX back-end label (dma+pipe)" : "RSX back-end label (dma)") : (FlushPipe ? "RSX front-end semaphore (pipe)" : "RSX label"), address, data);
 		}
 	} // namespace util
 } // namespace rsx

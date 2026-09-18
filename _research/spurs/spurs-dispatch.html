@@ -1,0 +1,407 @@
+<title>Where HLE Rendering Dies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground:  #EDEFF1;
+    --panel:   #FFFFFF;
+    --panel-2: #F5F7F9;
+    --ink:     #14171A;
+    --muted:   #5A646E;
+    --faint:   #8A939C;
+    --line:    #D5DAE0;
+    --line-2:  #E4E8EC;
+    --amber:   #9A5F0B;
+    --amber-b: #E8A33D;
+    --teal:    #16705A;
+    --red:     #A83232;
+    --shadow:  0 1px 2px rgba(20,23,26,.06), 0 8px 24px rgba(20,23,26,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #121517;
+      --panel:   #1B2025;
+      --panel-2: #21272D;
+      --ink:     #E6E9EC;
+      --muted:   #98A2AC;
+      --faint:   #6B757E;
+      --line:    #2B3238;
+      --line-2:  #242A30;
+      --amber:   #E8A33D;
+      --amber-b: #E8A33D;
+      --teal:    #4FB89A;
+      --red:     #E77070;
+      --shadow:  0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:  #121517;
+    --panel:   #1B2025;
+    --panel-2: #21272D;
+    --ink:     #E6E9EC;
+    --muted:   #98A2AC;
+    --faint:   #6B757E;
+    --line:    #2B3238;
+    --line-2:  #242A30;
+    --amber:   #E8A33D;
+    --amber-b: #E8A33D;
+    --teal:    #4FB89A;
+    --red:     #E77070;
+    --shadow:  0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 28px 96px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px; font-weight: 500; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--faint);
+  }
+
+  h1 {
+    font-family: Archivo, ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700; font-size: clamp(34px, 5.4vw, 56px);
+    letter-spacing: -.028em; line-height: 1.04;
+    margin: 14px 0 0; text-wrap: balance;
+  }
+
+  .standfirst {
+    max-width: 62ch; color: var(--muted);
+    font-size: 17.5px; margin: 18px 0 0;
+  }
+
+  h2 {
+    font-family: Archivo, ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600; font-size: 21px; letter-spacing: -.014em;
+    margin: 0; text-wrap: balance;
+  }
+
+  section { margin-top: 60px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; margin-bottom: 22px; }
+  .sec-head p { margin: 0; color: var(--muted); max-width: 66ch; font-size: 15px; }
+
+  /* ---------- verdict strip ---------- */
+  .verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 34px; }
+  .v {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 4px; padding: 16px 18px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 3px;
+    border-top: 2px solid var(--edge, var(--line));
+  }
+  .v .lbl { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+  .v .big {
+    font-family: Archivo, sans-serif; font-weight: 700;
+    font-size: 27px; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+    color: var(--tone, var(--ink));
+  }
+  .v .sub { font-size: 13.5px; color: var(--muted); }
+  .v.ok   { --edge: var(--teal);  --tone: var(--teal); }
+  .v.bad  { --edge: var(--red);   --tone: var(--red); }
+  .v.warn { --edge: var(--amber-b); --tone: var(--amber); }
+
+  /* ---------- dispatch graph ---------- */
+  .graph {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 6px; box-shadow: var(--shadow);
+    padding: 30px 26px 26px; overflow-x: auto;
+  }
+  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-width: 640px; }
+  .lane-hd {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    letter-spacing: .14em; text-transform: uppercase;
+    padding-bottom: 12px; color: var(--faint);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .lane-hd .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .lane-hd.l { color: var(--teal); }
+  .lane-hd.r { color: var(--amber); }
+  .lane { display: flex; flex-direction: column; gap: 0; padding: 0 16px; }
+  .lane.left  { border-right: 1px dashed var(--line); }
+
+  .node {
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel-2); padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .node .nm {
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 500;
+    letter-spacing: -.01em;
+  }
+  .node .meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .node.live  { border-color: color-mix(in srgb, var(--teal) 55%, var(--line)); }
+  .node.dead  { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+  .node.hot   { border-color: color-mix(in srgb, var(--amber-b) 60%, var(--line)); }
+  .node.ghost { border-style: dashed; color: var(--faint); background: transparent; }
+
+  .arrow {
+    height: 26px; display: flex; align-items: center; justify-content: center;
+    color: var(--faint); font-family: "IBM Plex Mono", monospace; font-size: 13px;
+  }
+  .arrow.stop { color: var(--red); font-weight: 600; }
+
+  .terminal {
+    margin-top: 4px; border-radius: 4px; padding: 11px 13px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    border: 1px solid;
+  }
+  .terminal.good { border-color: color-mix(in srgb, var(--teal) 45%, var(--line)); color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, transparent); }
+  .terminal.bad  { border-color: color-mix(in srgb, var(--red) 45%, var(--line));  color: var(--red);  background: color-mix(in srgb, var(--red) 8%, transparent); }
+
+  /* ---------- trace table ---------- */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+  thead th {
+    text-align: left; font-weight: 500; font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--faint);
+    padding: 12px 14px; border-bottom: 1px solid var(--line); white-space: nowrap;
+  }
+  tbody td { padding: 9px 14px; border-bottom: 1px solid var(--line-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: 0; }
+  .kind { font-weight: 600; }
+  .kind.sys { color: var(--faint); }
+  .kind.tsk { color: var(--teal); }
+  .kind.job { color: var(--amber); }
+  .rowmark { color: var(--red); font-weight: 600; }
+
+  /* ---------- lists ---------- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .card h3 {
+    font-family: Archivo, sans-serif; font-size: 15px; font-weight: 600;
+    margin: 0; letter-spacing: -.01em;
+  }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); }
+  .card code, .mono { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
+  .card .killed {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px;
+    color: var(--ink); background: var(--panel-2);
+    border-left: 2px solid var(--teal); padding: 7px 10px; border-radius: 0 3px 3px 0;
+  }
+
+  .open {
+    border: 1px solid color-mix(in srgb, var(--amber-b) 45%, var(--line));
+    background: color-mix(in srgb, var(--amber-b) 7%, var(--panel));
+    border-radius: 6px; padding: 22px 24px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .open h2 { color: var(--amber); }
+  .open p { margin: 0; max-width: 68ch; }
+  .open ol { margin: 4px 0 0; padding-left: 20px; color: var(--muted); font-size: 15px; }
+  .open li { margin-bottom: 6px; }
+
+  footer {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+    color: var(--faint); font-size: 13px;
+    display: flex; flex-wrap: wrap; gap: 10px 22px;
+  }
+  footer .mono { color: var(--muted); }
+
+  a { color: var(--amber); }
+  a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--amber-b); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  @media (max-width: 720px) {
+    .lanes { grid-template-columns: 1fr; }
+    .lane.left { border-right: 0; border-bottom: 1px dashed var(--line); padding-bottom: 22px; margin-bottom: 22px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">BLUS30357 · Transformers: War for Cybertron · AYN Thor</div>
+    <h1>Where HLE&nbsp;Rendering Dies</h1>
+    <p class="standfirst">
+      The title renders through SPURS <strong>job chains</strong>, not tasksets. Every fix
+      that landed this session went into the taskset path — which is now measurably
+      healthy, and which the renderer never touches.
+    </p>
+
+    <div class="verdict">
+      <div class="v ok">
+        <span class="lbl">LLE · in combat</span>
+        <span class="big">19.47 fps</span>
+        <span class="sub">6/6 frames drawn · 41,042 colours</span>
+      </div>
+      <div class="v bad">
+        <span class="lbl">HLE · same scene</span>
+        <span class="big">blank</span>
+        <span class="sub">153–161 distinct colours · RSX 6.3%</span>
+      </div>
+      <div class="v warn">
+        <span class="lbl">Job chain workload</span>
+        <span class="big">2 loads</span>
+        <span class="sub">real module, entered, exits at once</span>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>The dispatch spine</h2>
+      <p>
+        The SPU kernel selects a workload, loads its policy module to local store
+        <span class="mono">0xA00</span>, and jumps there. Three module kinds exist. Two of them
+        work under HLE. The third is the one that draws.
+      </p>
+    </div>
+
+    <div class="graph">
+      <div class="lanes">
+        <div>
+          <div class="lane-hd l"><span class="dot"></span>LLE — renders</div>
+          <div class="lane left">
+            <div class="node"><span class="nm">game → cellSpurs (guest libsre)</span><span class="meta">PRX loaded and mapped</span></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="nm">SPU kernel (guest)</span><span class="meta">exitToKernel 0x808 · selectWorkload 0x290</span></div>
+            <div class="arrow">↓</div>
+            <div class="node live"><span class="nm">LS 0xA00 ← policy module</span><span class="meta">8704 / 8704 bytes resident (100%)</span></div>
+            <div class="arrow">↓</div>
+            <div class="node live"><span class="nm">job chain executes</span><span class="meta">descriptors → jobbin2 → RSX</span></div>
+            <div class="terminal good">geometry submitted · 30 fps · DRAWN</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="lane-hd r"><span class="dot"></span>HLE — blank</div>
+          <div class="lane">
+            <div class="node"><span class="nm">game → cellSpurs (HLE)</span><span class="meta">libsre.sprx <em>Ignored module</em> — never mapped</span></div>
+            <div class="arrow">↓</div>
+            <div class="node"><span class="nm">SPU kernel (HLE)</span><span class="meta">exitToKernel 0x808 · selectWorkload 0x290 — match</span></div>
+            <div class="arrow">↓</div>
+            <div class="node hot"><span class="nm">LS 0xA00 ← staged real module</span><span class="meta">0x2200 B from libsre+0x21580 → 0x2330000</span></div>
+            <div class="arrow stop">↓ enters, returns immediately</div>
+            <div class="node dead"><span class="nm">back to SYS_SRV</span><span class="meta">no faults · no halts · no work done</span></div>
+            <div class="terminal bad">no geometry · flat frame · RSX 6.3%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Measured workload trace</h2>
+      <p>
+        Every policy-module load on every SPU, from one HLE boot. The job chain
+        (<span class="mono">wid=6</span>) loads the genuine module and is immediately
+        replaced by the system service — twice, in the whole run.
+      </p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>wid</th><th>image addr</th><th>size</th><th>kind</th><th>spu</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0–5</td><td>32</td><td>0x100</td><td>0x2200</td><td class="kind sys">SYS_SRV</td><td>0–5</td><td></td></tr>
+          <tr><td>6</td><td>0</td><td>0x200</td><td>0x1e40</td><td class="kind tsk">TASKSET</td><td>1</td><td></td></tr>
+          <tr><td>8</td><td>0</td><td>0x200</td><td>0x1e40</td><td class="kind tsk">TASKSET</td><td>3</td><td></td></tr>
+          <tr><td>10</td><td>2</td><td>0x200</td><td>0x1e40</td><td class="kind tsk">TASKSET</td><td>0</td><td></td></tr>
+          <tr><td>12</td><td>6</td><td>0x2330000</td><td>0x2200</td><td class="kind job">REAL-IMAGE</td><td>1</td><td class="rowmark">job chain</td></tr>
+          <tr><td>15</td><td>32</td><td>0x100</td><td>0x2200</td><td class="kind sys">SYS_SRV</td><td>1</td><td class="rowmark">↳ displaced</td></tr>
+          <tr><td>13</td><td>6</td><td>0x2330000</td><td>0x2200</td><td class="kind job">REAL-IMAGE</td><td>5</td><td class="rowmark">job chain</td></tr>
+          <tr><td>14</td><td>32</td><td>0x100</td><td>0x2200</td><td class="kind sys">SYS_SRV</td><td>5</td><td class="rowmark">↳ displaced</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What the taskset work achieved</h2>
+      <p>Real, measured, and committed — on a path the renderer does not use.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>Dispatch unblocked</h3>
+        <p>A one-task taskset could never set <code>incident</code>, so yields never re-dispatched and the SPU never returned to the kernel.</p>
+        <div class="killed">dispatches 1 → 725</div>
+      </div>
+      <div class="card">
+        <h3>Ring drains correctly</h3>
+        <p>Counters run modulo <code>2 × depth</code> — confirmed against the guest's own <code>selb</code> arithmetic, refuting both earlier readings.</p>
+        <div class="killed">used = 0 in 147 of 234 samples, ~954,000 pushes</div>
+      </div>
+      <div class="card">
+        <h3>Reservation respected</h3>
+        <p><code>head</code> and <code>tail</code> share one 128-byte granule that the consumer holds via <code>GETLLAR</code>; the producer now claims through <code>reservation_op</code>.</p>
+        <div class="killed">push calls 475,000 → ~700</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Eliminated, each by one measurement</h2>
+      <p>Recorded so none of these gets re-run.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <h3>The LF queue</h3>
+        <p>Prime suspect — both entry points unimplemented, and an SPU was seen reserving its address.</p>
+        <div class="killed">1 push, 0 pops in 3m29s — carries no traffic</div>
+      </div>
+      <div class="card">
+        <h3>cellOvis overlays</h3>
+        <p>Called 22× under HLE, never under LLE; our stub answers "no overlay table".</p>
+        <div class="killed">PT_LOAD vaddrs distinct, shared-vaddr = 0 — no overlays exist</div>
+      </div>
+      <div class="card">
+        <h3>Handler-thread deadlock</h3>
+        <p><code>cellSpursWakeUp</code>'s only blocking path takes <code>sys_lwmutex_lock</code> with an infinite timeout. Looked conclusive.</p>
+        <div class="killed">main_thread burning 16% of a core — running, not blocked</div>
+      </div>
+      <div class="card">
+        <h3>Kernel-context mismatch</h3>
+        <p>A real module needs the kernel context at <code>0x100</code> to be bit-compatible.</p>
+        <div class="killed">exitToKernel 0x808 · selectWorkload 0x290 — identical LLE/HLE</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="open">
+      <h2>The open question</h2>
+      <p>
+        The genuine Sony job-chain module is staged, loaded to <span class="mono">0xA00</span>,
+        and entered — with no halts, faults, or access violations anywhere in the run. It
+        then returns immediately and does no work. The kernel contract it depends on is
+        verified identical to LLE, and its workload argument is <em>correct</em>
+        (<span class="mono">arg=0x1eca280</span>, matching the third job chain the title
+        created), so the reason it bails is still unknown.
+      </p>
+      <ol>
+        <li>Capture local store <em>while</em> <span class="mono">wid=6</span> is current — the existing capture caught a SYS_SRV moment and proves nothing about the copy.</li>
+        <li>Trace its first few hundred instructions under HLE against LLE and find the branch that leaves early.</li>
+        <li>Verify <code>jobChain-&gt;pc</code> and the descriptor list are populated — the job chain address reaching the SPU is confirmed correct, so if <code>pc</code> is null the defect is on the PPU side — <code>RunJobChain</code> and <code>KickJobChain</code> log at <em>trace</em> level, so "never called" is not evidence.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    <span class="mono">branch hle-spurs-wip</span>
+    <span>7 defects fixed · all committed</span>
+    <span class="mono">_research/spurs/ — module + both local stores</span>
+    <span>Playable path: LLE, frame-verified</span>
+  </footer>
+
+</div>

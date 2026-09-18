@@ -11,8 +11,8 @@ Usage:
     python thor_frame_check.py [--serial 192.168.1.3:5555] [--save out.png]
 
 Exit status is the contract, so a harness can gate on it:
-    0  frame is DRAWN      - the fps sample beside it may be reported
-    1  frame is BLACK      - discard the sample, the path renders nothing
+    0  frame is DRAWN         - the fps sample beside it may be reported
+    1  frame is BLANK/BLACK   - discard the sample, nothing is being drawn
     2  could not decide    - no device, capture failed, missing Pillow
 
 Thresholds come from measured captures on this device at 1920x1080:
@@ -29,6 +29,7 @@ overlay drawn on it has only the overlay's antialiasing ramp.
 """
 
 import argparse
+import re
 import collections
 import os
 import subprocess
@@ -96,12 +97,28 @@ def score(path):
     }
 
 
+def last_fps(adb, serial):
+    """Most recent FPS the emulator reported, or None if it never reported one."""
+    log = "/storage/emulated/0/Android/data/net.rpcsx.easy/files/cache/RPCSX.log"
+    cmd = [adb] + (["-s", serial] if serial else []) + ["shell", "grep -a Frames: %s | tail -1" % log]
+
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
+    except Exception:                              # noqa: BLE001 - never fail the check on this
+        return None
+
+    m = re.search(r"\(([0-9.]+) FPS\)", out)
+    return float(m.group(1)) if m else None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--adb", default=os.environ.get("ADB", "adb"))
     parser.add_argument("--serial", default=os.environ.get("THOR_SERIAL"))
     parser.add_argument("--save", help="keep the capture at this path")
     parser.add_argument("--image", help="score an existing PNG instead of capturing")
+    parser.add_argument("--no-fps-gate", action="store_true",
+                        help="skip the FPS gate (scoring a saved PNG, or the log is unavailable)")
     args = parser.parse_args()
 
     try:
@@ -127,16 +144,53 @@ def main():
         if temporary and os.path.exists(temporary) and not args.save:
             pass  # leave it; a failed run is exactly when the image is wanted
 
-    black = (result["distinct"] < MIN_DISTINCT_COLOURS
-             and result["near_black"] > MAX_NEAR_BLACK_FRACTION)
-    verdict = "BLACK" if black else "DRAWN"
+    # DARKNESS IS NOT THE TEST - FLATNESS IS.
+    #
+    # This originally required a LOW colour count AND a high near-black
+    # fraction, and that let a flat GREEN frame through as DRAWN: the emulator
+    # was clearing the framebuffer and submitting no geometry, at 29 fps over
+    # 2,945 frames, with distinct=148 and near_black=0.0%. The clear colour is
+    # not always black, so keying on black was the wrong axis.
+    #
+    # A frame is UNDRAWN when it carries almost no distinct colours, whatever
+    # those colours are. Darkness is kept only as a label, to say WHICH kind of
+    # blank it is.
+    blank = result["distinct"] < MIN_DISTINCT_COLOURS
+    black = blank and result["near_black"] > MAX_NEAR_BLACK_FRACTION
+    verdict = "BLACK" if black else ("BLANK" if blank else "DRAWN")
+
+    # A COLOURFUL FRAME IS NOT A RUNNING GAME.
+    #
+    # RPCSX's own "Building SPU Cache..." screen is a full-bleed photographic
+    # wallpaper. It scores distinct=24141, near-black=17.6%, and passes as DRAWN
+    # with the title not running at all. That false positive invalidated an
+    # entire prop bisection on 2026-08-27 before anyone looked at the capture.
+    #
+    # A frozen frame cannot be gameplay, whatever it looks like, so require the
+    # emulator to be advancing frames. This reads the same counter the harnesses
+    # already grep for.
+    if verdict == "DRAWN" and not args.no_fps_gate and not args.image:
+        fps = last_fps(args.adb, args.serial)
+
+        if fps is None:
+            print("frame-check: WARNING no FPS sample found; DRAWN is unverified. "
+                  "Pass --no-fps-gate if that is intended.", file=sys.stderr)
+        elif fps <= 0.0:
+            verdict = "FROZEN"
+            print("frame-check: FROZEN  %dx%d  distinct=%d  (0.00 FPS)  %s"
+                  % (result["width"], result["height"], result["distinct"], path))
+            print("frame-check: the screen is not advancing - this is NOT gameplay. "
+                  "A colourful still is usually the emulator's own loading screen; "
+                  "open the capture and look.", file=sys.stderr)
+            return 1
     print("frame-check: %s  %dx%d  distinct=%d  near-black=%.1f%%  %dKB  %s"
           % (verdict, result["width"], result["height"], result["distinct"],
              100.0 * result["near_black"], result["bytes"] // 1024, path))
-    if black:
+    if blank:
         print("frame-check: DISCARD any fps sample taken with this frame - "
-              "the path is presenting empty frames.", file=sys.stderr)
-    return 1 if black else 0
+              "the path is presenting empty frames (%d distinct colours)."
+              % result["distinct"], file=sys.stderr)
+    return 1 if blank else 0
 
 
 if __name__ == "__main__":

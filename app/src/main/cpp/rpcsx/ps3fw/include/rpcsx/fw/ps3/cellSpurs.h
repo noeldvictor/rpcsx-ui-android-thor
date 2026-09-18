@@ -165,6 +165,19 @@ enum SpursImgAddrConstants : u32
 	// Image addresses
 	SPURS_IMG_ADDR_SYS_SRV_WORKLOAD = 0x100,
 	SPURS_IMG_ADDR_TASKSET_PM = 0x200,
+
+	// THE JOB CHAIN POLICY MODULE NEEDS A SENTINEL TOO.
+	//
+	// `_spurs::create_job_chain` passes vm::null as the workload image with size
+	// 0, so a job chain workload falls into the kernel dispatch's `default` arm
+	// and does `memcpy(LS 0xA00, nullptr, 0)` - copying NOTHING - and then sets
+	// spu.pc = 0xA00 and runs whatever the PREVIOUS module left there.
+	//
+	// Upstream gets away with this because it never registers the SPU-side HLE
+	// entries at all (both RegisterHleFunction calls are commented out there) and
+	// runs real guest policy-module binaries. This branch enabled the SPU-side
+	// HLE, so job chains need the same treatment tasksets got.
+	SPURS_IMG_ADDR_JOBCHAIN_PM = 0x300,
 };
 
 enum SpursWorkloadGUIDs : u64
@@ -940,6 +953,101 @@ struct alignas(128) CellSpursEventFlag_x00
 	be_t<u64> addr;                      // 0x70
 	be_t<u32> eventPortId;               // 0x78
 	be_t<u32> eventQueueId;              // 0x7C
+};
+
+// RECOVERED FROM FIRMWARE. libsre.sprx, decrypted via
+// debug.rpcsx.thor.dump_decrypted_modules and disassembled in Ghidra as
+// PowerPC:BE:64. This structure is defined NOWHERE in RPCS3, upstream included,
+// which is why all eleven cellSpursQueue* entry points are UNIMPLEMENTED_FUNC.
+//
+// Layout taken from _cellSpursQueueInitialize (libsre 0x164c0), which writes
+// every field through r5 - an initialiser is the best possible source:
+//
+//     stw r31,0x00(r5)  stw r31,0x04(r5)   ; both zeroed
+//     stw r7, 0x08(r5)  ; entry size
+//     stw r8, 0x0c(r5)  ; depth
+//     std r0, 0x10(r5)  ; buffer
+//     stw r9, 0x18(r5)
+//     stw r10,0x1c(r5)  ; direction
+//     std r11,0x60(r5)  ; taskset
+//     std r3, 0x68(r5)  ; spurs
+//
+// Confirmed against the accessors, each of which loads exactly one field:
+// GetEntrySize lwz 0x08, Depth lwz 0x0c, GetDirection lwz 0x1c,
+// GetTasksetAddress ld 0x60.
+//
+// cellSpursQueuePushBody (0x169d0) reserves the counter at 0x04 with lwarx, so
+// 0x04 is the one PUSH advances: 0x00 is head, 0x04 is tail.
+struct CellSpursQueue
+{
+	// atomic: the firmware reserves these with lwarx/stwcx.
+	atomic_be_t<u32> head; // 0x00
+	atomic_be_t<u32> tail; // 0x04
+	be_t<u32> entry_size;// 0x08
+	be_t<u32> depth;     // 0x0C
+	vm::bptr<void, u64> buffer; // 0x10
+	be_t<u32> x18;       // 0x18
+	be_t<u32> direction; // 0x1C
+	u8 unk20[0x40];      // 0x20
+	vm::bptr<CellSpursTaskset, u64> taskset; // 0x60
+	vm::bptr<CellSpurs, u64> spurs;          // 0x68
+	be_t<u32> x70;                           // 0x70
+	// THE LV2 EVENT QUEUE ID. cellSpursQueuePushBody blocks on it when the ring
+	// is full, with a raw syscall rather than an exported call - which is why no
+	// FNID scan ever found the notify path:
+	//
+	//     lwz  r3,0x74(r29)   ; this field
+	//     addi r4,r1,0x78     ; &event
+	//     li   r5,0x0         ; timeout 0 = infinite
+	//     li   r11,0x82       ; lv2 130 = sys_event_queue_receive
+	//     sc   0x0
+	//
+	// Reading it is also what proved the structure extends past 0x70; the earlier
+	// CHECK_SIZE(0x70) was wrong.
+	be_t<u32> event_queue_id;                // 0x74
+};
+
+CHECK_SIZE(CellSpursQueue, 0x78);
+
+// THE 128-BYTE LINE THE CONSUMER RESERVES.
+//
+// The guest SPU-side pop reads this queue with GETLLAR and commits with
+// PUTLLC, straight out of its disassembly:
+//
+//     wrch r49,ch16   ; MFC_LSA  = 0x80
+//     wrch r50,ch18   ; MFC_EAL  = queue
+//     wrch r49,ch19   ; MFC_Size = 0x80        (128 bytes)
+//     wrch r47,ch21   ; MFC_Cmd  = 0xd0        GETLLAR
+//     rdch r2,ch27    ; MFC_RdAtomicStat
+//
+// head (0x00) and tail (0x04) therefore live in ONE reservation granule, so a
+// producer that writes tail with a bare atomic CAS destroys the consumer's
+// reservation every time it pushes. Under continuous pushes the consumer can
+// never land its PUTLLC, and it retries forever - which is exactly the
+// measured stall: the ring full, head frozen, the task yielding and backing
+// off 2400 cycles between retries.
+//
+// vm::reservation_op needs a type that is at most 128 bytes with matching
+// alignment, and CellSpursQueue is 0x78, so this is the same trick
+// spurs_taskset_signal_op uses for the taskset line.
+struct alignas(128) spurs_queue_op
+{
+	be_t<u32> head;       // 0x00
+	be_t<u32> tail;       // 0x04
+	be_t<u32> entry_size; // 0x08
+	be_t<u32> depth;      // 0x0C
+	u8 rest[0x70];        // 0x10 .. 0x7F
+};
+
+CHECK_SIZE_ALIGN(spurs_queue_op, 128, 128);
+
+// From cellSpursQueuePushBody: `cmpwi r0,0x2` against the field at 0x1c, and
+// CELL_SPURS_TASK_ERROR_PERM if it does not match.
+enum CellSpursQueueDirection : u32
+{
+	CELL_SPURS_QUEUE_SPU2SPU = 0,
+	CELL_SPURS_QUEUE_SPU2PPU = 1,
+	CELL_SPURS_QUEUE_PPU2SPU = 2,
 };
 
 using CellSpursLFQueue = CellSyncLFQueue;

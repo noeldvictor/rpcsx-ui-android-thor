@@ -303,6 +303,59 @@ static bool get_thor_spu_verification() noexcept
 	return s_override != 0;
 }
 
+// Use the existing ARM64 interpreter fallback for the exact edgeZlib event
+// helper. This is a diagnostic gate. It is off by default.
+//
+//   debug.rpcsx.thor.edge_event_interp = 1
+static bool get_thor_edge_event_interp() noexcept
+{
+	static const bool s_value = []() -> bool
+	{
+#ifdef ANDROID
+		char value[PROP_VALUE_MAX]{};
+
+		if (__system_property_get("debug.rpcsx.thor.edge_event_interp", value) > 0 && value[0])
+		{
+			return !(value[0] == '0' || value[0] == 'f' || value[0] == 'n');
+		}
+#endif
+		return false;
+	}();
+
+	return s_value;
+}
+
+#ifdef ARCH_ARM64
+static void exec_thor_edge_event_interp(spu_thread* spu)
+{
+	static std::atomic<u32> s_count{0};
+	const u32 count = s_count.fetch_add(1, std::memory_order_relaxed);
+
+	spu->interp_fallback_begin = 0x0a4d8;
+	spu->interp_fallback_end = 0x0a520;
+	spu->interp_fallback = true;
+	spu->allow_interrupts_in_cpu_work = true;
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT INTERPRETER enter #%u pc=0x%05x lr=0x%05x "
+			"r3=0x%08x r4=0x%08x r5=0x%08x",
+			count, spu->pc, spu->gpr[0]._u32[3], spu->gpr[3]._u32[3],
+			spu->gpr[4]._u32[3], spu->gpr[5]._u32[3]);
+	}
+
+	spu_recompiler_base::old_interpreter(*spu, spu->_ptr<u8>(0), nullptr);
+
+	if (count < 16)
+	{
+		spu_log.error("Thor EDGE EVENT INTERPRETER leave #%u pc=0x%05x r3=0x%08x",
+			count, spu->pc, spu->gpr[3]._u32[3]);
+	}
+
+	spu_runtime::g_escape(spu);
+}
+#endif
+
 // Strict SPU block verification, default OFF. See the comment at the checksum
 // for the measurement that motivates it. Read once: the recompiler must not
 // change shape between the IR it emits and the host mirror that checks it.
@@ -356,8 +409,8 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 	// JIT Instance
 	jit_compiler m_jit{{}, jit_compiler::cpu(g_cfg.core.llvm_cpu), jit_compiler::spu_codegen_flag};
 
-	// Startup-only exact native-object cache. Runtime compilation keeps the
-	// original uncached path so gameplay misses never add disk I/O.
+	// Exact native-object cache. Startup compilers opt in on supported targets.
+	// Android ARM64 runtime compilers also opt in when the property is enabled.
 	const bool m_use_native_object_cache;
 
 	// Which spelling the eight SPU branch lowerings use for the guarded fast
@@ -374,6 +427,11 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 
 	// Read once, out of the compile loop, like the two gates above.
 	const bool m_thor_shufb_tbl2_or = thor::shufb_tbl2_or();
+
+	// This diagnostic changes emitted IR. The native-object cache key includes
+	// the final IR, so an object built with the gate off cannot satisfy a run
+	// that has the gate on.
+	const bool m_thor_edge_event_interp = get_thor_edge_event_interp();
 
 	// Interpreter table size power
 	const u8 m_interp_magn;
@@ -395,6 +453,13 @@ class spu_llvm_recompiler : public spu_recompiler_base, public cpu_translator
 
 	// Next opcode
 	u32 m_next_op = 0;
+
+	// For thor_dead_dec_read_shape(): the program being compiled, its first pc,
+	// and the basic block being emitted.
+	const std::vector<u32>* m_thor_data = nullptr;
+	u32 m_thor_start = 0;
+	u32 m_thor_bb_start = 0;
+	u32 m_thor_bb_size = 0;
 
 	// Current function (chunk)
 	llvm::Function* m_function{};
@@ -2016,6 +2081,9 @@ public:
 		const u32 start = m_pos;
 		const u32 end = start + m_size;
 
+		m_thor_data = &func.data;
+		m_thor_start = start;
+
 		m_pp_id = 0;
 
 		std::string function_log;
@@ -2880,6 +2948,8 @@ public:
 				auto& bb = ::at32(m_bbs, baddr);
 				bool need_check = false;
 				m_block->bb = &bb;
+				m_thor_bb_start = baddr;
+				m_thor_bb_size = bb.size;
 
 				if (!bb.preds.empty())
 				{
@@ -3381,6 +3451,13 @@ public:
 						spu_log.error("[%s] Unexpected fallthrough to 0x%x (chunk=0x%x, entry=0x%x)", m_hash, m_pos, m_entry, m_function_queue[0]);
 						break;
 					}
+
+#ifdef ARCH_ARM64
+					if (m_thor_edge_event_interp && m_pos == 0x0a4d8)
+					{
+						emit_thor_edge_event_interp_guard();
+					}
+#endif
 
 					// Set variable for set_link()
 					if (m_pos + 4 >= end)
@@ -3997,6 +4074,21 @@ public:
 		{
 			const auto f = func.second.fn ? func.second.fn : func.second.chunk;
 			fpm.run(*f, fam);
+		}
+
+		// RPCS3 e826098bc: the state-check and null-dispatch helpers are emitted
+		// for every module. Drop them when no block calls them, so they are not
+		// compiled into the object.
+		if (m_test_state->use_empty())
+		{
+			m_test_state->eraseFromParent();
+			m_test_state = nullptr;
+		}
+
+		if (m_dispatch->use_empty())
+		{
+			m_dispatch->eraseFromParent();
+			m_dispatch = nullptr;
 		}
 
 		// Clear context (TODO)
@@ -4744,6 +4836,52 @@ public:
 		}
 	}
 
+#ifdef ARCH_ARM64
+	void emit_thor_edge_event_interp_guard()
+	{
+		// The SPURS kernel and edgeZlib both have code at 0xa4d8. Test the exact
+		// edgeZlib image at runtime so a cached module cannot send another SPU
+		// program through this title-specific fallback.
+		const auto signature0 = m_ir->CreateAlignedLoad(
+			get_type<u64>(), _ptr(m_lsptr, 0x3000), llvm::MaybeAlign{1});
+		const auto signature1 = m_ir->CreateAlignedLoad(
+			get_type<u64>(), _ptr(m_lsptr, 0x3008), llvm::MaybeAlign{1});
+		const auto is_edge0 = m_ir->CreateICmpEQ(signature0, m_ir->getInt64(0x82c07e4302244742));
+		const auto is_edge1 = m_ir->CreateICmpEQ(signature1, m_ir->getInt64(0x826d0142020f3e43));
+		const auto interp = llvm::BasicBlock::Create(m_context, "edge-event-interp", m_function);
+		const auto native = llvm::BasicBlock::Create(m_context, "edge-event-native", m_function);
+
+		m_ir->CreateCondBr(m_ir->CreateAnd(is_edge0, is_edge1), interp, native, m_md_unlikely);
+		m_ir->SetInsertPoint(interp);
+		emit_thor_edge_event_interp();
+		m_ir->SetInsertPoint(native);
+	}
+
+	void emit_thor_edge_event_interp()
+	{
+		update_pc();
+		ensure_gpr_stores();
+
+		// A true LLVM function keeps SP and r3 in host SSA values and can omit
+		// their context stores. The legacy interpreter reads the context, so save
+		// each live value before the handoff.
+		for (u32 i = 0; i < s_reg_max; i++)
+		{
+			if (llvm::Value* value = m_block->reg[i])
+			{
+				const bool is_xfloat = value->getType() == get_type<f64[4]>();
+				auto store = m_ir->CreateStore(
+					is_xfloat ? double_to_xfloat(value) : bitcast(value, get_reg_type(i)),
+					init_reg_fixed(i));
+				spu_context_attr(store);
+			}
+		}
+
+		call("thor_edge_event_interp", &exec_thor_edge_event_interp, m_thread);
+		m_ir->CreateUnreachable();
+	}
+#endif
+
 	llvm::Value* get_rdch(spu_opcode_t op, u32 off, bool atomic)
 	{
 		const auto ptr = _ptr<u64>(m_thread, off);
@@ -4777,6 +4915,165 @@ public:
 		rval->addIncoming(val0, _cur);
 		rval->addIncoming(val1, wait);
 		return rval;
+	}
+
+	// THE DEAD DECREMENTER READ.
+	//
+	// Transformers' SPURS consumer backs off between queue polls with a counted
+	// loop that reads the decrementer every iteration and discards the value:
+	//
+	//     ai   r4, r4, 1
+	//     rdch r3, SPU_RdDec
+	//     ceq  r40, r4, r5
+	//     brz  r40, <loop head>
+	//
+	// 2399 of the 2400 reads are dead: r3 is overwritten before anything reads
+	// it, and the exit condition depends only on r4 and r5. Each read is an
+	// `mrs cntvct_el0` at 38 ns on the Thor, so the 1.5 us hardware delay takes
+	// 92 us, and chunk-0x0f3c4 is 97% of CellSpursKernel0 with reduced loops on
+	// or off (measured 2026-09-07; the reduced-loop emitter never matched it).
+	//
+	// The transformation reads the counter only in the iteration that exits.
+	// Nothing observable changes: the last read is real, and no instruction in
+	// the block reads the destination before the next RDCH overwrites it. Time
+	// is never served stale, which is what deadlocked the cached-read attempt
+	// (spu_dec_cache): a guest that waits for the decrementer to ADVANCE still
+	// sees it advance, because the read it keeps is real.
+	//
+	//   debug.rpcsx.thor.spu_dec_dead_read = 1     (default 0, off)
+	//
+	// Matched shape, every condition required:
+	//   * the RDCH is the third-from-last instruction of its basic block
+	//   * next is CEQ rC, rX, rY or CEQI rC, rX, imm, with rX, rY, rC != rD
+	//   * last is BRZ rC back to the block start (loop while not equal)
+	//   * every earlier instruction in the block is plain register arithmetic
+	//     or an immediate load that does not name rD
+	struct thor_dead_dec_read_t
+	{
+		bool ok = false;
+		bool imm = false;
+		u32 rx = 0;
+		u32 ry = 0;
+		s32 si10 = 0;
+	};
+
+	thor_dead_dec_read_t thor_dead_dec_read_shape(spu_opcode_t op) const
+	{
+		thor_dead_dec_read_t r{};
+
+		if (!m_thor_data || m_thor_bb_size < 3)
+		{
+			return r;
+		}
+
+		const u32 bb_end = m_thor_bb_start + m_thor_bb_size * 4;
+		const u32 data_end = m_thor_start + ::size32(*m_thor_data) * 4;
+
+		if (m_pos + 12 != bb_end || m_pos + 12 > data_end || m_pos < m_thor_bb_start)
+		{
+			return r;
+		}
+
+		const auto word = [&](u32 pc) -> spu_opcode_t
+		{
+			return spu_opcode_t{std::bit_cast<be_t<u32>>((*m_thor_data)[(pc - m_thor_start) / 4])};
+		};
+
+		const spu_opcode_t cmp = word(m_pos + 4);
+		const spu_opcode_t br = word(m_pos + 8);
+		const u32 rd = op.rt;
+
+		if (g_spu_itype.decode(br.opcode) != spu_itype::BRZ || br.rt != cmp.rt || spu_branch_target(m_pos + 8, br.i16) != m_thor_bb_start)
+		{
+			return r;
+		}
+
+		if (cmp.rt == rd)
+		{
+			return r;
+		}
+
+		switch (g_spu_itype.decode(cmp.opcode))
+		{
+		case spu_itype::CEQ:
+		{
+			if (cmp.ra == rd || cmp.rb == rd)
+			{
+				return r;
+			}
+
+			r.rx = cmp.ra;
+			r.ry = cmp.rb;
+			break;
+		}
+		case spu_itype::CEQI:
+		{
+			if (cmp.ra == rd)
+			{
+				return r;
+			}
+
+			r.imm = true;
+			r.rx = cmp.ra;
+			r.si10 = cmp.si10;
+			break;
+		}
+		default:
+		{
+			return r;
+		}
+		}
+
+		for (u32 pc = m_thor_bb_start; pc < m_pos; pc += 4)
+		{
+			const spu_opcode_t pre = word(pc);
+
+			switch (g_spu_itype.decode(pre.opcode))
+			{
+			case spu_itype::AI:
+			case spu_itype::AHI:
+			case spu_itype::SFI:
+			case spu_itype::ORI:
+			case spu_itype::ANDI:
+			case spu_itype::IL:
+			case spu_itype::ILA:
+			case spu_itype::ILH:
+			case spu_itype::ILHU:
+			case spu_itype::IOHL:
+			{
+				if (pre.rt == rd || pre.ra == rd)
+				{
+					return r;
+				}
+
+				break;
+			}
+			case spu_itype::A:
+			case spu_itype::SF:
+			case spu_itype::OR:
+			case spu_itype::AND:
+			{
+				if (pre.rt == rd || pre.ra == rd || pre.rb == rd)
+				{
+					return r;
+				}
+
+				break;
+			}
+			case spu_itype::NOP:
+			case spu_itype::LNOP:
+			{
+				break;
+			}
+			default:
+			{
+				return r;
+			}
+			}
+		}
+
+		r.ok = true;
+		return r;
 	}
 
 	void RDCH(spu_opcode_t op) //
@@ -4843,6 +5140,43 @@ public:
 #if defined(ARCH_X64) || defined(ARCH_ARM64)
 			if (utils::get_tsc_freq() && !(g_cfg.core.spu_loop_detection) && (g_cfg.core.clocks_scale == 100))
 			{
+				// THE DEAD DECREMENTER READ. See thor_dead_dec_read_shape(). When the
+				// shape matches, the real read below runs only in the iteration that
+				// leaves the loop; every other iteration keeps the previous value,
+				// which nothing reads.
+				llvm::BasicBlock* dead_entry = nullptr;
+				llvm::BasicBlock* dead_join = nullptr;
+				llvm::Value* dead_prev = nullptr;
+
+				if (spu_dec_dead_read_enabled())
+				{
+					if (const auto shape = thor_dead_dec_read_shape(op); shape.ok)
+					{
+						// get_vr takes a register FIELD, so name the compare operands through
+						// opcode shells, the way the reduced-loop emitter does. get_scalar is
+						// the preferred slot, which is what BRZ tests.
+						spu_opcode_t reg_x{};
+						spu_opcode_t reg_y{};
+						reg_x.rt = shape.rx;
+						reg_y.rt = shape.ry;
+						llvm::Value* x_val = get_scalar(get_vr<u32[4]>(reg_x.rt)).eval(m_ir);
+						llvm::Value* y_val = shape.imm
+							? static_cast<llvm::Value*>(m_ir->getInt32(static_cast<u32>(shape.si10)))
+							: get_scalar(get_vr<u32[4]>(reg_y.rt)).eval(m_ir);
+						dead_prev = get_scalar(get_vr<u32[4]>(op.rt)).eval(m_ir);
+						dead_entry = m_ir->GetInsertBlock();
+
+						const auto read_bb = llvm::BasicBlock::Create(m_context, "dec_dead_read", m_function);
+						dead_join = llvm::BasicBlock::Create(m_context, "dec_dead_join", m_function);
+						m_ir->CreateCondBr(m_ir->CreateICmpEQ(x_val, y_val), read_bb, dead_join);
+						m_ir->SetInsertPoint(read_bb);
+
+						// Compile-time, once per compiled block: the engagement proof.
+						spu_log.error("Thor DEC DEAD-READ: pc=0x%05x block=0x%05x size=%u rt=%u rx=%u %s",
+							m_pos, m_thor_bb_start, m_thor_bb_size, static_cast<u32>(op.rt), shape.rx, shape.imm ? "imm" : "reg");
+					}
+				}
+
 				const auto timebase_offs = load_timebase_offs();
 				const auto timestamp = m_ir->CreateLoad(get_type<u64>(), spu_ptr<u64>(OFFSET_OF(spu_thread, ch_dec_start_timestamp)));
 				const auto dec_value = m_ir->CreateLoad(get_type<u32>(), spu_ptr<u32>(OFFSET_OF(spu_thread, ch_dec_value)));
@@ -4935,6 +5269,18 @@ public:
 				const auto delta = m_ir->CreateTrunc(m_ir->CreateSub(tsctb, timestamp), get_type<u32>());
 				const auto deltax = m_ir->CreateSelect(frzev, delta, m_ir->getInt32(0));
 				res.value = m_ir->CreateSub(dec_value, deltax);
+
+				if (dead_join)
+				{
+					const auto read_end = m_ir->GetInsertBlock();
+					m_ir->CreateBr(dead_join);
+					m_ir->SetInsertPoint(dead_join);
+					const auto phi = m_ir->CreatePHI(get_type<u32>(), 2);
+					phi->addIncoming(res.value, read_end);
+					phi->addIncoming(dead_prev, dead_entry);
+					res.value = phi;
+				}
+
 				break;
 			}
 #endif
@@ -5962,7 +6308,25 @@ public:
 
 	void ABSDB(spu_opcode_t op)
 	{
+		// RPCS3 ca223f70b: when one operand is a compare result (all ones or all
+		// zeros per lane), |a - b| is a ^ b, because 0xff - x == ~x.
+		const auto matches_compare = [&](auto val, auto MP)
+		{
+			using VT = typename decltype(MP)::type;
+			auto [ok, x] = match_expr(val, sext<VT>(match<bool[std::extent_v<VT>]>()));
+			return ok;
+		};
+
 		const auto [a, b] = get_vrs<u8[16]>(op.ra, op.rb);
+
+		if (match_vr<s8[16], s16[8], s32[4], s64[2]>(op.ra, matches_compare) ||
+			match_vr<s8[16], s16[8], s32[4], s64[2]>(op.rb, matches_compare))
+		{
+			// 0xff - x = ~x
+			set_vr(op.rt, a ^ b);
+			return;
+		}
+
 		set_vr(op.rt, absd(a, b));
 	}
 
@@ -6527,7 +6891,17 @@ public:
 	template <typename TA>
 	static auto byteswap(TA&& a)
 	{
+#ifdef ARCH_ARM64
+		// RPCS3 ec4b1ae65 (Whatcookie). LLVM lowers the byteswap shufflevector to
+		// rev64 plus ext and never to one tbl, even in a loop where the extra
+		// constant would pay for itself (llvm/llvm-project#223597). Emit tbl1
+		// here. The call name matches what tbl() emits, so the byteswap(match<>)
+		// patterns in ROTQBY, ROTQBYI, SHUFB and the DMA paths still match.
+		const auto indices = build<u8[16]>(15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+		return llvm_calli<u8[16], TA, decltype(indices)>{"llvm.aarch64.neon.tbl1.v16i8", {std::forward<TA>(a), indices}};
+#else
 		return zshuffle(std::forward<TA>(a), 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
+#endif
 	}
 
 	static auto rotqby_reverse_base()
@@ -7593,6 +7967,41 @@ public:
 			case 2:
 			case 1:
 			{
+				// RPCS3 ca223f70b: match 8-bit addition and subtraction idioms. The SPU
+				// has no byte add, so games do a 16-bit add twice and select bytes.
+				const bool lhs_to_lo = mask == v128::from16p(0xff00);
+				if (lhs_to_lo || mask == v128::from16p(0x00ff))
+				{
+					const auto lhs = get_vr<u16[8]>(op.ra);
+					const auto rhs = get_vr<u16[8]>(op.rb);
+
+					const auto lo_op = lhs_to_lo ? lhs : rhs;
+					const auto hi_op = lhs_to_lo ? rhs : lhs;
+
+					// Fold: selb(add16(a, b & 0xff00), add16(a, b), low16_mask) => add8(a, b)
+					if (const auto [lo_match, add_a, add_b] = match_expr(lo_op, match<u16[8]>() + match<u16[8]>()); lo_match)
+					{
+						const auto [ab_hi_match] = match_expr(hi_op, add_a + (add_b & 0xff00));
+						const auto [ba_hi_match] = match_expr(hi_op, add_b + (add_a & 0xff00));
+
+						if (ab_hi_match || ba_hi_match)
+						{
+							set_vr(op.rt4, bitcast<u8[16]>(add_a) + bitcast<u8[16]>(add_b));
+							return;
+						}
+					}
+
+					// Fold: selb(sub16(a, b & 0xff00), sub16(a, b), low16_mask) => sub8(a, b)
+					if (const auto [lo_match, sub_a, sub_b] = match_expr(lo_op, match<u16[8]>() - match<u16[8]>()); lo_match)
+					{
+						if (const auto [hi_match] = match_expr(hi_op, sub_a - (sub_b & 0xff00)); hi_match)
+						{
+							set_vr(op.rt4, bitcast<u8[16]>(sub_a) - bitcast<u8[16]>(sub_b));
+							return;
+						}
+					}
+				}
+
 				set_vr(op.rt4, select(bitcast<s8[16]>(c) != 0, get_vr<u8[16]>(op.rb), get_vr<u8[16]>(op.ra)));
 				return;
 			}
@@ -7633,6 +8042,26 @@ public:
 
 					return false;
 				}))
+		{
+			return;
+		}
+
+		// RPCS3 ca223f70b: a control word from a compare holds only 0x00 and 0xff
+		// bytes. 0x00 selects byte 0 of ra, 0xff is the 0x80 constant.
+		if (match_vr<s8[16], s16[8], s32[4], s64[2]>(op.rc, [&](auto c, auto MP)
+		{
+			using VT = typename decltype(MP)::type;
+
+			// Indexes come from a compare
+			if (auto [ok, i] = match_expr(c, sext<VT>(match<bool[std::extent_v<VT>]>())); ok)
+			{
+				const auto a_splat = zshuffle(get_vr<u8[16]>(op.ra), 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15);
+				set_vr(op.rt4, select(bitcast<s8[16]>(c) != 0, splat<u8[16]>(0x80), a_splat));
+				return true;
+			}
+
+			return false;
+		}))
 		{
 			return;
 		}

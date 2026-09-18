@@ -135,16 +135,11 @@ object GameSettingsDatabase {
             # interpreted shader and compiles the real one behind it, which trades a
             # little steady-state cost for not freezing.
             #
-            # SUPERSEDED 2026-08-25. This used to read "No Core tuning here on
-            # purpose", citing vm::writer_lock at 1.24%. A symbolized 146,125-sample
-            # profile of RESTORED 3D COMBAT - rather than of whatever scene the old
-            # capture landed in - disagrees on every figure: six SPU threads are
-            # 71.4% of all cycles, 55% of everything is JIT-compiled guest code, and
-            # vm::writer_lock is 11.47%, the largest named symbol in the emulator.
-            # See debug-captures/perf/combat-profile-20260825.txt.
-            #
-            # Eternal Sonata's Core settings still are not copied, but the reason is
-            # no longer "this title is not reservation-bound" - it is.
+            # No Core tuning here on purpose. A 25 s profile of this title puts 29.37%
+            # of cycles in guest SPU code and 10.71% in rsx::thread::run_FIFO, with
+            # vm::writer_lock at 1.24% and spu_thread::process_mfc_cmd at 1.05%. It is
+            # NOT reservation-bound the way Eternal Sonata is, so that title's Core
+            # settings do not apply and are deliberately not copied.
             #
             # The first boot costs about ten minutes of PPU LLVM compilation across six
             # workers. That is the size of this EBOOT, not a setting. The cache is
@@ -168,57 +163,17 @@ object GameSettingsDatabase {
             # held 30.00 FPS, and reached the "Press START button" title screen, which
             # it had never got to before.
             Core:
-              # SPU Block Size: Mega. MEASURED +3.2% frames and -4.7% CPU in
-              # restored 3D combat, 2026-08-25, 420 s windows, interleaved:
-              #
-              #   safe 18.60 / 18.70   cores 5.74 / 5.70
-              #   mega 19.20 / 19.30   cores 5.32 / 5.58
-              #
-              # Both pairs agree to 0.5%. Mega does more work per cycle, which is
-              # what the mechanism predicts, so it is kept.
-              #
-              # RETRACTED: an earlier 60 s round reported +16.5% and does not
-              # reproduce. Mega measures 19.1-19.4 in every round ever taken;
-              # SAFE is bimodal across rounds by ~13% and that round caught its
-              # slow mode. Its control pair agreed to 1.0% and still misled,
-              # because two controls can agree and both sit in the wrong mode.
-              # See the retraction section in AGENTS.md.
-              #
-              # WHY THIS AND NOT A WAIT LEVER. A wait-site census puts every host
-              # busy-wait together at 7.7% of busy CPU, so the whole class was
-              # incapable of paying. The profile puts 55% of cycles in JIT-compiled
-              # guest code, and block size is the only setting that touches it:
-              # larger recompiler blocks mean fewer dispatches and more optimisation
-              # across branch boundaries.
-              #
-              # Each size keeps its OWN SPU cache file, so the first boot after
-              # changing this pays a full SPU recompile and is not representative.
-              # Giga was tried and its cold cache did not finish compiling inside a
-              # 600 s window, so it is not adopted here.
-              SPU Block Size: Mega
-              # XFloat Accuracy: Inaccurate. THE LARGEST SINGLE WIN MEASURED ON
-              # THIS TITLE: 16.23 -> 19.87 FPS (+22.4%) in the gold combat
-              # savestate, which is a drawn 3D scene, not a cutscene.
-              #
-              # It reads as a huge number because for weeks it was doing NOTHING.
-              # `cfg::_enum::from_string` matches the enum's own spelling, so the
-              # property path passing "inaccurate" was rejected and the setting
-              # stayed at its default while the log claimed success. The same trap
-              # hid `SPU Block Size: Mega` above. Both only started applying once
-              # System.cpp canonicalised the string AND checked the return value,
-              # and the jump is what those two settings were always worth.
-              #
-              # So the credit belongs to XFloat and block size TOGETHER. Driver
-              # Wake-Up Delay was already 0 during the 16.23 baseline and is NOT
-              # part of this win - which is why it stays at the value its own
-              # stability measurement chose, further down.
-              #
-              # PS3 SPUs are not IEEE-754: they flush denormals and truncate
-              # instead of rounding. Inaccurate matches that in a single native
-              # ARM64 float op, where Accurate emulates it in software.
-              XFloat Accuracy: Inaccurate
               RSX FIFO Accuracy: Atomic
               # Accurate SPU Reservations stays ON. Reverted 2026-08-23.
+              #
+              # 2026-09-08: two code defaults for this title live in the core, not here,
+              # because they are not config keys. A PUTLLC confined to one 16-byte chunk
+              # commits without vm::writer_lock (SPUThread.cpp, ARMSX3 813774767; round R:
+              # 20.30 and 20.43 FPS against 19.20 and 19.09, 8 to 11 percent fewer cores),
+              # and the RSX FIFO fetch ignores reservation lock bits that alias its lines
+              # (RSXFIFO.cpp; retries 80,000 to 13 per 10 s, no frame change, a power lever).
+              # debug.rpcsx.thor.spu_putllc16_nobarrier=0 and rsx_fifo_ignore_res_lock=0
+              # turn them off. See docs/arm64/transformers-30fps.md, rounds N to R.
               #
               # This title HALTS ITS OWN SPU inside CellSpursKernel0, and disabling
               # accurate reservations is documented upstream as causing exactly this
@@ -248,22 +203,108 @@ object GameSettingsDatabase {
               # because each run lands in a different scene. Use a state you can reach
               # identically every time.
               Accurate SPU Reservations: true
+              # XFloat Accuracy: Inaccurate. +16.2% FPS in 3D combat, MEASURED.
+              #
+              # The shipped default is Approximate (system_config.h). Eight arms
+              # across two independent rounds, interleaved approx/inacc so drift
+              # cannot favour one side, each restoring the SAME savestate and each
+              # gated on coresBusy > 4.5 so only restored 3D combat is counted:
+              #
+              #   Approximate  16.67  16.08  16.45  15.70   mean 16.23
+              #   Inaccurate   18.92  18.82  18.89  18.76   mean 18.85
+              #
+              # Non-overlapping ranges, and Inaccurate is the TIGHTER distribution
+              # (0.85% spread against 6%). It reproduced across rounds, which is
+              # exactly what the SPU Block Size "+16.5%" failed to do before it
+              # collapsed to +3.2%.
+              #
+              # VISUALLY VERIFIED, because this mode is lossy and frame rate is
+              # worthless if the picture is wrong. The same restored scene was
+              # captured under both settings (scratchpad xf_approx.png /
+              # xf_inacc.png): identical camera and geometry, no corruption, no
+              # missing effects.
+              #
+              # HONEST CAVEAT: the in-game overlay at the two capture instants read
+              # 20.32 (approx) against 20.78 (inacc), far closer than the windowed
+              # averages. Single instantaneous samples are noise against 6-sample
+              # 60 s windows with non-overlapping ranges, so the averages are what
+              # is trusted here - but it is recorded rather than buried.
+              #
+              # Scoped to THIS TITLE deliberately. Inaccurate is lossy and upstream
+              # defaults to Approximate for good reason; nothing here licenses it
+              # for other games. Overriding it per title also respects the rule that
+              # an explicit per-game value is never silently rewritten.
+              XFloat Accuracy: Inaccurate
+              # SPU Block Size: Mega. +2.2% FPS and -5.6% CPU, MEASURED ON TOP OF
+              # the XFloat change above, so the two compose rather than overlap.
+              #
+              #   safe  18.90  18.83   mean 18.87   cores 5.61
+              #   mega  19.36  19.19   mean 19.28   cores 5.30
+              #
+              # Interleaved safe/mega/safe/mega, same savestate, coresBusy > 4.5.
+              # Ranges do not overlap. The lower CPU at higher FPS is the useful
+              # half - this device runs in the nineties Celsius, so less work for
+              # more frames is worth more than the frames alone.
+              #
+              # THIS HAD TO BE SET HERE, IN THE PROFILE, because the property
+              # override was silently inert: debug.rpcsx.thor.spu_block_size
+              # passed the lowercase "mega" to from_string, whose canonical
+              # spelling is "Mega", so it failed and left the value at Safe while
+              # still logging "forced to mega". Every /diag in this session read
+              # spuBlockSize "Safe" for that reason. The override now canonicalises
+              # and checks its return; the engagement proof is the SPU object cache
+              # growing 3794 -> 4556 on the first mega arm, which it never did before.
+              SPU Block Size: Mega
             Video:
               Frame limit: 30
               Shader Mode: Async with Shader Interpreter
-              # 50 us, which is what the RPCS3 community recommends for this engine.
+              # Relaxed ZCULL Sync: true. +5.6% FPS in restored 3D combat, MEASURED
+              # 2026-09-07: three arms at 19.27, 19.46 and 19.57 against four
+              # controls at 18.21, 18.31, 18.53 and 18.57, on two cores, same
+              # savestate, coresBusy > 4.5, screenshots with identical geometry.
+              # The ranges do not overlap and CPU is unchanged. Accurate ZCULL
+              # stats off with it, so an occlusion query result never stalls
+              # rsx::thread on the GPU; Unreal Engine 3 uses those queries and
+              # the PPU census shows the render thread polling in
+              # sys_timer_usleep for 82% of its samples.
               #
-              # STABILITY, and it is nearly free here. At 20 us this title crashed
-              # roughly two boots in five with an SPU halt in CellSpursKernel0. At
-              # 50 us: 0 of 4 boots crashed.
+              # RISK, stated: upstream's tooltip says relaxed ZCULL "can greatly
+              # improve performance in some games or completely break others",
+              # and RPCS3 issue 12972 lists titles it drops to 1-2 FPS. Three
+              # combat arms saw nothing missing. If objects vanish or pop, or a
+              # scene stalls, set these two back to false / true first.
               #
-              # Upstream warns that raising this costs performance badly
-              # (RPCS3 issue 12295, 60 FPS to 20 FPS on God of War), so it was
-              # measured rather than assumed: 2.568 cores against 2.557 at 20 us,
-              # a 0.4% difference with overlapping ranges, at the same 30 FPS. The
-              # regression that issue describes does not bite this title on this
-              # device.
-              Driver Wake-Up Delay: 50
+              # Scoped to THIS TITLE. Eternal Sonata keeps both at their defaults.
+              Relaxed ZCULL Sync: true
+              Accurate ZCULL stats: false
+              # 0 us - the upstream default. +2.8% FPS, MEASURED, and the
+              # stability worry that motivated 50 does not reproduce at 0.
+              #
+              #   delay 50   19.41  19.36   mean 19.39
+              #   delay 0    20.05  19.81   mean 19.93
+              #
+              # Interleaved 50/0/50/0 on top of XFloat Inaccurate and SPU Block
+              # Size Mega, same savestate, coresBusy > 4.5, non-overlapping ranges.
+              #
+              # THE OLD NOTE IS KEPT BECAUSE IT WAS RIGHT TO WORRY. It recorded
+              # that at 20 us this title crashed roughly two boots in five with an
+              # SPU halt in CellSpursKernel0, against 0 of 4 at 50 us. Frame rate
+              # must not be bought with random death, so 0 was BOOT-TESTED before
+              # shipping, not just benchmarked:
+              #
+              #   delay 0    0 crash / 5 boots   (four reached emu 0:02:17-0:02:20)
+              #   delay 50   0 crash / 5 boots
+              #
+              # A 2-in-5 failure rate would have appeared in about 87% of samples
+              # this size, so there is no evidence of the 20 us behaviour at 0.
+              # Note what this does NOT prove: five boots cannot establish equality,
+              # and 20 us was never retested. If random SPU halts in
+              # CellSpursKernel0 reappear, this line is the first suspect.
+              #
+              # Upstream warns that RAISING this costs performance badly (RPCS3
+              # issue 12295, 60 FPS to 20 FPS on God of War), which is consistent
+              # with lowering it helping here.
+              Driver Wake-Up Delay: 0
               Performance Overlay:
                 Enabled: true
         """.trimIndent()

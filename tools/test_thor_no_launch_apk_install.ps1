@@ -8,10 +8,10 @@ $requiredFragments = @(
     '[ValidatePattern(''^[0-9A-Fa-f]{64}$'')]',
     '[string]$CoolGateCaptureDir',
     'Cool gate is stale',
-    'stage=pre-run-',
-    'Cool gate must contain exactly three ordered pre-run samples',
-    '$coolGateMaximumC -ge 35.0',
-    '$coolGateRiseC -gt 1.0',
+    'stage=pre-run\s+gate=fixed-silicon-only',
+    'silicon_limit_c=70',
+    'Cool gate must contain exactly one fixed-silicon-only pre-run sample',
+    '$coolGateMaximumC -ge 70.0',
     'Host APK hash mismatch',
     '@("install", "-r", $resolvedApk)',
     'am force-stop $Package',
@@ -40,4 +40,4 @@ if ($forceStopCount -lt 2 -or $pidCheckCount -lt 2) {
     throw "The installer must force-stop and verify PID absence before and after installation."
 }
 
-Write-Output "Thor no-launch APK installer contract passed: a fresh strict cool gate, host/device hashes, and stopped PID are required, with no activity start path."
+Write-Output "Thor no-launch APK installer contract passed: one fresh sample below 70 C, host/device hashes, and a stopped PID are required, with no activity start path."

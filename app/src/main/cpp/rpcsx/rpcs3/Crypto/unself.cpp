@@ -1356,6 +1356,28 @@ static fs::file CheckDebugSelf(const fs::file& s)
 	return {};
 }
 
+#ifdef ANDROID
+#include <sys/system_properties.h>
+#endif
+
+static bool thor_dump_decrypted_modules() noexcept
+{
+#ifdef ANDROID
+	static const bool s_on = []() noexcept
+	{
+		char v[PROP_VALUE_MAX]{};
+		if (__system_property_get("debug.rpcsx.thor.dump_decrypted_modules", v) <= 0 || !v[0])
+		{
+			return false;
+		}
+		return v[0] != '0';
+	}();
+	return s_on;
+#else
+	return false;
+#endif
+}
+
 fs::file decrypt_self(const fs::file& elf_or_self, const u8* klic_key, SelfAdditionalInfo* out_info)
 {
 	if (out_info)
@@ -1407,7 +1429,51 @@ fs::file decrypt_self(const fs::file& elf_or_self, const u8* klic_key, SelfAddit
 		}
 
 		// Make a new ELF file from this SELF.
-		return self_dec.MakeElf(isElf32);
+		// THOR: dump the decrypted module so it can be disassembled.
+		//
+		// Firmware modules on disk are SCE SELF ("SCE "), not ELF, so pulling
+		// libsre.sprx off the device gives Ghidra nothing. Every decryption path
+		// funnels through here - including the DYNAMIC one the game itself uses,
+		// `_sys_prx_load_module("/dev_flash/sys/external/libsre.sprx")`, which a
+		// hook in PPUModule.cpp's static load_libs loop never sees.
+		//
+		// This is how the SPURS queue ABI gets recovered: cellSpursQueuePushBody
+		// and its ten siblings are UNIMPLEMENTED_FUNC in this tree AND upstream,
+		// and CellSpursQueue is defined nowhere, so the layout has to come from
+		// the firmware that implements it.
+		//
+		//   debug.rpcsx.thor.dump_decrypted_modules = 1
+		//   adb exec-out run-as net.rpcsx.easy 		//       cat /data/data/net.rpcsx.easy/cache/decrypted_NN.elf > mod.elf
+		//
+		// Files are numbered because the filename is not available at this depth;
+		// the log line carries the size so the right one can be picked out.
+		if (fs::file decrypted = self_dec.MakeElf(isElf32); decrypted)
+		{
+			if (thor_dump_decrypted_modules())
+			{
+				static atomic_t<u32> s_dump_index{0};
+
+				const u32 idx = s_dump_index++;
+				const std::string dpath = fs::get_cache_dir() + fmt::format("decrypted_%02u.elf", idx);
+
+				decrypted.seek(0);
+				const std::vector<u8> bytes = decrypted.to_vector<u8>();
+
+				if (fs::file out{dpath, fs::rewrite})
+				{
+					out.write(bytes);
+					out.close();
+					self_log.error("Thor: dumped decrypted module #%u to '%s' (%u bytes)",
+						idx, dpath, static_cast<u32>(bytes.size()));
+				}
+
+				decrypted.seek(0);
+			}
+
+			return decrypted;
+		}
+
+		return fs::file{};
 	}
 
 	return {};

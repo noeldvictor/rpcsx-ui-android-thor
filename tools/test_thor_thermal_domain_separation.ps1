@@ -50,6 +50,27 @@ foreach ($name in $siliconNames) {
 if ((Get-ThorTemperatureDomain -Name 'battery') -ne "battery") { throw "Battery classification changed." }
 if ((Get-ThorTemperatureDomain -Name 'skin-therm') -ne "skin") { throw "Skin classification changed." }
 
+# The fast runtime command must cover the exact AYN Thor guard zones without a
+# broad wildcard walk. A later full preflight source-signature check rejects a
+# device layout change before the fast sample can authorize continued work.
+$fastThermalCommand = Get-ThorFastThermalZoneShellCommand
+$requiredFastZones = @(
+    31, 32, 33, 34,
+    35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+    47, 48, 49,
+    55,
+    63, 64, 65, 66, 67, 68, 69, 70,
+    82, 90, 94
+)
+foreach ($zone in $requiredFastZones) {
+    if (-not $fastThermalCommand.Contains("/sys/class/thermal/thermal_zone$zone")) {
+        throw "Fast runtime thermal telemetry omits thermal_zone$zone."
+    }
+}
+if ($fastThermalCommand.Contains('thermal_zone*')) {
+    throw "Fast runtime thermal telemetry still walks every thermal zone."
+}
+
 # 2. A junction reading below its own limit but above the silicon limit must not
 #    trip the guard. This is the exact case that produced the false stop.
 $lines = @(
@@ -57,6 +78,20 @@ $lines = @(
     "zone=thermal_zone43 type=cpu-1-8 temp=88000"
 )
 $snapshot = Get-ThorThermalGuardSnapshot -BatteryLines @("  temperature: 300") -ThermalZoneLines $lines -HardwareLines @()
+$sameSourcesSnapshot = Get-ThorThermalGuardSnapshot -BatteryLines @("  temperature: 310") -ThermalZoneLines @(
+    "zone=thermal_zone31 type=cpuss-0 temp=65000",
+    "zone=thermal_zone43 type=cpu-1-8 temp=89000"
+) -HardwareLines @()
+$missingSourceSnapshot = Get-ThorThermalGuardSnapshot -BatteryLines @("  temperature: 310") -ThermalZoneLines @(
+    "zone=thermal_zone31 type=cpuss-0 temp=65000"
+) -HardwareLines @()
+$sourceSignature = Get-ThorThermalGuardSourceSignature -Snapshot $snapshot
+if ((Get-ThorThermalGuardSourceSignature -Snapshot $sameSourcesSnapshot) -cne $sourceSignature) {
+    throw "Thermal source signatures changed when only temperatures changed."
+}
+if ((Get-ThorThermalGuardSourceSignature -Snapshot $missingSourceSnapshot) -ceq $sourceSignature) {
+    throw "Thermal source signatures did not reject a missing junction sensor."
+}
 
 if ($snapshot.silicon_temperature_c -ne 64.6) {
     throw "silicon_temperature_c is $($snapshot.silicon_temperature_c); it must come from the subsystem sensor, not the junction one."

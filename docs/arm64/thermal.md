@@ -5,6 +5,35 @@ against the wrong one manufactured alarm twice here.
 
 Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
 
+## The cold-start gate permits silicon below 70 C
+
+The standalone `strict-cool-gate` uses one sample and an exclusive 70 C launch
+limit. A fixed-silicon reading below 70 C can proceed immediately. It does not
+wait for a lower target. A reading at or above 70 C cannot proceed. Battery,
+skin, and CPU-junction readings do not decide this launch gate. The launch rule
+uses only the fixed CPU-subsystem, GPU-subsystem, DDR, SoC, and crystal sensor
+set.
+
+The runtime guard is separate. It stops early at 70 C and keeps a 72 C hard
+silicon limit. The CPU-junction hard limit remains 95 C.
+
+Do not use the `socd` thermal zone as a temperature. Qualcomm registers this
+zone through `qcom,msm-bcl-soc`, which is a battery state-of-charge sensor.
+The Thor reports it as a bare state value while its real CPU, GPU, DDR, and XO
+temperature zones report millidegrees Celsius. The guard excludes `socd` from
+the fixed-silicon set. Qualcomm's kernel binding and driver describe the
+sensor: <https://android.googlesource.com/kernel/msm/+/85a10b57b5c50f68a9592cbc9ba9d115a78b0342%5E2..85a10b57b5c50f68a9592cbc9ba9d115a78b0342/>.
+
+The paused startup-slice route has a smaller safety margin. Its independent
+device watchdog polls every 0.25 seconds and holds the app process at 66 C. The
+controller adopts that process hold. Before a later slice, it requires three
+fixed-silicon samples at or below 68 C at one-second intervals. The route uses
+the higher target because the fixed SoC sensor can stay at 66 C while the
+process is held. A value of 72 C
+still force-stops the app. This margin absorbs a fast subsystem-sensor rise
+while the host is busy. It does not change the cold-start rule: a value below
+70 C can start immediately.
+
 ## The guard measures junction maxima against a package-shaped limit
 
 Following the sensor mistake below to its source found the same error in the
@@ -52,7 +81,7 @@ while no longer calling ordinary load an emergency.
 Verified on the device at moderate load, and the numbers make the old failure
 plain:
 
-    silicon  : 64.6 C  from cpuss-2   (15 sensors, limit 72)  no violation
+    silicon  : 64.6 C  from cpuss-2   (14 sensors, limit 72)  no violation
     junction : 71.9 C  from cpu-1-8   (14 sensors, limit 95)  no violation
 
 Under the old classifier `silicon` was the maximum of both sets, so it would have

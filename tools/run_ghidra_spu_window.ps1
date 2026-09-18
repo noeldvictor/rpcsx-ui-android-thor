@@ -131,9 +131,18 @@ $ghidraArgs += @(
     "-deleteProject"
 )
 
-& $headless @ghidraArgs 2>&1 | Tee-Object -FilePath $headlessLog | Out-Host
-if ($LASTEXITCODE -ne 0) {
-    throw "Ghidra headless failed with exit code $LASTEXITCODE"
+$savedErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    # Ghidra extensions can write informational rows to stderr. Preserve all
+    # rows in the log and use the process exit code as the failure signal.
+    & $headless @ghidraArgs 2>&1 | Tee-Object -FilePath $headlessLog | Out-Host
+    $ghidraExitCode = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $savedErrorActionPreference
+}
+if ($ghidraExitCode -ne 0) {
+    throw "Ghidra headless failed with exit code $ghidraExitCode"
 }
 
 Write-Host "Wrote $ghidraOut"

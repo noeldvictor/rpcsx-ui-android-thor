@@ -59,6 +59,7 @@ $snapshot = Get-ThorThermalGuardSnapshot `
     -ThermalZoneLines $thermalZoneLines `
     -HardwareLines $hardwareLines
 
+Assert-ThorEqual "socd is not temperature" (Get-ThorTemperatureDomain -Name "socd") "other"
 Assert-ThorEqual "battery maximum" $snapshot.battery_temperature_c 31.0
 Assert-ThorEqual "skin maximum" $snapshot.skin_temperature_c 41.8
 Assert-ThorEqual "silicon maximum" $snapshot.silicon_temperature_c 73.5
@@ -104,6 +105,15 @@ Assert-ThorEqual "preflight headroom cool" (Get-ThorThermalGuardViolation -Snaps
 
 $hotPreflight = New-ThorTestSnapshot -Battery 33 -Skin 39 -Silicon 75 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
 Assert-ThorEqual "preflight headroom ceiling" (Get-ThorThermalGuardViolation -Snapshot $hotPreflight @preflightLimits).code "silicon-temperature"
+$coldStartLimits = @{
+    MaxBatteryTemperatureC = 34
+    MaxSkinTemperatureC = 40
+    MaxSiliconTemperatureC = 70
+}
+$coldStartBelow = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 69.9 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "cold-start below 70 C" (Get-ThorThermalGuardViolation -Snapshot $coldStartBelow @coldStartLimits) $null
+$coldStartAtLimit = New-ThorTestSnapshot -Battery 25 -Skin 30 -Silicon 70.0 -SkinSensorCount 1 -SiliconSensorCount 1 -GuardSensorCount 2
+Assert-ThorEqual "cold-start at 70 C" (Get-ThorThermalGuardViolation -Snapshot $coldStartAtLimit @coldStartLimits).code "silicon-temperature"
 Assert-ThorEqual "launch ceiling wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 75 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 40
 Assert-ThorEqual "runtime headroom wins" (Get-ThorPreflightSiliconLimitC -RuntimeLimitC 35 -HeadroomC 5 -MaxLaunchSiliconTemperatureC 40) 30
 $stablePreflight = @(
@@ -158,8 +168,27 @@ if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?C
 if ($debugCommonSource -notmatch 'function\s+Write-ThorStandardSnapshot[\s\S]*?\[switch\]\$SkipGuestLog[\s\S]*?if\s*\(-not\s+\$SkipGuestLog\)[\s\S]*?Copy-ThorAdbFile') {
     throw "Standard Thor snapshots cannot suppress stale guest logs before a boot request."
 }
-if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
+if ($debugCommonSource -notmatch 'function\s+Write-ThorLaunchPowerState[\s\S]*?performance_mode[\s\S]*?fan_mode[\s\S]*?fan_speed[\s\S]*?scaling_governor[\s\S]*?scaling_max_freq') {
     throw "Thor launch evidence does not preserve the AYN performance/fan mode and CPU policy state."
+}
+if ($debugCommonSource -notmatch 'function\s+Set-ThorSmartFanMode[\s\S]*?settings put system fan_mode 4[\s\S]*?\[ "\$effective" = "4" \]') {
+    throw "The Thor route does not set and verify Smart fan mode."
+}
+if ($inputMacroSource -notmatch 'Set-ThorSmartFanMode\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir\s+-EvidencePrefix\s+"prelaunch-smart"[\s\S]*?Write-ThorLaunchPowerState') {
+    throw "The input route does not set Smart fan mode before it records launch power state."
+}
+if ($inputMacroSource -notmatch '"\$batteryHardMilliC",\s+"\$MaxSkinTemperatureC",\s+"",\s+"2",\s+"stop",\s+"4"') {
+    throw "The input route does not require Smart fan mode in the device guard."
+}
+$deviceGuardSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "thor_device_thermal_guard.sh") -Raw
+if ($deviceGuardSource -notmatch 'expected_fan_mode="\$\{10:-\}"' -or
+    $deviceGuardSource -notmatch 'settings put system fan_mode "\$expected_fan_mode"' -or
+    $deviceGuardSource -notmatch 'code=fan-mode') {
+    throw "The device guard does not repair or reject an unexpected fan mode."
+}
+$renderProbeSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot "invoke_thor_transformers_hle_render_probe.ps1") -Raw
+if ($renderProbeSource -notmatch '\$script:ThorSliceDeviceGuardReady,\s+"0\.25",\s+"hold",\s+"4"') {
+    throw "The Transformers slice guard does not require Smart fan mode."
 }
 if ($inputMacroSource -notmatch 'Write-ThorLaunchPowerState\s+-Adb\s+\$Adb\s+-CaptureDir\s+\$captureDir[\s\S]*?Assert-ThorThermalPreflight\s+"pre-run"') {
     throw "The input route does not record power state before its launch thermal preflight."
@@ -183,18 +212,22 @@ if ($inputMacroSource -match '&\s+\$Adb\s+shell\s+\$thermalZoneCommand') {
 if ($inputMacroSource -notmatch 'Invoke-ThorAdbLines.+\$telemetryCommand') {
     throw "The input route does not use the lossless native argument capture path for combined thermal telemetry."
 }
-if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*3') {
-    throw "The input route does not default to three thermal preflight samples."
+if ($temperatureSnapshotBody -notmatch '\$telemetryTimeoutSeconds\s*=\s*if\s*\(\$RuntimeFast\)\s*\{\s*3\s*\}\s*else\s*\{\s*8\s*\}' -or
+    $temperatureSnapshotBody -notmatch '-TimeoutSeconds\s+\$telemetryTimeoutSeconds') {
+    throw "The full thermal census does not allow a measured slow Thor zone walk while the fast route stays bounded."
+}
+if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightSamples\s*=\s*1') {
+    throw "The input route does not default to one thermal preflight sample."
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPreflightIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to a two-second thermal preflight interval."
 }
-if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*5\.0') {
-    throw "The input route does not reserve five degrees of launch headroom."
+if ($inputMacroSource -notmatch '\[double\]\$ThermalPreflightHeadroomC\s*=\s*0\.0') {
+    throw "The input route does not use the exact launch ceiling."
 }
-if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*40\.0' -or
+if ($inputMacroSource -notmatch '\[double\]\$MaxLaunchSiliconTemperatureC\s*=\s*70\.0' -or
     $inputMacroSource -notmatch '\[double\]\$ThermalPreflightMaxRiseC\s*=\s*2\.0') {
-    throw "The input route does not enforce the cool-silicon launch ceiling and stable preflight trend."
+    throw "The input route does not enforce the below-70 C launch ceiling and stable preflight trend."
 }
 if ($inputMacroSource -notmatch '\[int\]\$ThermalPollIntervalSeconds\s*=\s*2') {
     throw "The input route does not default to two-second runtime thermal polling."

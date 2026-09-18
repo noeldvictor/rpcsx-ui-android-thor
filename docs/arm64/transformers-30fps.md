@@ -832,3 +832,993 @@ one codegen does not restore usefully under another.
 And per the warning already in `SPUCommonRecompiler.cpp`: **test correctness
 before speed.** The recorded failure is state corruption at a fixed SPU PC, not a
 crash, so a run that boots proves nothing on its own.
+
+# 2026-09-07: the frame is a continuous spread, every PPU thread waits, and reduced loops never touched the hot block
+
+Restored 3D combat, `tools/thor_transformers_diag_round.sh`, one boot per arm.
+Every arm pushed the savestate while stopped, got `loadstate ok:true`, passed
+`coresBusy > 4.5` with no video decoding, and had its screenshot scored DRAWN
+(2.25 to 2.27 MB, 17,800 to 18,700 distinct colours). The device changed its own
+fan mode from Smart to Sport between the second and third arm; nothing in the
+harness touches it.
+
+## Frame intervals: throughput, not pacing
+
+`perf_monitor` now appends the frame interval distribution to its Frames line
+(`Emu/RSX/thor_frametime.h`). Control arm, six consecutive 10 s windows:
+
+| window | fps | p50 ms | p95 ms | p99 ms | 36-45 | 45-55 | 55-70 | >70 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 18.44 | 52.0 | 70.6 | 85.0 | 2 | 105 | 49 | 10 |
+| 2 | 18.50 | 51.3 | 71.9 | 93.2 | 0 | 124 | 49 | 12 |
+| 3 | 18.30 | 52.8 | 69.0 | 82.2 | 0 | 110 | 64 | 9 |
+| 4 | 18.50 | 51.0 | 71.4 | 93.4 | 2 | 119 | 51 | 13 |
+| 5 | 18.10 | 52.6 | 72.3 | 97.4 | 1 | 110 | 53 | 17 |
+| 6 | 18.20 | 53.1 | 72.7 | 84.5 | 1 | 111 | 59 | 11 |
+
+A title locked to vblank shows tight clusters at 50.0 and 66.7 ms and nothing
+between them. This is a smooth spread from 45 to 100 ms with a tail. So 20 FPS
+is a throughput gap of about 35 percent and not a pacing artefact, and a higher
+vblank rate cannot help. The pre-load menu in the same log ran at a flat 33.4 ms.
+
+## The PPU census: every PPU thread waits, at every sample
+
+`debug.rpcsx.thor.ppu_pc_census=1` on LLE combat: 340 samples over 20 threads in
+the combat window, one per thread per perf tick. State `0x224` is
+`wait | suspend | memory`; state `0` is running. The code dump names the syscall
+where it had a slot: `li r11, N; sc`.
+
+| thread | where it sits | samples |
+| --- | --- | --- |
+| main_thread | `0x00b56de0` (lr `0x00ae0da8`), a wait wrapper it shares with the PhysX thread | 8 of 17 |
+| main_thread | `0x009e4ba4`: `li r11, 141; sc` = `sys_timer_usleep`, with a 30 us floor | 6 of 17 |
+| main_thread | running | 1 of 17 |
+| RenderingThread | `0x00fdcba0..a4` (lr `0x00fddf08`), one wait site | 14 of 17 |
+| RenderingThread | running | 1 of 17 |
+| PPU PhysX thread | `0x022a6e7c` inside libsre (lr `0x00a94678`), a SPURS wait | 9 of 17 |
+| PPU PhysX thread | `0x00b56de0`, the wrapper shared with main_thread | 8 of 17 |
+| SpursHdlr0, SpursHdlr1, SystemWorkload, gcm_intr, printf | `sys_event_queue_receive` (130) or `sys_spu_thread_group_join` (178) | 17 of 17 |
+| twelve FMOD, Bink, pool and IO threads | parked in event queue waits | 17 of 17 |
+
+Nothing on the PPU is busy. The main thread polls with `sys_timer_usleep(30)`
+for a third of its samples and waits on one synchronisation object for half.
+The rendering thread waits at one site for 82 percent of its samples. The frame
+is a chain of handoffs between these two threads, SPU0's SPURS consumer and the
+RSX, and the wall clock is the sum of the waits.
+
+The `usleep` finding gives the timer slack port (ARMSX3 `67c2763b9`, see
+[`upstream-survey-2026-09-07.md`](upstream-survey-2026-09-07.md)) a direct
+mechanism: with Android's default 50,000 ns slack every one of those 30 us polls
+took at least 80 us. The census now also prints `func=`, the syscall name, so
+the two unnamed wait sites above are named on the next run.
+
+## Cluster clocks under load: no throttling
+
+Sampled in every measured window at 88 to 96 C:
+
+    policy0 (A510 x3) 2016 MHz   policy3 (A710/A715 x4) 2707 MHz   policy7 (X3) 3187 MHz
+
+All three clusters at their maximum. The 15.32 FPS result for the big-core pin
+was work placement, not heat.
+
+## Levers, same session, same savestate, dev core `366BAD26`
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| control | 18.31 (18.44, 18.30, 18.20) | 5.44 | 68.5% | 92 C |
+| `lv2_spin=50` | 18.86 (19.07, 18.60, 18.90) | 5.91 | 72.8% | 94 C |
+| `relaxed_zcull_sync=1`, `precise_zpass_count=0` | **19.57** (19.50, 19.70, 19.50) | 5.56 | 69.5% | 94 C |
+| `spu_reduced_loop_emit=1` + `spu_prof=1`, warm-up | 17.66 | 5.74 | 68.8% | 92 C |
+| `spu_reduced_loop_emit=1` + `spu_prof=1` | 17.39 (17.47, 17.40, 17.30) | 5.65 | 70.5% | 93 C |
+| control, second | 18.53 (18.60, 18.50, 18.50) | 5.39 | 67.0% | 96 C |
+
+The two controls agree to 1.2 percent. Relaxed ZCULL Sync is 6.2 percent above
+their mean at the same CPU, and the two screenshots show identical geometry with
+no missing objects. That is one arm; the repeat on the ported core is in the
+next table. The lv2 spin restore buys 2.4 percent for 9 percent more CPU, which
+is the trade the default was set to avoid. The reduced-loop arm carries the SPU
+profiler's sampling hooks, so its frame rate is not comparable.
+
+## Reduced loops never touched chunk 0x0f3c4
+
+This is the finding that changes the plan. With `spu_reduced_loop_emit=1`
+engaged, the SPU profiler's per-block chart for `CellSpursKernel0` reads:
+
+    [chunk-0x0f3c4]: 97.1382% (135838 of 139840)   2.55% idle, 98.84% reservation
+
+The same 96.8 percent as with reduced loops OFF. The +0.5 percent "null" recorded
+in `SPUCommonRecompiler.cpp` proved that the emitter engaged somewhere, not that
+it transformed this loop. It did not. Across all six SPU threads the same chunk
+is 64.3 percent of every SPU sample.
+
+So the delay loop is still open, and it now has a mechanism as well as a cost.
+The web search found it is a libspurs pattern: Red Dead Redemption runs the same
+2400-iteration `RdDec` loop (RPCS3 PR #14469), upstream's own task for it (issue
+#16834, draft PR #17172) is open and does not work, and nobody has replaced such
+a loop with a shorter one. On hardware the loop is 1.5 us; here it is 92 us, so
+SPU0 notices new work sixty times later than a PS3 does, and the PPU census says
+the PPU spends the frame waiting on exactly such handoffs.
+
+The safe transformation is unchanged from the section above: every read but the
+last is dead and the exit condition is the counter alone, so emit the counter
+loop without the reads and one real read at the exit. The cached-read attempt
+deadlocked because it served stale time; this shape serves no stale time.
+
+## The ported core, measured against the same controls
+
+Three ARMSX3 changes were ported this session: no counter read per guest atomic
+and DMA (`2f0ce7786`), `prctl(PR_SET_TIMERSLACK, 1)` (`67c2763b9`) and the
+SPU-compile waiter throttle formula (`00f0d2e38`). Core `E55E20FD`.
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| control, ported core | 18.57 (18.50, 18.40, 18.80) | 5.58 | 71.2% | 94 C |
+| Relaxed ZCULL Sync, ported core | **19.46** (19.78, 19.60, 19.00) | 5.76 | 73.5% | 93 C |
+| control, ported core, second | 18.21 (18.23, 17.90, 18.50) | 5.43 | 67.0% | 95 C |
+| Relaxed ZCULL Sync, ported core, second | **19.27** (19.50 window mean) | 5.69 | 68.8% | 93 C |
+
+**The three ports are neutral on this scene.** Controls on the ported core read
+18.57 and 18.21 against 18.31 and 18.53 without it, and CPU is inside the same
+band. They remove wasted work, and this frame is not bound by that work.
+
+**Relaxed ZCULL Sync is a result.** Three arms across two cores read 19.57,
+19.46 and 19.27 against four controls at 18.31, 18.53, 18.57 and 18.21. The
+ranges do not overlap, the mean gain is 5.6 percent at the same CPU, and the
+screenshots show identical geometry. It is the first setting-level lever on this
+title that survived a repeat. Upstream warns that relaxed ZCULL can break titles
+that read occlusion results, so it stays an experiment lever until a longer play
+session, with a save and a load, shows nothing missing; RPCS3 issue #12972 lists
+titles it drops to 1 or 2 FPS.
+
+The named census on the ported core confirmed the two unnamed waits: the main
+thread's shared wrapper at `0x00b56de0` is `sys_cond_wait`, and the rendering
+thread's dominant site at `0x00fdcba0` is `sys_timer_usleep`. Both threads poll
+or wait; neither computes.
+
+## What the dead-read elision measured
+
+`debug.rpcsx.thor.spu_dec_dead_read=1`, implemented in `SPULLVMRecompiler.cpp`
+(`thor_dead_dec_read_shape`), keys the SPU cache as `-thor-ddr`, and logs
+`Thor DEC DEAD-READ: pc=...` for every block it transforms at compile time.
+
+| arm | fps (three 20 s samples) | cores | CPU | Tend |
+| --- | --- | --- | --- | --- |
+| `spu_dec_dead_read=1`, warm-up | 18.20 | 5.73 | 70.8% | 94 C |
+| `spu_dec_dead_read=1` | 18.17 (18.10, 18.20, 18.20) | 5.42 | 69.0% | 94 C |
+| control, same core | 18.23 | 5.48 | 70.8% | 94 C |
+| `spu_dec_dead_read=1` + Relaxed ZCULL Sync | 19.33 (19.40, 19.30, 19.30) | 5.96 | 75.5% | 95 C |
+| `spu_dec_dead_read=1` + `spu_prof=1` | 17.33 | 5.69 | 71.0% | 93 C |
+
+**It engaged, and it worked on the SPU.** The compile log names the hot block
+among the transformed ones (`Thor DEC DEAD-READ: pc=0x0f3d4 block=0x0f3d0
+size=4 rt=3 rx=4`), plus ten more delay loops of the same shape in libspurs. The
+SPU profiler on `CellSpursKernel0` went from 2.5 percent idle with
+chunk-0x0f3c4 at 97.1 percent of samples to **57.9 percent idle with the chunk at
+43.7 percent**. SPU0 no longer burns a core counting.
+
+**And the frame rate did not move.** 18.17 against 18.23 on the same core, the
+same savestate, back to back. The reservation failure rate stayed at about
+36,000 per second. So SPU0's backoff latency is not on the frame's critical
+path, and the twelve levers plus this one all agree: the frame is produced on
+the PPU side and the RSX, and the SPUs wait for it, not the other way round.
+The property stays default off. It is worth keeping for heat: it frees half a
+core that did nothing.
+
+## What the render thread polls
+
+The census code dump at the render thread's site decodes to:
+
+    0xfdcb88  lwz   r0, 0(r28)          load a word
+    0xfdcb8c  add   r0, r27, r0
+    0xfdcb90  cmpld cr7, r0, r30
+    0xfdcb94  ble   cr7, exit           leave when *r28 + r27 <= r30
+    0xfdcb98  li    r3, 30
+    0xfdcb9c  li    r11, 141            sys_timer_usleep(30)
+    0xfdcba0  sc
+    0xfdcba4  lwz   r29, 0(r28)         re-read, loop while *r28 + r27 > r30
+
+and the main thread's shared site is `while (!*(u8*)r30) sys_cond_wait(*(r30+4))`.
+The render thread waits, 30 us at a time, for a word that something else
+advances past a threshold, and the main thread waits on an event the render
+thread raises. Everything measured says that word is advanced by rsx::thread's
+command processing or by the GPU behind it. The census now prints r27, r28, the
+word at r28 and r30 for every sample, so the next run names the address.
+
+The levers that follow from that: `Multithreaded RSX`, `RSX FIFO Accuracy: Fast`
+and `Disable ZCull Occlusion Queries`, each now behind a property.
+
+## Round D: the GPU is not idle, and the render thread waits for ring space
+
+Shipped profile (Relaxed ZCULL Sync now on), core `3B1E2217`, and the harness
+now reads `/sys/class/kgsl/kgsl-3d0/gpubusy` over each window.
+
+| arm | fps (three 20 s samples) | cores | CPU | GPU busy | GPU clock |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.53 (20.00, 19.30, 19.30) | 5.57 | 70.8% | 52 to 62% | 550 MHz |
+| `Multithreaded RSX: true` | **13.77** (14.10, 13.20, 14.00) | 6.33 | 78.8% | 29 to 44% | 550 MHz |
+| `RSX FIFO Accuracy: Fast` | 19.97 (20.00, 19.80, 20.10) | 5.54 | 69.5% | 55 to 57% | 550 MHz |
+| `Disable ZCull Occlusion Queries` | INVALID, scene gate failed at 4.0 cores | | | | |
+| control, second | 19.53 (19.60, 19.60, 19.40) | 5.45 | 68.8% | 50 to 57% | 550 MHz |
+
+**"The GPU is idle" was a CPU-side statement, and it was wrong as a GPU-side
+one.** The Vulkan driver is 2.3 percent of CPU cycles and the guest's overlay
+reports RSX at 3 to 7 percent, but the Adreno itself is busy 50 to 62 percent
+of the time, at 550 MHz of a 680 MHz maximum. It is not saturated. It is not
+idle either. The devfreq governor is `msm-adreno-tz`, and its clock is
+root-only, so the clock cannot be pinned from the harness.
+
+**Multithreaded RSX is rejected**: minus 30 percent, with GPU busy falling to
+29 to 44 percent because the RSX thread fed it less. **FIFO Fast** reads plus
+2.3 percent on one arm at equal CPU. It stays out of the profile: with `Fast`
+the boot hung twice with a dead FIFO 35 seconds in, and the savestate route
+skips exactly that phase.
+
+**The render thread's poll, named.** With the census printing r27, r28, the
+word at r28 and r30, the loop at `0x00fdcba0` reads:
+
+    while (*(u32*)0x01f94998 + 0x4000 > 0x100000) sys_timer_usleep(30);
+
+The word sits at 0xfc400 while it waits. The render thread wants 16 KiB of a
+1 MiB ring that has 15 KiB free, and it waits 30 us at a time for the consumer
+to drain it. The main thread meanwhile waits on the render thread in
+`sys_cond_wait`. The consumer is what advances the RSX side of that ring:
+`rsx::thread`, which the census puts at about 0.7 of a core, and whatever it in
+turn waits for on the GPU. That is the chain: PPU render thread, a 1 MiB ring,
+rsx::thread, Vulkan, a half-busy GPU at a mid clock.
+
+The next instrument is a host profile of `rsx::thread` alone in combat, to
+split its 0.7 core between FIFO work and waits on the GPU. The next levers are
+whatever that profile names.
+
+## The RSX thread, profiled alone in combat
+
+`simpleperf` through `run-as`, 25 s, 151,097 samples, 0 lost, restored combat
+at 19.6 FPS on the shipped profile. Symbols resolved with `llvm-addr2line`
+against the unstripped RelWithDebInfo library of the same build.
+
+| thread | share of all cycles |
+| --- | --- |
+| `SPU[0x0000100]` CellSpursKernel0 | 19.7% |
+| four other SPUs | 10.6 to 10.7% each |
+| `rsx::thread` | **9.2%**, about 0.73 of a core |
+| `SPU[0x5000100]` | 8.5% |
+| `PPU[0x100000b]` RenderingThread | 7.2% |
+| `PPU[0x1000000]` main_thread | 6.9% |
+
+Inside `rsx::thread`:
+
+| share | where |
+| --- | --- |
+| 58.6% | `librpcsx-android.so` |
+| **17.6%** | `libvulkan_freedreno.so`, the Turnip driver's CPU side |
+| 10.7% | kernel |
+| 9.6% | libc, of which `memcpy_opt` is 7.2% |
+
+| share of rsx::thread | symbol |
+| --- | --- |
+| **16.6%** | `rx::pause()`, called from `FIFO_control::read` (RSXFIFO.cpp:471, :521) and `read_unsafe` (:360) |
+| 7.2% | `memcpy_opt` |
+| 2.4% | `cpu_thread::test_stopped()` |
+| 2.3% | `rsx::thread::end()` |
+| 0.8% | `upload_untouched_naive<u16>`, index upload |
+| 0.75% | `analyse_fragment_program` |
+| 0.5% | `ZCULL_control::set_active`, `query_pool_manager::poke_query` |
+
+**The spin is the Atomic FIFO fetch.** `FIFO_control::fetch_u32` takes a
+`rsx::reservation_lock` per 128-byte line of the command buffer and pauses while
+a reservation on that line is being updated, which is the PPU writing the very
+buffer the RSX is reading. That is 17 percent of the RSX thread's time, and it
+is exactly what `RSX FIFO Accuracy: Fast` skips: Fast measured plus 2.3 percent.
+Fast is not shipped because it hung the boot twice with a dead FIFO. The
+question that follows is whether the Atomic fetch can be cheaper, or whether the
+dead-FIFO hang under Fast can be fixed on its own.
+
+The core that ran here was the APK's bundled core, not the dev-core override:
+the reinstalled APK carries the same build, so the numbers stand, but a session
+that expects the override must check which library `simpleperf` names.
+
+## Where this leaves the frame, 2026-09-07
+
+- Shipped: `Relaxed ZCULL Sync`, plus 5.6 percent, seven arms, two cores.
+- Neutral: three ARMSX3 ports, the dead decrementer read (half of SPU0 freed).
+- Rejected: Multithreaded RSX at minus 30 percent, reduced loops, `lv2_spin=50`.
+- Open, sized: Atomic FIFO fetch at 17 percent of the RSX thread (Fast is +2.3
+  percent); Turnip's CPU side at 17.6 percent of the RSX thread; the GPU at 50
+  to 62 percent busy at 550 of 680 MHz; the render thread's 1 MiB ring wait.
+- Not the cause: PhysX compute, SPU throughput, CPU throttling, vblank pacing.
+
+## Round E: 29.6 FPS that must not be counted, and what it points at
+
+Same shipped profile, scene gate lowered to 3.0 cores for one arm.
+
+| arm | fps | cores | CPU | GPU busy | screenshot |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.73 (19.50, 20.00, 19.70) | 5.40 | 68.5% | 55 to 61% | 2.25 MB, 17,209 colours, full scene |
+| `Disable ZCull Occlusion Queries: true` | **29.59** (29.47, 29.60, 29.70) | 3.90 | 48.0% | 40 to 42% | **1.22 MB, 14,029 colours: the interior, both robots and the floor are GONE** |
+| `resolution_scale=75` | 19.33 | 5.68 | 67.2% | 54 to 58% | VOID: the override lived only in the dev core, and this APK loaded its bundled core |
+| `resolution_scale=50` | 19.32 | 5.74 | 73.2% | 52 to 57% | VOID, same reason |
+
+**The 29.6 is the frame counter counting empty frames again**, the trap
+[`an fps number without a screenshot`] exists for. With queries disabled,
+`get_zcull_stats` reports 0 pixels for every query, the title reads that as
+"fully occluded" and culls, and the scene collapses to sky, lightning and a
+fragment of wall. It is not a result and it is not shipped.
+
+**What it does say is where a third of the frame goes.** Remove the occlusion
+query path and the title hits its cap on 3.9 cores. Either the geometry those
+queries normally cull is the cost, or the query round-trips are. The
+discriminating test is to report "visible" instead of "occluded"
+(`debug.rpcsx.thor.zcull_visible_value`, added after this round): the title then
+draws everything, with no query stalls. If the frame rate holds near the cap
+with the full picture, the stalls were the cost and the fix is a cheaper query
+path; if it falls back to 19, the geometry was.
+
+The resolution arms were void because the reinstalled thortest APK did not
+honour the dev-core override; only the `debug` build type set that flag. Fixed
+in `app/build.gradle.kts` the same night, and logcat now shows `Using Thor dev
+core override` on boot.
+
+## Round F: the frame is draw-call bound
+
+Dev core `EBC18A6C` on the APK that honours the override (logcat: `Using Thor
+dev core override`), shipped profile, scene gate 3.0.
+
+| arm | fps (three 20 s samples) | cores | CPU | GPU busy | screenshot |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.43 (19.50, 19.30, 19.50) | 5.45 | 72.2% | 48 to 56% | full scene, 18,252 colours |
+| queries disabled, report **visible** (`zcull_visible_value=1`) | **9.48** (9.60, 9.50, 9.33) | 5.21 | 60.8% | 42 to 48% | full scene, 17,930 colours |
+| same, second | **9.07** (9.00, 9.00, 9.20) | 5.14 | 64.5% | 40 to 43% at 680 MHz | full scene, 18,437 colours |
+| `resolution_scale=50` | **20.85** (20.75, 21.20, 20.60) | 5.71 | 64.8% | 46 to 53% | full scene at 640x360, 12,057 colours |
+
+**The discriminator answered.** Report "occluded" for every query and the title
+draws almost nothing: 29.6 FPS. Report "visible" for every query and it draws
+everything: 9.5 FPS, with the GPU still under half busy. Let the queries work
+and it draws what the queries admit: 19.4 FPS. The frame cost follows the
+number of draws the title issues, not the query round-trips, and not pixel
+work: halving the internal resolution moved GPU busy by nothing and the frame
+rate by 7 percent. **The occlusion queries are saving half the frame, and the
+emulator's cost per draw is the limit.**
+
+That is also why every earlier lever was null. SPU work, PPU waits, the
+decrementer loop, timer slack and counter reads are not on the per-draw path.
+The per-draw path is: the render PPU thread building commands, `rsx::thread`
+fetching them through the Atomic FIFO (17 percent of its time in the
+reservation spin), the texture and program caches, the vertex and index
+uploads (`memcpy_opt` 7 percent), Turnip's CPU side (17.6 percent of the RSX
+thread), and the Adreno's own per-draw cost, which is what keeps GPU busy at
+half with pixel count irrelevant.
+
+What follows from it, in order of size:
+
+1. **The system Qualcomm Vulkan driver against Turnip**, per draw. Never
+   measured on this scene; Turnip is 17.6 percent of the RSX thread's cycles.
+2. **FIFO Fast**, plus 2.3 percent, if the dead-FIFO boot hang can be fixed.
+3. **Resolution Scale 50**, plus 7 percent, at a visible cost. A user choice,
+   not a profile default.
+4. Per-draw overhead inside `rsx::thread`: the FIFO reservation spin, the
+   per-draw program analysis and cache lookups, the index and vertex copies.
+
+30 FPS needs a 35 percent cut in cost per draw. No setting does that. The
+shipped state is 19.4 FPS with Relaxed ZCULL Sync, up from 18.4.
+
+## Round G: the system Qualcomm driver cannot run this renderer
+
+Selected through the app's preferences (`selected_gpu_driver=Default`,
+`gpu_driver_path` empty), confirmed in the log as `Adreno (TM) 740` on driver
+`512.676.53`. Three boots, three RSX thread deaths before combat:
+
+    SIG: Thread terminated due to fatal error: Assertion Failed!
+    Vulkan API call failed with unrecoverable error: Unknown Code (FFFFFFF3h, -13)
+
+Two boots died in the menus and one during the restore. No frame rate exists
+for the system driver, and this is the reason Turnip is installed. Turnip stays
+selected. The 17.6 percent of the RSX thread that Turnip's CPU side costs is
+therefore not recoverable by a driver swap on this device today.
+
+## The next code step, sized from the FIFO recovery path
+
+`RSX FIFO Accuracy: Fast` is plus 2.3 percent and hangs the boot because a torn
+read under Fast yields an invalid command, `recover_fifo` resets the queue, and
+twenty recoveries inside two seconds throw `Dead FIFO commands queue state`.
+The Atomic mode avoids the tear by taking a reservation lock per 128-byte line
+on every fetch, which is the 17 percent spin. A hybrid that fetches Fast and
+re-reads the line atomically only when the command decodes as invalid would
+keep the spin off the common path and the recovery off the boot. It is a
+bounded change in `FIFO_control::fetch_u32` and `run_FIFO`, and it is the one
+per-draw cost in `rsx::thread` with a measured upper bound.
+
+## Round H: FIFO Fast, three cold boots
+
+| arm | fps (valid 20 s samples) | cores | CPU | GPU busy | boot |
+| --- | --- | --- | --- | --- | --- |
+| Fast, boot 1 | 20.17 (20.11, 20.20, 20.20) | 5.71 | 74.2% | 56 to 59% | clean |
+| Fast, boot 2 | 19.65 (19.89, 19.40; one window was the restore stall) | 5.76 | 67.0% | 51 to 58% | clean |
+| Fast, boot 3 | 19.92 (19.87, 20.00, 19.90) | 5.72 | 73.2% | 52 to 60% | clean, restore took two tries |
+
+Four Fast boots today (round D plus these three) and no dead FIFO. The two
+hangs of 2026-08-22 were on a core several hundred commits older, and the
+`abort` lines in every log are the savestate restore tearing down the running
+title, present in the Atomic arms too. Against the same-day shipped-profile
+controls at 19.43 to 19.73, Fast reads 19.65 to 20.17: about plus 2 percent,
+inside the day's control spread. It is not shipped. The gain is too small to
+carry a setting whose failure mode is a dead RSX thread, and the hybrid fetch in
+the section above is the way to take the spin off the common path without that
+risk.
+
+## Where the day ends
+
+19.4 FPS shipped, from 18.4. Every setting-level lever is now measured on this
+scene, and the frame is bound by the emulator's cost per draw. The remaining
+work is code: the Fast-with-atomic-fallback FIFO fetch, then the per-draw path
+in `rsx::thread` and the driver's CPU side, which no driver swap can reach on
+this device because the system driver does not run this renderer.
+
+## Round I: power proxies, and the sleeping reservation wait does not free cores
+
+The goal became frames up AND power down. The charger-input meter is valid only
+with the battery near full and not charging, and the cell was at 63 percent on
+the charger, so cores busy, CPU percent and end temperature stand in.
+
+| arm | fps | cores | CPU | GPU busy | Tend |
+| --- | --- | --- | --- | --- | --- |
+| control (cold start, 33 C) | 20.73 (20.60, 21.00, 20.60) | 5.67 | 74.8% | 55 to 59% | 95 C |
+| `spu_getllar_busy=0`, reservation waits sleep | 20.17 (19.80, 20.60, 20.10) | 5.56 | 68.2% | 57 to 61% | 90 C |
+| `spu_dec_dead_read=1` + `spu_getllar_busy=0` | 20.21 (20.42, 20.10, 20.10) | 5.87 | 75.2% | 55 to 60% | 94 C |
+| `spu_dec_dead_read=1` | 20.05 (19.44, 20.60, 20.10) | 5.67 | 72.2% | 53 to 59% | 94 C |
+
+Cores stay at 5.6 to 5.9 whatever the SPU waits do. The five SPUs the profiler
+calls 91 percent idle still cost about 0.6 of a core each, and a futex sleep on
+the GETLLAR wait does not give that back, so that is not where they spend it.
+The sleeping arm reads about 6 points less CPU at the same frame rate, one arm,
+inside the noise. Power on this scene is set by the same per-draw work as the
+frame rate, plus whatever the idle SPUs execute while "waiting", and the next
+measurement is a per-thread host profile of one idle SPU to name that code.
+
+## The idle SPUs are not idle on the host
+
+From the same 151,097-sample capture, thread `SPU[0x1000100]` (CellSpursKernel1),
+which the guest-side profiler calls 88 percent idle:
+
+| share of the thread's host cycles | where |
+| --- | --- |
+| **62.1%** | JIT-generated guest code, the SPURS kernel's own scheduler loop |
+| 24.0% | `librpcsx-android.so`, of which `vm::writer_lock` (vm.cpp:712) is about 15% and `process_mfc_cmd` 2.6% |
+| 10.1% | kernel |
+| 3.4% | libc, `memcpy_opt` |
+
+Its guest-side chart spreads over `chunk-0x00cc8` (14%), `0x3c3d8` (11%),
+`0x01a50` and `0x09590`: the SPURS kernel polling for work, selecting a
+workload and finding none, at full issue rate. "Idle" in the guest profiler
+means the SPU is between jobs. On the host it means a core running the poll.
+Five such threads cost about three cores at 20 FPS, which is the power story of
+this scene in one line.
+
+A sleeping GETLLAR wait did not give those cores back (round I) because the
+loop is guest instructions, not the emulator's reservation wait. What has
+measured against it is the SPURS thread clamp: `max_run` 4 cut CPU from 64.5 to
+59.8 percent for 0.5 percent of frame rate, and 3 cut it to 59.0 percent
+(2026-08-24, this file). Fewer kernels polling means fewer cores spent polling.
+The dead decrementer read is the other half: SPU0's poll backoff is a real
+delay that the elision makes cheap, and the same shape appears in eleven
+blocks of libsre. Neither is on the frame's critical path, which is why both
+are power levers rather than frame levers.
+
+## Round J: the power stack
+
+`spurs_max_run_clamp=4` + `spu_dec_dead_read=1` + `spu_getllar_busy=0`, twice,
+against a same-round control.
+
+| arm | fps | cores | CPU | GPU busy | Tend |
+| --- | --- | --- | --- | --- | --- |
+| control | 20.68 (20.93, 20.50, 20.60) | 5.91 | 74.5% | 58 to 60% | 91 C |
+| power stack | 19.73 (19.38, 19.80, 20.00) | **5.15** | **65.2%** | 58 to 59% | 95 C |
+| power stack, second | 19.53 (19.20, 19.50, 19.90) | **5.20** | **69.2%** | 55 to 60% | 93 C |
+
+Cores fall from 5.9 to 5.2, about 12 percent, and CPU from 74.5 to 65 to 69
+percent. Every control today sat between 5.39 and 5.91 cores; both power arms
+sit below all of them. Frame rate reads 19.5 to 19.7 against a control at 20.7,
+which is inside the day's control band of 19.43 to 20.73, so the cost in frames
+is between zero and five percent and is not resolved by two arms. The GPU is
+unchanged, as expected: the saving is SPU cores that were polling for work.
+
+The A510 cluster dipped to 1459 MHz in three samples at 92 to 95 C; the two big
+clusters held their maximum in every sample of every round.
+
+**What to ship for power.** The clamp and the sleeping reservation wait are
+config values and can go into the title profile; the dead decrementer read is a
+codegen property that keys the SPU cache. Shipping them means accepting up to a
+few percent of frame rate for about an eighth of the CPU. That trade is the
+owner's call and is recorded here rather than made.
+
+# 2026-09-08: the 30 FPS programme, stage 0 and 1
+
+Plan: `~/.claude/plans/bubbly-foraging-ladybug.md` (the owner's copy). Core
+`A88B3EA9` with the structural switches, per-class affinity masks and the RSX
+counters (`Emu/RSX/thor_rsx_counters.h`) on the Frames line.
+
+## Round K: the structural switches
+
+| arm | fps | cores | CPU | verdict |
+| --- | --- | --- | --- | --- |
+| control | 20.33 (cold start 37 C) | 5.70 | 67.5% | |
+| `PPU Threads: 4` | **16.50** | 6.05 | 76.5% | minus 19 percent |
+| `PPU Threads: 8` | **15.90** | 6.31 | 81.8% | minus 22 percent |
+| `Asynchronous Queue Scheduler: Fast` | 19.83 | 5.75 | 68.0% | null |
+| `Sleep Timers Accuracy: Usleep Only` | 19.93 | 5.81 | 70.0% | null |
+| chain on cpu3-7, SPUs on cpu0-2, RSX f8 | **6.5** (gate refused at 3.94 cores; the log shows the scene) | 3.94 | | dead |
+| chain on cpu3-7, SPUs on cpu0-2, RSX on the X3 | **6.6** (gate refused at 3.82) | 3.82 | | dead |
+| same pin plus Multithreaded RSX | **6.63** | 4.91 | 61.5% | dead, same as without |
+| control, second | 19.97 | 5.79 | 68.8% | |
+
+**The two-slot PPU limit is doing real work.** Letting four or eight PPU
+threads run at once costs a fifth of the frame rate and adds half a core. The
+twenty guest PPU threads then compete with the render thread for cores and for
+the lv2 mutex; the Cell's two hardware threads were a throttle the game was
+written against, and the emulator's copy of it is not the serialisation. The
+question is closed.
+
+The async compute scheduler and the timer mode are nothing on this scene.
+
+**Parking the SPUs on the three little cores kills the frame.** All three
+pinned arms ran the combat scene (the Frames lines show the same 1,500 draws per
+frame as the control) at 6.5 FPS, frame time p50 153 ms, whether the RSX thread
+sat on cpu3-7 or on the X3 alone and with or without Multithreaded RSX. The
+scene gate refused two of them only because total cores busy fell with the SPUs
+on 2.0 GHz cores. The SPU census from the earlier sessions called the five
+non-kernel SPUs idle pollers "not on the frame's path"; this round says the
+opposite. Six SPU threads on three Cortex-A510 cores, five of them spinning for
+work, leave the SPU that has the frame's job a quarter of a slow core, and the
+render thread waits for that job. Which job is stage 2's question now, next to
+the render thread's own 30 ms. Placement is proven from `/proc/<pid>/task/*/stat`
+sampled by hand: PPU chain threads on cpu3-6, every SPU on cpu0-2, `rsx::thread`
+on cpu7.
+
+The residency sampler's PPU and SPU rows read the wrong stat column for thread
+names with a space, fixed after round L; the RSX row already showed
+`rsx::thread` on cpu2, a little core, 10 percent of the time under the OS
+scheduler.
+
+## Round L: the placement arms with the gate at 3.0
+
+Capture `debug-captures/20260908-121516-transformers-diag-round`, same core.
+
+| arm | fps | cores | verdict |
+| --- | --- | --- | --- |
+| control | 19.80 | 5.80 | |
+| PPU f8, SPU 07, RSX f8 | **6.40** | 3.8 | dead; frame time p50 153 ms |
+| PPU f8, SPU 07, RSX on the X3 | **6.46** | 3.85 | dead; `rsx::thread` on cpu7 all the time |
+| PPU f8, SPU 0f (cpu0-3), RSX f8 | **13.10** | 4.93 | half the control |
+| control, second | 19.67 | 5.85 | |
+
+Three little cores for six SPU threads: a third of the frame rate. Three little
+cores and one A710: two thirds. Unpinned: all of it. The frame rate follows the
+CPU the SPUs get, which puts SPU work on the frame's chain as firmly as the
+render thread's own code. The draws per frame are identical across the arms
+(1,480 to 1,500), so the scene is the same and only its speed changed.
+
+Two consequences. First, the SPU side is not a power-only concern: the five SPUs
+the idle profile called pollers include the ones the render thread waits for, and
+anything that slows an SPU (little cores, the clamp, the dead-read elision's
+sibling changes) has to be measured as a frame-rate lever, not just a cores
+lever. Second, the interesting placement arm is the one that never touches the
+SPUs: PPU chain threads on cpu3-7 and `rsx::thread` on the X3, SPUs free. That
+is round M's `chain_only`.
+
+What the SPUs do for this frame is now stage 2's second question. The render
+thread's poll at `0x00fdcba0` waits on a word at `0x01f94998`; if an SPU job
+writes it, the chain is PPU render thread, SPU job, RSX thread, GPU, and the
+Ghidra decompile of that loop names the job.
+
+## Round M: the FIFO levers, chain-only placement, and what a render pass count is
+
+Capture `debug-captures/20260908-123633-transformers-diag-round`, core
+`A5358CDF` (commit 86b53e1e8: the trim fix, the ARMSX3 FIFO bundle, the
+render-pass counter moved to the real `vkCmdBeginRenderPass`).
+
+| arm | fps | cores | refills/frame | retries/frame | verdict |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.83 | 5.85 | 820 | 390 | |
+| `rsx_fifo_trim_fix=1` | 20.05 | 5.83 | 820 | 400 | null; retries unchanged |
+| `rsx_fifo_4k=1` | 20.13 | 5.67 | **215** | 380 | engaged; null on frames |
+| `rsx_fifo_get_lag=1` | 19.90 | 5.79 | 820 | 400 | null |
+| all three | 19.93 | 5.90 | 215 | 400 | null |
+| PPU on cpu3-7, RSX on the X3, SPUs free | **13.2** (gate refused at 3.98 cores) | 3.98 | | 380 | dead |
+| `rsx_auditor=60` | 19.55 | 5.95 | | | void: the auditor is a compile-time option, off in this build |
+| control, second | 19.93 | 5.83 | 820 | 400 | |
+
+**The retries are not the PUT line and not the refill.** The trim fix removed
+the one mechanism the code read named, and the retry count did not move. The 4 KB
+refill cut refills by four and the retry count did not move either. About 400
+times a frame the fetch finds a line it cannot take on the first try, whatever
+the fetch size and whatever the PUT distance. The loop has three exits into the
+retry: the reservation word has lock bits set, the reservation timestamp moved
+between the copy and the compare, or the two reads of the line differ. The next
+core counts each, logs every 1024th retry with the line address, PUT distance and
+the reservation word, and makes the backoff a property.
+
+**The backoff is 10.4 us per retry on this fork and about 0.1 us upstream.**
+`busy_wait(200)` at the retry site is upstream's number. Upstream's ARM64
+`busy_wait` divides by 100 and multiplies by a timer scale that resolves to 1 on
+a 19.2 MHz counter, so their 200 is two ticks; this fork removed the division on
+2026-08-05 after a lock convoy on contended reservations and the note said every
+hot site had been retuned by hand, but this site kept 200. Four hundred retries
+at 10.4 us are 4 ms of the RSX thread's 37 per frame. ARMSX3 measured the same
+spin at 0.006 ms per frame. Round N measures 2, 20 and 50 ticks.
+
+**Who bumps reservations on FIFO lines.** SPU DMA. `do_dma_transfer` on ARM64
+has no TSX, so every MFC PUT into main memory takes the non-RTM path: per
+128-byte chunk it sets the reservation's low bit, takes the range lock, copies,
+advances the timestamp by 128 and releases. An RSX fetch that lands on such a
+line during the copy sees "locked"; one that lands after sees "changed". The
+retry log will say whether the lines are the ring the SPUs write.
+
+**Placement is closed.** Pinning the PPU threads to cpu3-7 and the RSX thread to
+the X3 with the SPUs free ran the scene at 13.2 FPS with total cores busy down to
+4.0. With the SPUs on the little cores, 6.4 and 6.5; with one mid core added,
+13.1. Every explicit placement measured today lost to the OS scheduler. Round N
+carries the one placement that cannot oversubscribe, the RSX thread alone on the
+X3, and then the question is done.
+
+**98 render passes a frame, not 1,550.** The Round K counter sat before the
+same-pass early-out in `vk::begin_renderpass` and counted calls; moved after it,
+the count is 19,600 per ten seconds at 20 FPS, about 98 passes for 1,500 draws,
+some 15 draws per pass. On a tiler each pass is a load and a store of colour and
+depth at 720p; 98 of them is about 1.4 GB of GMEM traffic per frame at 20 FPS,
+which is where part of the GPU's 55 percent busy goes with a 2005-era workload.
+What ends each pass is counted next (barrier, texture operation, subpass switch,
+query scope, flush, compute, label write), from the twenty-one sites that call
+`vk::end_renderpass`.
+
+## Round N, first two arms: what the FIFO fetch waits on, and what the SPUs do
+
+Capture `debug-captures/20260908-131234-transformers-diag-round`, core
+`AE9107B9` (commit 2c6d71f01: retry causes, retry-wait property, sampled retry
+log, SPURS workload census). Control 19.80 FPS, 5.97 cores; the retry-log arm
+20.07.
+
+**Every retry is a reservation lock that has nothing to do with the FIFO.** Per
+ten seconds at 19.8 FPS: 909 stall episodes (4.6 a frame), 103,190 loop
+iterations with the reservation word's lock bits set, 18 with the timestamp
+moved, 0 with the two reads differing, 17,159 falls to `cpu_wait`, which is a
+`sched_yield`. One episode is about 95 spins of 10.4 us and 19 yields, so the
+lock lives about a millisecond. The sampled log (842 samples) shows in every one
+`res & 0x7f == 0x40`, the unique lock bit, on a line 0.1 to 1.9 MB away from PUT
+in both directions, so no writer is near it. The line addresses repeat their low
+16 bits: `0x7a80`, `0xe600`, `0x4c00`, `0xd680`, `0xc280`, `0xdf00`. The
+CellSpurs instance is at `0x01e97a80`.
+
+`vm::reservation_acquire` indexes `g_reservations` by `addr & 0xff80`: one
+64-bit word serves every 128-byte line whose address agrees in the low 16 bits,
+so 32 lines of the 2 MiB ring alias each SPURS control line. Under Accurate SPU
+Reservations (on in this profile, reverted to on 2026-08-23) an SPU `PUTLLC`
+takes the unique lock on its line and then `vm::writer_lock`, which marks every
+PPU thread `cpu_flag::memory` and waits for each to park. That wait is the
+millisecond. The RSX fetch reads the aliased word, sees the lock and waits for a
+store to a different address. On x86 the same aliasing exists and the lock is
+held for nanoseconds, so nobody saw it. 4.6 ms a frame of the RSX thread's 37 is
+this.
+
+The double read (`cmp_rdata` after `mov_rdata`) is what protects a FIFO line
+against a torn read, not the lock bit, and nothing stores atomically into the
+ring. The next core ignores lock bits on FIFO fetches behind
+`debug.rpcsx.thor.rsx_fifo_ignore_res_lock=1` and keeps the timestamp check.
+ARMSX3 hit the same table aliasing from the other side (`ed6941519`, PUTLLC
+failures).
+
+**The SPU work is GCMX: RSX command generation on the SPUs.** The workload
+census (`debug.rpcsx.thor.spurs_wkl_census=1`, instance `0x01e97a80`, six
+SPUs):
+
+| wid | class | instance | ready | contention | priority |
+| --- | --- | --- | --- | --- | --- |
+| 0 | System Workload | Default System Workload | 0 | 0/1 | 00000100 |
+| 1 | taskset | edgeZlibTaskSet | 0 | 0/8 | ffffff00 |
+| 2 | **JobQueue** | **GCMX JobQueue** | **5** | **4/5** | 07777777 |
+| 3 | taskset | GCMX | 1 | 1/1 | 10000000 |
+| 4 | JobChain | SpursManager | 0 | 0/6 | 77777777 |
+| 5 | JobChain | SpursManager | 0 | 0/6 | 77777777 |
+| 6 | taskset | PhysX | 0 | 0/6 (1 pending) | 44444444 |
+| 7 | JobChain | (unnamed) | 0 | 0/5 | 44444444 |
+| 9 | taskset | FMOD | 1 | 1/1 | 01111000 |
+
+GCMX is the SPU-side command generation library: the PPU render thread queues
+jobs, four to five SPUs build the draw commands and DMA them into the 2 MiB
+ring, the render thread polls a word for completion (`0x00fdcba0`,
+`sys_timer_usleep(30)`), and the RSX thread parses what the SPUs wrote. That is
+why parking the SPUs on the little cores took the frame from 19.8 to 6.4 FPS
+with the same 1,500 draws, and why every SPU-side cost on ARM64 is on the frame:
+the non-RTM DMA PUT path that locks and bumps a reservation per 128-byte chunk,
+the `PUTLLC` writer_lock that waits for the PPU threads, the reservation-table
+aliasing above, and the SPU JIT's own quality. PhysX and FMOD are tasksets on
+the same six SPUs.
+
+### Round N, the rest: the backoff is not the cost, and the last placement arm
+
+| arm | fps | cores | retries/10 s | stalls/10 s | yields/10 s |
+| --- | --- | --- | --- | --- | --- |
+| control | 19.80 | 5.97 | 85,500 | 909 | 17,200 |
+| retry log + SPURS census | 20.07 | 5.77 | | | |
+| `rsx_fifo_retry_ticks=2` | 20.00 | 5.75 | **4,400,000** | 885 | 15,900 |
+| `rsx_fifo_retry_ticks=20` | 19.83 | 5.86 | | | |
+| `rsx_fifo_retry_ticks=50` | 20.07 | 5.83 | | | |
+| 2 ticks + 4 KB refill + GET lag | 20.07 | 5.69 | | | |
+| RSX thread alone on the X3 | **13.37** | 4.42 | | | |
+| control, second | 19.80 | 5.81 | | | |
+
+With a 0.1 us backoff the loop spins fifty times as often and falls to
+`cpu_wait` just as often: the same 880 episodes a frame-window, the same 16,000
+yields. The wait is the lifetime of the aliased lock, about a millisecond, and no
+backoff shortens it. The property stays for reference and the default stays 200.
+
+The RSX thread alone pinned to the X3 runs at 13.4 FPS with 4.4 cores busy: the
+scheduler still places other threads on cpu7, the pinned thread cannot leave, and
+it gets about half a core. 37 ms of RSX CPU per frame at half a core is 13 FPS,
+so when the RSX thread is starved the frame follows it exactly. Placement is
+closed on every variant tried: four pins, all worse than the scheduler.
+
+## Round O: the aliased lock removed, and Accurate SPU Reservations off
+
+Capture `debug-captures/20260908-134544-transformers-diag-round`, core
+`FB093FE0` (commits e35d22b64 and cc642e3f4: `rsx_fifo_ignore_res_lock`,
+render-pass end causes).
+
+| arm | fps | cores | p50 ms | retries/10 s | stalls | yields | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| control | 19.83 | 5.93 | 48.8 | 80,000 | 890 | 16,000 | |
+| `rsx_fifo_ignore_res_lock=1` | 20.50 | 6.03 | 47.0 | **13** | 40 | **0** | engaged; frames inside noise |
+| `spu_accurate_reservations=0` | 20.67 | **5.31** | 46.5 | 63,000 | 800 | 12,700 | above every control today |
+| both | **20.96** | 5.71 | 45.8 | | | | above every control today |
+| `rsx_fifo_ignore_res_lock=1`, repeat (hot start, 59 C) | 19.57 | 5.77 | 49.5 | 9 | 34 | 0 | |
+| control, second (hot start, 62 C) | 19.37 | 5.81 | | | | | |
+
+**Ignoring the aliased lock removes the whole RSX stall and moves no frames.**
+Retries 80,000 to 13, yields 16,000 to 0, mismatches 0 in six windows, so the
+double read alone keeps the FIFO correct here. The RSX thread got its 4.6 ms a
+frame back and the frame did not follow: 20.50 and 19.57 against 19.83 and 19.37.
+The RSX thread is not the binding stage at 20 FPS. The lever stays as a property;
+it is an RSX CPU and `sched_yield` reduction, a power lever, and goes into the
+profile only with a longer play session behind it.
+
+**Accurate SPU Reservations off is the day's largest mover, and it is not
+shippable as it stands.** 20.67 and 20.96 with 10 percent fewer cores, against six
+controls between 19.37 and 20.13. `docs/arm64/spurs-halt.md` records the price:
+with the setting off this title live-locks in one or two of eight cold boots,
+between 60 and 120 s into the intro. Two mechanisms change together under the
+setting. `do_putllc` skips the writer_lock for the SPURS instance lines, and the
+SPU analyser installs every PUTLLC16 inline pattern it finds with no whitelist
+(`SPUCommonRecompiler.cpp`, "because enabling it is a hack": in accurate mode it
+installs none). ARMSX3 traced its own "off breaks the title" to the second
+(`357eee994`). The next core separates them with `debug.rpcsx.thor.spu_putllc16`
+(0 never installs, 1 always, unset follows the setting; the SPU object cache is
+keyed on it), round P measures the pair, and the freeze repro
+(`tools/thor_spurs_freeze_repro.sh`, eight cold boots) decides which half the
+live-lock belongs to.
+
+**Where the SPU time goes is the frame.** The 2026-08-23 profile in the
+Transformers profile comment: `vm::range_lock_internal` 15.4 percent,
+`vm::writer_lock` 10.7, `vm::passive_lock` 3.1, 29 percent of all cycles in VM
+range locking, fed by all six SPUs. GCMX builds the draw commands on those SPUs
+and DMAs them into the ring; on ARM64 every 128-byte DMA chunk locks a
+reservation and takes a range lock, and every conditional store outside the
+SPURS lines takes the writer_lock that parks the PPU threads. That is the
+structural cost between 20 and 30 FPS, and it is SPU-side, not RSX-side.
+
+## Round P: the two halves of Accurate SPU Reservations off
+
+Capture `debug-captures/20260908-141354-transformers-diag-round`, core `0A7B3A58` (commit 49d1bae8a:
+`debug.rpcsx.thor.spu_putllc16`). The device ran at 92 to 96 C all afternoon;
+this round's controls sit lower than the morning's and agree with each other to
+0.03 FPS.
+
+| arm | fps | cores | verdict |
+| --- | --- | --- | --- |
+| control | 19.27 | 5.68 | |
+| `spu_accurate_reservations=0` | 20.00 | 5.55 | |
+| `spu_accurate_reservations=0`, `spu_putllc16=0` | 19.97 | 5.59 | same as without the patterns |
+| `spu_putllc16=1` (accurate on, patterns installed) | 19.47 | 5.55 | null |
+| control, second | 19.27 | 5.83 | |
+| `spu_accurate_reservations=0`, repeat | 19.73 | 5.56 | |
+| `spu_accurate_reservations=0`, `spu_putllc16=0`, repeat | 20.33 | 5.60 | |
+| control, third | 19.30 | 5.73 | |
+
+**Claim: Accurate SPU Reservations off is worth 3.7 percent of frame rate here**
+(four arms 19.73 to 20.33 against three controls 19.27 to 19.30, no overlap; round
+O had it at 20.67 and 20.96 against 19.83 and 19.37) **and 2 to 10 percent of
+cores.** The inline PUTLLC16 patterns are not where the speed comes from: with
+them refused the arms read the same, and with them installed under accurate
+reservations nothing moved. The speed is `do_putllc` and `do_putlluc` skipping
+`vm::writer_lock` for the SPURS instance lines and the atomic 128-byte stores,
+which is where the SPU-side range-locking cycles were.
+
+The property `spu_putllc16=0` engaged: the SPU object cache gained
+`spu-mega-thor-p16off-v1-tane.dat`. So the live-lock question from
+`spurs-halt.md` can now be asked with the speed kept: eight cold boots with
+`spu_accurate_reservations=0` and `spu_putllc16=0`. If the freeze stays with the
+patterns, the setting ships for this title with the patterns refused; if it
+stays without them, the writer_lock skip itself is unsafe here and the ARMSX3
+route (a whitelisted 16-byte commit, `813774767`) is the one left.
+
+## Round Q: who frees the GCMX ring
+
+Capture `debug-captures/20260908-145834-transformers-diag-round`, core
+`7D621ADC` (commits c250a170d and 64b1f9e2c, the memory watch), one arm at 19.13
+FPS with `mem_watch_ea=01f94998`, `put_census=1`, `spurs_wkl_census=1`.
+
+The render thread's poll (`0x00fdcb88`) reads the word at `0x01f94998`, adds
+`0x4000` and waits until the sum is under `0x100000`: bytes in use of a 1 MiB ring
+of 16 KB segments. The allocator (`0x00fdcaa8`) adds to it with `lwarx`/`stwcx`,
+converts the segment to an io offset and writes a JUMP (`0x20000000 | offset`)
+at the current write pointer of a cellGcm context (begin, end, current,
+callback), then stamps `0x00043000` as the segment's first word. Every write that
+touched the word during the window, sampled (first 24 then every 256th):
+
+| writer | thread | pc | sampled hits |
+| --- | --- | --- | --- |
+| SPU `PUTLLC` on line `0x01f94980` | SPU job code | LS `0x13850` | 1,624 |
+| SPU `PUTLLC` | SPU job code | LS `0x13440` | 671 |
+| SPU `PUTLLC` | SPU job code | LS `0x8c0c` | 333 |
+| PPU `stwcx` | `RenderingThread` (0x100000b) | `0x00fdc9b4`, `0x00fdca38` and four more in the allocator | 968 |
+| PPU `stwcx` | `FlipPump` (0x1000007) | `0x00fdc9b4`, `0x00fdca38` | 11 |
+| PPU `stwcx` | `main_thread` | `0x00fdc9b4` | 2 |
+| SPU PUT, list PUT, RSX label, ZCULL report | | | 0 |
+
+About 3,600 sampled lines over three minutes is on the order of 900,000 atomics on
+that one line, some 250 a frame: 180 from the SPUs, 70 from the PPU allocator.
+**The SPUs free the ring.** GCMX job code on the SPUs consumes the 16 KB segments
+the render thread fills and subtracts them from the counter with `PUTLLC`; no
+label, report or plain DMA touches the word. The word sat at `0xfc400` (ring
+full) in ten of twenty monitor ticks. So the frame's chain is: render thread
+writes segments and stalls on a full ring; the SPU jobs drain them; the RSX thread
+parses what they produce. The render thread waits for the SPUs, not for the RSX,
+which is what rounds L, O and P said from three other directions.
+
+**One 128-byte line carries 250 atomics a frame from six threads, and every
+SPU-side one is a `PUTLLC` that, under Accurate SPU Reservations, takes the
+unique reservation lock and then `vm::writer_lock`, parking every PPU thread.**
+That is the SPU-side cost the accurate-off arms removed, and it is the target of
+ARMSX3 `813774767`: a `PUTLLC` that changes one aligned 16-byte chunk (a counter
+update always does) commits with a 16-byte compare-exchange and no writer_lock.
+Ported behind `debug.rpcsx.thor.spu_putllc16_nobarrier=1`, keeping Accurate SPU
+Reservations on; round R measures it against the accurate-off arm.
+
+The hook printed the SPU `id` field rather than its index, so which of the six
+SPUs ran the drain is not in this log; the stage 2 profile has the per-SPU split.
+
+## Stage 2 profile: where the SPU and PPU time goes
+
+Capture `debug-captures/20260908-150448-transformers-stage2-profile`, core
+`7D621ADC`, restored combat, 25 s at 18.7 FPS, 152,146 samples at 1 kHz with call
+graphs, `rsx_fifo_ignore_res_lock=1` set. Shares of all samples by thread: SPU0
+19.1 percent, SPU2 11.1, SPU1 10.8, SPU4 10.8, SPU3 10.6, SPU5 8.7, `rsx::thread`
+8.9, `RenderingThread` 7.2, `main_thread` 6.8. The six SPUs are 71 percent of the
+process.
+
+| thread | symbol | share of the thread |
+| --- | --- | --- |
+| SPU0 | `vm::writer_lock::writer_lock` | **23.3%** |
+| SPU0 | one JIT block (`+7229b8acb0`) | 19.7% |
+| SPU0 | one JIT block (`+7229847790`) | 8.3% |
+| SPU0 | `spu_thread::process_mfc_cmd` | 5.4% |
+| SPU1 | `vm::writer_lock::writer_lock` | **15.1%** |
+| SPU1 | kernel | 8.6% |
+| SPU1 | `spu_thread::process_mfc_cmd` | 4.9% |
+| `RenderingThread` | `vm::passive_lock` | **19.6%** |
+| `main_thread` | `vm::passive_lock` | **18.9%** |
+
+`vm::writer_lock`'s constructor is the wait for every PPU thread to park;
+`vm::passive_lock` is the PPU thread parking. The SPU conditional stores stop the
+PPU side, and both sides pay: a fifth of the render thread's time and a quarter
+of the busiest SPU's. This is the cost the accurate-off arms removed and the
+reason they moved the frame; it is the round Q line and every other `PUTLLC` under
+Accurate SPU Reservations. The barrier-free 16-byte commit (commit 1ba97a16d,
+`spu_putllc16_nobarrier=1`) removes it while keeping the setting on; round R
+measures it. The JIT map (2.2 million symbols) did not resolve in the report, so
+the SPU hot blocks are unnamed here; the two together are 28 percent of SPU0.
+
+## Intro freeze repro, stopped by the owner after four boots
+
+`tools/thor_spurs_freeze_repro.sh`, eight cold boots planned with
+`spu_accurate_reservations=0` and `spu_putllc16=0`, core `7D621ADC`. Runs 1, 2 and
+4 were clean at 150 s (about 4,130 frames each). Run 3 froze at frame 305, 28 s
+into the boot, in the intro: frames 243 in the first window, 62 in the second,
+then zero, no trap, no dead FIFO, nothing logged, two threads at 100 and 97
+percent of a core in `top` and CPU at 31 percent overall
+(`debug-captures/20260908-freeze-repro-p16off-run3.log`). The tool's thread
+dump was truncated at 3,000 characters, so the two spinners are unnamed; the tool
+now saves both samples and prints the busiest threads by name, and takes `ACC=1`
+so the accurate-mode levers can use it.
+
+**The live-lock is not the inline PUTLLC16 patterns.** With them refused it
+reproduced at the same rate as before (one in four against the recorded one or
+two in eight). It belongs to what the setting changes in `do_putllc` and
+`do_putlluc`: the SPURS-instance-line fast path is a plain 128-byte overwrite
+with no compare of the reservation data, and the atomic 128-byte store drops the
+writer_lock. The barrier-free 16-byte commit keeps the compare and the
+compare-exchange, so it is not the same path.
+
+The owner stopped the repro at four boots: no more device time on the intro
+movie. Combat is the target, and the accurate-off arms ran six combat windows
+today without a freeze.
+
+## Round R: the barrier-free 16-byte commit, accuracy on
+
+Capture `debug-captures/20260908-153125-transformers-diag-round`, core
+`75A17F32` (commit 1ba97a16d). Accurate SPU Reservations on in every arm but
+the third.
+
+| arm | fps | cores | p50 / p95 ms | verdict |
+| --- | --- | --- | --- | --- |
+| control (hot start, 67 C) | 19.20 | 5.97 | 50 to 52 / 73 to 88 | |
+| `spu_putllc16_nobarrier=1` | **20.30** | 5.45 | 47 to 48 / 62 | engaged from `CellSpursKernel0` |
+| `spu_accurate_reservations=0` | 19.83 | 5.29 | | the unsafe setting, for scale |
+| control, second | 19.09 | 5.61 | | |
+| `spu_putllc16_nobarrier=1`, repeat | **20.43** | 5.29 | | |
+| `spu_putllc16_nobarrier=1` + `rsx_fifo_ignore_res_lock=1` | **21.10** | **5.21** | | the day's best |
+| control, third | 19.47 | 5.81 | | |
+
+**Claim: the barrier-free commit is worth 5 to 7 percent of frame rate and 8 to
+11 percent of cores with Accurate SPU Reservations kept on** (20.30 and 20.43
+against 19.09 to 19.47, no overlap), and it matches or beats the accurate-off
+setting (19.83) without its live-lock path. With the FIFO lock-ignore on top,
+21.10 FPS at 5.21 cores, plus 10 percent of frames and minus 13 percent of cores
+against the round's controls. The p95 frame time fell from 73 to 88 ms to 62 ms
+in the first arm: the render thread no longer parks a fifth of its time.
+
+Both ship as defaults for BLUS30357 in commit f3be9b863 (`SPUThread.cpp`,
+`RSXFIFO.cpp`; the property set to 0 turns either off; other titles unchanged),
+pending the ten-minute combat soak in round S. The freeze repro was not run on
+this path: the owner stopped intro testing, and the path keeps the compare and
+the compare-exchange that the accurate-off fast path drops.
+
+### Round R, the profiler arm
+
+`spu_prof=1` on top of the barrier-free commit, after one discarded warm-up boot
+for the recompile: 20.06 FPS, 5.27 cores. The profiler's last chart in the log is
+from 0:00:20, the loading phase, where chunk `0x0f3c4` (the SPURS kernel's counted
+delay loop) holds 65 percent of all SPU samples; no chart landed inside combat,
+so the arm names nothing the stage 2 profile did not. A combat chart needs the
+profiler's print interval shortened or the arm's play window lengthened.
+
+## Round S: the ten-minute combat soaks
+
+Capture `debug-captures/20260908-162907-transformers-diag-round`, core
+`183C6B33` (commit f3be9b863, the two BLUS30357 defaults). Restored combat, no
+intro, ten minutes of play per arm, three samples 200 s apart, the log's Frames
+line every ten seconds.
+
+| arm | fps | cores | 10 s windows | frames per window | end temp |
+| --- | --- | --- | --- | --- | --- |
+| defaults (barrier-free commit + FIFO lock-ignore) | **20.97** | 5.39 | 61 | 191 to 214, median 208 | 94 C |
+| both forced off (the old behaviour) | 18.80 | 5.73 | 63 | 174 to 195, median 190 | 97 C |
+
+No window under 19.1 FPS in the default soak, no zero-frame window after boot,
+no SPU trap, no dead FIFO, FIFO retries 10 to 19 per 10 s with zero mismatches,
+both defaults present in the log (the first barrier-free commit came from
+`CellSpursKernel5` in this run), screenshots drawn in both arms. The two
+ten-minute ranges do not overlap: plus 11.5 percent of frames, minus 6 percent
+of cores, three degrees cooler at the end. The defaults stand.
+
+Where the day leaves the target: restored combat at 21 FPS against the game's 30
+cap, up from 19.4 this morning and 18.4 two days ago. The frame is the render
+thread filling a 1 MiB GCMX ring that four to five SPUs drain; the next costs on
+the SPUs are the non-RTM DMA PUT's per-chunk reservation lock and range lock, the
+SPURS kernel's own atomics on its instance lines (which still take the
+heavyweight path when a store touches more than 16 bytes), and the two unnamed
+SPU0 JIT blocks at 28 percent of that thread. On the PPU side the render thread
+still parks in `vm::passive_lock` for whatever whole-line SPU stores remain.
+
+### The main thread's waits, from the full Ghidra pass
+
+The five-hour full-analysis decompile of the EBOOT
+(`_research/transformers-ppu/waits-decompile.txt`, not committed) names the
+main thread's census sites. `0x00b56de0` under `0x00ae0da8` is a scope-cycle
+counter (time base reads, per-scope accumulators) wrapped around the
+`sys_cond_wait`: the main thread waits on a condition the render thread signals,
+the engine's frame sync. `FUN_009e4b58` at `0x009e4ba4` is the engine's sleep
+(`sys_timer_usleep` with a 30 us floor) and `FUN_00349260` at `0x003495c0` a
+timed wait on the time base, the frame pacer. So the main thread follows the
+render thread, the render thread follows the SPUs draining the ring, and the SPU
+side is where the frame is decided. The quick no-analysis pass had already given
+the render thread's poll and hand-off (`0x00fdcb88`, `0x00fddf08`, the allocator
+`0x00fdcaa8`); the full pass adds function boundaries and nothing that changes
+the chain.

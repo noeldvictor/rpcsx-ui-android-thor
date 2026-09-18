@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/RSX/thor_rsx_counters.h"
 
 #include "Emu/System.h"
 #include "RSXFIFO.h"
@@ -14,10 +15,12 @@
 #include "util/thor_wait_profiler.h"
 
 #include <thread>
+#include <bit>
 #include <bitset>
 
 #if defined(ARCH_ARM64)
 #include <cstdlib>
+#include <cstring>
 #include <chrono>
 #include <thread>
 
@@ -107,6 +110,27 @@ namespace rsx
 			m_thread = pctrl;
 			m_ctrl = pctrl->ctrl;
 			m_iotable = &pctrl->iomap_table;
+
+#if defined(ANDROID)
+			// Thor: the two ARMSX3 FIFO levers, read once per FIFO_control.
+			{
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_4k", value) > 0 && value[0] && value[0] != '0')
+				{
+					m_cache_line_limit = cache_line_count;
+					rsx_log.error("Thor: RSX FIFO refill widened to %u lines", m_cache_line_limit);
+				}
+
+				value[0] = 0;
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_get_lag", value) > 0 && value[0] && value[0] != '0')
+				{
+					m_thor_get_lag = true;
+					rsx_log.error("Thor: RSX FIFO GET publish lag enabled");
+				}
+			}
+#endif
 		}
 
 		u32 FIFO_control::translate_address(u32 address) const
@@ -116,7 +140,34 @@ namespace rsx
 
 		void FIFO_control::sync_get() const
 		{
-			m_ctrl->get.release(m_internal_get);
+			if (m_thor_get_lag)
+			{
+				// Every 8th packet; see the header. The guest reads GET to size its
+				// free ring space and is far ahead of us, so the lag is invisible to
+				// it, and every path that can idle or block uses sync_get_force().
+				if (++m_get_sync_counter & 7)
+				{
+					return;
+				}
+			}
+
+			m_ctrl->get.release(m_published_get = m_internal_get);
+		}
+
+		void FIFO_control::sync_get_force() const
+		{
+			m_get_sync_counter = 0;
+
+			if (m_thor_get_lag && m_published_get == m_internal_get)
+			{
+				// Progress is announced once after the last advance. The empty and
+				// busy cases re-enter here once per run-loop iteration while GET
+				// stands still; repeating an unchanged store is a coherence miss on
+				// the line that holds PUT, paid by the PPU feeding the ring.
+				return;
+			}
+
+			m_ctrl->get.release(m_published_get = m_internal_get);
 		}
 
 		void FIFO_control::restore_state(u32 cmd, u32 count)
@@ -137,7 +188,7 @@ namespace rsx
 			{
 				// NOTE: Only supposed to be invoked to wait for a single arg on command[0] (4 bytes)
 				// Wait for put to allow us to procceed execution
-				sync_get();
+				sync_get_force();
 				invalidate_cache();
 
 				while (read_put() == m_internal_get && !Emu.IsStopped())
@@ -165,7 +216,121 @@ namespace rsx
 			}
 		}
 
-		std::pair<bool, u32> FIFO_control::fetch_u32(u32 addr)
+		// Thor: property read once per process. Default off until the round says.
+		static bool thor_fifo_trim_fix_enabled()
+		{
+			static const bool enabled = []() -> bool
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_trim_fix", value) > 0 && value[0])
+				{
+					return value[0] != '0';
+				}
+#endif
+				return false;
+			}();
+
+			return enabled;
+		}
+
+		// Thor: the retry backoff in generic-timer ticks. busy_wait(200) on this
+		// fork is 200 ticks of the 19.2 MHz timer, 10.4 us, where upstream's 200
+		// x86 cycles were about 60 ns; a reservation lock is held for far less.
+		//   debug.rpcsx.thor.rsx_fifo_retry_ticks = <n>   (default 200)
+		static u32 thor_fifo_retry_ticks()
+		{
+			static const u32 ticks = []() -> u32
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_retry_ticks", value) > 0 && value[0])
+				{
+					const unsigned long parsed = std::strtoul(value, nullptr, 0);
+
+					if (parsed >= 1 && parsed <= 100000)
+					{
+						rsx_log.error("Thor: RSX FIFO retry wait %lu ticks", parsed);
+						return static_cast<u32>(parsed);
+					}
+				}
+#endif
+				return 200;
+			}();
+
+			return ticks;
+		}
+
+		// Thor: sampled diagnosis of the retry. Every 1024th retry logs the line's
+		// guest address, its distance from PUT and the reservation word.
+		//   debug.rpcsx.thor.rsx_fifo_retry_log = 1
+		static bool thor_fifo_retry_log_enabled()
+		{
+			static const bool enabled = []() -> bool
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_retry_log", value) > 0 && value[0])
+				{
+					return value[0] != '0';
+				}
+#endif
+				return false;
+			}();
+
+			return enabled;
+		}
+
+		// Thor (2026-09-08): ignore reservation lock bits on FIFO lines. The
+		// reservation table is indexed by the low 16 address bits, so one word
+		// serves every line 64 KB apart. Round N's retry log showed every retry
+		// waiting on a unique lock (bit 6) held on a line a megabyte from PUT,
+		// with low address bits matching the CellSpurs instance and its job
+		// lines: a SPURS atomic under Accurate SPU Reservations holds the word
+		// through a writer_lock that waits for the PPU threads to park, about a
+		// millisecond, 4.6 times a frame. Nothing writes the FIFO line itself;
+		// the double read below still catches a torn line. The timestamp check
+		// stays, so a completing aliased store costs one retry.
+		//   debug.rpcsx.thor.rsx_fifo_ignore_res_lock = 1
+		static bool thor_fifo_ignore_res_lock()
+		{
+			static const bool enabled = []() -> bool
+			{
+#ifdef __ANDROID__
+				char value[PROP_VALUE_MAX]{};
+
+				if (__system_property_get("debug.rpcsx.thor.rsx_fifo_ignore_res_lock", value) > 0 && value[0])
+				{
+					const bool on = value[0] != '0';
+
+					if (on)
+					{
+						rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits (property)");
+					}
+
+					return on;
+				}
+#endif
+				// Default on for Transformers (BLUS30357) since 2026-09-08: rounds O
+				// and R showed retries 80,000 to 13 per 10 s, yields to 0, mismatches 0
+				// in every window, no frame change; an RSX CPU and power lever. Other
+				// titles keep upstream's lock check until measured.
+				if (Emu.GetTitleID() == "BLUS30357")
+				{
+					rsx_log.error("Thor: RSX FIFO fetch ignores reservation lock bits (BLUS30357 default)");
+					return true;
+				}
+
+				return false;
+			}();
+
+			return enabled;
+		}
+
+		std::pair<bool, u32> FIFO_control::fetch_u32_refill(u32 addr)
 		{
 			if (addr - m_cache_addr >= m_cache_size)
 			{
@@ -177,6 +342,7 @@ namespace rsx
 				}
 
 				m_cache_addr = addr & -128;
+				::thor::rsx_counters::g_fifo_refills++;
 
 				const u32 addr1 = m_iotable->get_addr(m_cache_addr);
 
@@ -186,7 +352,7 @@ namespace rsx
 					return {false, FIFO_ERROR};
 				}
 
-				m_cache_size = std::min<u32>((put | 0x7f) - m_cache_addr, u32{sizeof(m_cache)} - 1) + 1;
+				m_cache_size = std::min<u32>((put | 0x7f) - m_cache_addr, m_cache_line_limit * 128 - 1) + 1;
 
 				if (0x100000 - (m_cache_addr & 0xfffff) < m_cache_size)
 				{
@@ -198,13 +364,42 @@ namespace rsx
 					}
 				}
 
-				// Make mask of cache lines to fetch
-				u8 to_fetch = static_cast<u8>((1u << (m_cache_size / 128)) - 1);
+				// Make mask of cache lines to fetch. A full 32-line mask cannot be
+				// built by shifting, since 1u << 32 is undefined.
+				const u32 lines_to_fetch = m_cache_size / 128;
+				u32 to_fetch = (lines_to_fetch >= cache_line_count) ? ~0u : ((1u << lines_to_fetch) - 1);
+
+				// Bytes of the last line that the cache serves; 0 means the whole line.
+				u32 tail_bytes = 0;
 
 				if (addr < put && put < m_cache_addr + m_cache_size)
 				{
 					// Adjust to knownly-prepared FIFO buffer bounds
 					m_cache_size = put - m_cache_addr;
+
+					if (thor_fifo_trim_fix_enabled())
+					{
+						static atomic_t<bool> s_logged{false};
+
+						if (!s_logged.exchange(true))
+						{
+							rsx_log.error("Thor: RSX FIFO trim fix active");
+						}
+
+						// Thor (2026-09-08): rebuild the mask after the trim. The mask
+						// above still holds the line at PUT, so the double read below
+						// verified bytes at and after PUT, which are exactly the bytes
+						// the PPU is writing at that moment, and every mismatch cost a
+						// 10 us retry. Transformers combat: 400 retries per frame, 4 ms
+						// of the RSX thread's 37. Words at or after PUT are never served
+						// (the hit test is against m_cache_size), so the lines past the
+						// trim need no fetch, and the partial last line is compared only
+						// up to PUT.
+						//   debug.rpcsx.thor.rsx_fifo_trim_fix = 1
+						const u32 lines_after_trim = (m_cache_size + 127) / 128;
+						to_fetch = (lines_after_trim >= cache_line_count) ? ~0u : ((1u << lines_after_trim) - 1);
+						tail_bytes = m_cache_size & 127;
+					}
 				}
 
 				// Atomic FIFO debug options
@@ -218,17 +413,33 @@ namespace rsx
 				u32 bytes_read = 0;
 
 				// Find the next set bit after every iteration
-				for (int i = 0;; i = (std::countr_zero<u32>(rx::rol8(to_fetch, 0 - i - 1)) + i + 1) % 8)
+				for (int i = 0;; i = (std::countr_zero<u32>(std::rotl<u32>(to_fetch, 0 - i - 1)) + i + 1) % cache_line_count)
 				{
 					// If a reservation is being updated, try to load another
 					const auto& res = vm::reservation_acquire(addr1 + i * 128);
 					const u64 time0 = res;
+					u32 thor_cause = 0; // 1 locked, 2 changed, 3 mismatch
 
-					if (!(time0 & 127))
+					if (!(time0 & 127) || thor_fifo_ignore_res_lock())
 					{
 						mov_rdata(m_cache[i], src[i]);
 
-						if (time0 == res && cmp_rdata(m_cache[i], src[i]))
+						// The last line of a PUT-trimmed fetch is compared only up to PUT.
+						const bool is_tail = tail_bytes && (static_cast<u32>(i) == (m_cache_size / 128));
+						const bool same = is_tail
+							? std::memcmp(&m_cache[i], &src[i], tail_bytes) == 0
+							: cmp_rdata(m_cache[i], src[i]);
+
+						if (time0 != res)
+						{
+							thor_cause = 2;
+						}
+						else if (!same)
+						{
+							thor_cause = 3;
+						}
+
+						if (time0 == res && same)
 						{
 							// The fetch of the cache line content has been successful, unset its bit
 							to_fetch &= ~(1u << i);
@@ -243,8 +454,34 @@ namespace rsx
 						}
 					}
 
+					if (!thor_cause)
+					{
+						thor_cause = 1;
+					}
+
+					switch (thor_cause)
+					{
+					case 1: ::thor::rsx_counters::g_fifo_retry_locked++; break;
+					case 2: ::thor::rsx_counters::g_fifo_retry_changed++; break;
+					default: ::thor::rsx_counters::g_fifo_retry_mismatch++; break;
+					}
+
+					if (thor_fifo_retry_log_enabled())
+					{
+						static atomic_t<u32> s_retry_sample{0};
+
+						if ((s_retry_sample++ & 1023) == 0)
+						{
+							const u32 line_ea = m_cache_addr + i * 128;
+							rsx_log.error("Thor FIFO retry: cause=%u line=0x%08x put=0x%08x put-line=%d get=0x%08x res=0x%llx lines=%u size=%u",
+								thor_cause, line_ea, put, static_cast<s32>(put - line_ea), addr, time0, m_cache_size / 128, m_cache_size);
+						}
+					}
+
 					if (!start_time)
 					{
+						::thor::rsx_counters::g_fifo_stalls++;
+
 						if (bytes_read >= 256 && !force_cache_fill)
 						{
 							// Cut our losses if we have something to work with.
@@ -264,6 +501,7 @@ namespace rsx
 							return {};
 						}
 
+						::thor::rsx_counters::g_fifo_cpu_waits++;
 						m_thread->cpu_wait({});
 
 						const auto then = std::exchange(now, get_system_time());
@@ -272,12 +510,13 @@ namespace rsx
 					}
 					else
 					{
-						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, 200);
+						::thor::rsx_counters::g_fifo_retries++;
+						thor_wait::profiled_busy_wait(thor_wait::site::rsx_fifo_cache_fill, thor_fifo_retry_ticks());
 					}
 
 					if (strict_fetch_ordering)
 					{
-						i = (i - 1) % 8;
+						i = (i - 1) % cache_line_count;
 					}
 				}
 			}
@@ -298,7 +537,7 @@ namespace rsx
 			}
 
 			// Update ctrl registers
-			m_ctrl->get.release(m_internal_get = get);
+			m_ctrl->get.release(m_published_get = m_internal_get = get);
 			m_remaining_commands = 0;
 		}
 
@@ -311,7 +550,7 @@ namespace rsx
 				return {};
 			}
 
-			if (g_cfg.core.rsx_fifo_accuracy)
+			if (m_accurate_fetch)
 			{
 				// Return a pointer to the cache storage with confined access
 				const u32 cache_offset_in_words = (m_internal_get - m_cache_addr) / 4;
@@ -355,7 +594,7 @@ namespace rsx
 				bool ok{};
 				u32 arg = 0;
 
-				if (g_cfg.core.rsx_fifo_accuracy) [[unlikely]]
+				if (m_accurate_fetch) [[unlikely]]
 				{
 					std::tie(ok, arg) = fetch_u32(m_internal_get + 4);
 
@@ -419,6 +658,8 @@ namespace rsx
 
 		void FIFO_control::read(register_pair& data)
 		{
+			m_accurate_fetch = !!g_cfg.core.rsx_fifo_accuracy;
+
 			if (m_remaining_commands)
 			{
 				// Previous block aborted to wait for PUT pointer
@@ -445,7 +686,7 @@ namespace rsx
 				m_memwatch_cmp = 0;
 			}
 
-			if (!g_cfg.core.rsx_fifo_accuracy) [[likely]]
+			if (!m_accurate_fetch) [[likely]]
 			{
 				const u32 put = read_put();
 
@@ -501,7 +742,7 @@ namespace rsx
 
 			if (!count)
 			{
-				m_ctrl->get.release(m_internal_get += 4);
+				m_ctrl->get.release(m_published_get = (m_internal_get += 4));
 				data.reg = FIFO_NOP;
 				return;
 			}
@@ -514,7 +755,7 @@ namespace rsx
 				m_remaining_commands = count - 1;
 			}
 
-			if (g_cfg.core.rsx_fifo_accuracy)
+			if (m_accurate_fetch)
 			{
 				m_internal_get += 4;
 
@@ -738,10 +979,15 @@ namespace rsx
 					performance_counters.state = FIFO::state::nop;
 				}
 
+				// Going idle: publish GET now rather than carrying up to seven
+				// packets of lag into a period where the producer may be waiting.
+				fifo_ctrl->sync_get_force();
 				return;
 			}
 			case FIFO::FIFO_EMPTY:
 			{
+				fifo_ctrl->sync_get_force();
+
 				if (performance_counters.state == FIFO::state::running)
 				{
 					performance_counters.FIFO_idle_timestamp = get_system_time();
@@ -878,6 +1124,7 @@ namespace rsx
 			case FIFO::FIFO_BUSY:
 			{
 				// Do something else
+				fifo_ctrl->sync_get_force();
 				return;
 			}
 			case FIFO::FIFO_ERROR:
@@ -1088,7 +1335,9 @@ namespace rsx
 			{
 				method(m_ctx, reg, value);
 
-				if (state & cpu_flag::again)
+				// Relaxed: `again` is only set by this thread, by the handler just
+				// called. The seq_cst default is an ldar on ARM64 for no benefit here.
+				if (state.observe() & cpu_flag::again)
 				{
 					m_ctx->register_state->decode(reg, m_ctx->register_state->latch);
 					break;

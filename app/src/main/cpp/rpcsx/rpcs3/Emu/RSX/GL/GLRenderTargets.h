@@ -222,11 +222,29 @@ struct gl_render_target_traits
 		return result;
 	}
 
+	// RPCS3 a65980547: a discarded surface can serve a clone when its texture
+	// matches in internal format.
+	static bool is_reusable_surface(const gl::render_target* surface, const gl::render_target* ref)
+	{
+		return surface->id() && surface->get_internal_format() == ref->get_internal_format();
+	}
+
+	static void prepare_for_reuse(gl::command_context&, gl::render_target*)
+	{}
+
 	static void clone_surface(
 		gl::command_context& cmd,
 		std::unique_ptr<gl::render_target>& sink, gl::render_target* ref,
 		u32 address, barrier_descriptor_t& prev)
 	{
+		// RPCS3 a65980547: a sink with no refs is a discarded surface handed in
+		// for reuse. It keeps its texture and gets the same setup as a new one.
+		const bool initialize = !sink || !sink->has_refs();
+		if (sink && initialize)
+		{
+			prepare_for_reuse(cmd, sink.get());
+		}
+
 		if (!sink)
 		{
 			auto internal_format = static_cast<GLenum>(ref->get_internal_format());
@@ -234,6 +252,13 @@ struct gl_render_target_traits
 				ref->get_surface_width<rsx::surface_metrics::pixels>(), ref->get_surface_height<rsx::surface_metrics::pixels>());
 
 			sink = std::make_unique<gl::render_target>(new_w, new_h, ref->samples(), internal_format, ref->format_class());
+		}
+
+		if (initialize)
+		{
+			sink->reset();
+			sink->msaa_flags = rsx::surface_state_flags::ready;
+			sink->stencil_init_flags = ref->stencil_init_flags;
 			sink->add_ref();
 
 			sink->memory_usage_flags = rsx::surface_usage_flags::storage;
@@ -245,6 +270,10 @@ struct gl_render_target_traits
 			sink->set_rsx_pitch(ref->get_rsx_pitch());
 			sink->set_surface_dimensions(prev.width, prev.height, ref->get_rsx_pitch());
 			sink->set_native_component_layout(ref->get_native_component_layout());
+			if (sink->resolve_surface)
+			{
+				static_cast<gl::viewable_image*>(sink->resolve_surface.get())->set_native_component_layout(ref->get_native_component_layout());
+			}
 			sink->queue_tag(address);
 		}
 

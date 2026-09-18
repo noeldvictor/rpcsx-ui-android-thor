@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Emu/thor_mem_watch.h"
 #include "Core/RSXEngLock.hpp"
 #include "Core/RSXReservationLock.hpp"
 #include "Host/MM.h"
@@ -325,6 +326,7 @@ namespace rsx
 
 		void ZCULL_control::write(vm::addr_t sink, u64 timestamp, u32 type, u32 value)
 		{
+			thor::mem_watch::on_range("RSX ZCULL report", sink, 16);
 			ensure(sink);
 
 			auto scale_result = [](u32 value)

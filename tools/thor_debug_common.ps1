@@ -59,9 +59,34 @@ function Get-ThorThermalZoneShellCommand {
     return 'for z in /sys/class/thermal/thermal_zone*; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; IFS= read -r t < "$z/type" 2>/dev/null || t=; IFS= read -r v < "$z/temp" 2>/dev/null || v=; printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
 }
 
+function Get-ThorFastThermalZoneShellCommand {
+    # These are the stable AYN Thor sensor paths measured across the bounded
+    # PS3 routes. Keep every CPU-subsystem, GPU-subsystem, DDR, SoC, and XO
+    # package sensor, every CPU junction sensor, and the battery sensor. The
+    # full preflight still discovers all zones and fails before launch if the
+    # device layout changes. Runtime uses this list to avoid walking unrelated
+    # modem, camera, PMIC, and BCL zones every two seconds.
+    $zoneNumbers = @(
+        31, 32, 33, 34,
+        35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+        47, 48, 49,
+        55,
+        63, 64, 65, 66, 67, 68, 69, 70,
+        82, 90, 94
+    )
+    $zonePaths = @($zoneNumbers | ForEach-Object { "/sys/class/thermal/thermal_zone$_" }) -join ' '
+    return 'for z in ' + $zonePaths + '; do [ -r "$z/type" ] && [ -r "$z/temp" ] || continue; n=${z##*/}; IFS= read -r t < "$z/type" 2>/dev/null || t=; IFS= read -r v < "$z/temp" 2>/dev/null || v=; printf "zone=%s type=%s temp=%s\n" "$n" "$t" "$v"; done'
+}
+
 function Get-ThorTemperatureDomain {
     param([string]$Name)
 
+    # Qualcomm registers battery state of charge as the `socd` thermal zone.
+    # Its value is a state, not a temperature. Do not classify it as SoC
+    # silicon because its name contains `soc`.
+    if ($Name -match '(?i)^socd$') {
+        return "other"
+    }
     if ($Name -match '(?i)(battery|batt)') {
         return "battery"
     }
@@ -222,6 +247,17 @@ function Get-ThorThermalGuardSnapshot {
         source_summary = $sourceSummary
         readings = @($readings)
     }
+}
+
+function Get-ThorThermalGuardSourceSignature {
+    param([Parameter(Mandatory = $true)][object]$Snapshot)
+
+    return @(
+        $Snapshot.readings |
+            Where-Object { $_.domain -in @("battery", "skin", "silicon", "junction") } |
+            ForEach-Object { "$($_.domain):$($_.source)" } |
+            Sort-Object -Unique
+    ) -join ','
 }
 
 function Format-ThorTemperatureC {
@@ -1104,6 +1140,18 @@ function Write-ThorStandardSnapshot {
     }
 }
 
+function Set-ThorSmartFanMode {
+    param(
+        [Parameter(Mandatory = $true)][string]$Adb,
+        [Parameter(Mandatory = $true)][string]$CaptureDir,
+        [string]$EvidencePrefix = "fan-smart"
+    )
+
+    $safePrefix = New-ThorSafeLabel $EvidencePrefix
+    $fanModeCommand = 'before="$(settings get system fan_mode)"; speed="$(settings get system fan_speed)"; settings put system fan_mode 4; effective="$(settings get system fan_mode)"; printf "before=%s\nfan_speed=%s\neffective=%s\n" "$before" "$speed" "$effective"; [ "$effective" = "4" ]'
+    Invoke-ThorAdbText $Adb $CaptureDir "$safePrefix-fan-mode.txt" @("shell", $fanModeCommand) | Out-Null
+}
+
 function Write-ThorLaunchPowerState {
     param(
         [string]$Adb,
@@ -1112,6 +1160,6 @@ function Write-ThorLaunchPowerState {
     )
 
     $safePrefix = New-ThorSafeLabel $Prefix
-    $powerStateCommand = 'printf "performance_mode="; settings get system performance_mode; printf "fan_mode="; settings get system fan_mode; printf "quick_performance_fan="; settings get system is_quick_set_performance_and_fan_enable; printf "low_power="; settings get global low_power; for p in /sys/devices/system/cpu/cpufreq/policy*; do n=${p##*/}; IFS= read -r g < "$p/scaling_governor" 2>/dev/null || g=unreadable; IFS= read -r hi < "$p/scaling_max_freq" 2>/dev/null || hi=unreadable; printf "%s governor=%s max=%s\n" "$n" "$g" "$hi"; done; printf "gpu_governor="; cat /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || echo unreadable; printf "gpu_max="; cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null || echo unreadable'
+    $powerStateCommand = 'printf "performance_mode="; settings get system performance_mode; printf "fan_mode="; settings get system fan_mode; printf "fan_speed="; settings get system fan_speed; printf "quick_performance_fan="; settings get system is_quick_set_performance_and_fan_enable; printf "low_power="; settings get global low_power; for p in /sys/devices/system/cpu/cpufreq/policy*; do n=${p##*/}; IFS= read -r g < "$p/scaling_governor" 2>/dev/null || g=unreadable; IFS= read -r hi < "$p/scaling_max_freq" 2>/dev/null || hi=unreadable; printf "%s governor=%s max=%s\n" "$n" "$g" "$hi"; done; printf "gpu_governor="; cat /sys/class/kgsl/kgsl-3d0/devfreq/governor 2>/dev/null || echo unreadable; printf "gpu_max="; cat /sys/class/kgsl/kgsl-3d0/devfreq/max_freq 2>/dev/null || echo unreadable'
     Invoke-ThorAdbText $Adb $CaptureDir "$safePrefix-power-state.txt" @("shell", $powerStateCommand) -AllowFailure | Out-Null
 }

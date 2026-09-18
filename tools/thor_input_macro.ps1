@@ -12,17 +12,19 @@
     [string]$InputMode = "Virtual",
     [string]$RawInputDevice = "/dev/input/event9",
     [ValidateRange(1, 5)]
-    [int]$ThermalPreflightSamples = 3,
+    [int]$ThermalPreflightSamples = 1,
     [ValidateRange(1, 10)]
     [int]$ThermalPreflightIntervalSeconds = 2,
     [ValidateRange(0, 20)]
-    [double]$ThermalPreflightHeadroomC = 5.0,
-    [ValidateRange(25, 60)]
-    [double]$MaxLaunchSiliconTemperatureC = 40.0,
+    [double]$ThermalPreflightHeadroomC = 0.0,
+    [ValidateRange(25, 70)]
+    [double]$MaxLaunchSiliconTemperatureC = 70.0,
     [ValidateRange(0, 10)]
     [double]$ThermalPreflightMaxRiseC = 2.0,
     [ValidateRange(1, 5)]
     [int]$ThermalPollIntervalSeconds = 2,
+    [ValidateSet("full", "fast", "device")]
+    [string]$ThermalRuntimeTelemetry = "full",
     [ValidateRange(0, 20)]
     [double]$ThermalRuntimeStopHeadroomC = 4.0,
     [ValidateRange(0, 30)]
@@ -51,6 +53,12 @@
     [int]$SpuCacheCompileBudgetMs = 0,
     [ValidateSet("on", "off")]
     [string]$SpuNativeObjectCache = "off",
+    [ValidateSet("on", "off")]
+    [string]$LfqAny2Any = "off",
+    [ValidateSet("on", "off")]
+    [string]$SpursSelectorFixes = "off",
+    [ValidateSet("on", "off")]
+    [string]$TasksetSelectAtomic = "off",
     [ValidateRange(0, 255)]
     [int]$CacheWorkerAffinityMask = 0,
     [ValidateSet("on", "off")]
@@ -71,6 +79,10 @@
     [string]$EsAsyncDrawBarrier = "off",
     [ValidateSet("on", "off")]
     [string]$ThorDisplayPacing = "on",
+    [ValidateSet("on", "off")]
+    [string]$RequireManagedProfile = "on",
+    [ValidateSet("on", "off")]
+    [string]$ReplaceCustomProfile = "on",
     [ValidatePattern('^$|^[0-9A-Fa-f]{64}$')]
     [string]$ExpectedInstalledApkSha256 = "",
     [switch]$BootGame,
@@ -83,9 +95,16 @@
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\thor_debug_common.ps1"
+$lfqAny2AnyPropertyValue = if ($LfqAny2Any -eq "on") { "1" } else { "0" }
+$spursSelectorFixPropertyValue = if ($SpursSelectorFixes -eq "on") { "1" } else { "0" }
+$tasksetSelectAtomicPropertyValue = if ($TasksetSelectAtomic -eq "on") { "1" } else { "0" }
 
 if ($ThermalRuntimeProbeWindowC -lt $ThermalRuntimeStopHeadroomC) {
     throw "ThermalRuntimeProbeWindowC must be greater than or equal to ThermalRuntimeStopHeadroomC."
+}
+
+if ($ThermalRuntimeTelemetry -eq "device" -and -not $BootGame) {
+    throw "Device runtime thermal telemetry requires -BootGame."
 }
 
 if ($Profile -eq "strict-cool-gate") {
@@ -100,10 +119,10 @@ if ($Profile -eq "strict-cool-gate") {
     }
 
     $strictCoolGateParameters = [ordered]@{
-        ThermalPreflightSamples = @($ThermalPreflightSamples, 3)
+        ThermalPreflightSamples = @($ThermalPreflightSamples, 1)
         ThermalPreflightIntervalSeconds = @($ThermalPreflightIntervalSeconds, 2)
         ThermalPreflightHeadroomC = @($ThermalPreflightHeadroomC, 0)
-        MaxLaunchSiliconTemperatureC = @($MaxLaunchSiliconTemperatureC, 35)
+        MaxLaunchSiliconTemperatureC = @($MaxLaunchSiliconTemperatureC, 70)
         ThermalPreflightMaxRiseC = @($ThermalPreflightMaxRiseC, 1)
         MaxBatteryTemperatureC = @($MaxBatteryTemperatureC, 34)
         MaxSkinTemperatureC = @($MaxSkinTemperatureC, 40)
@@ -176,6 +195,8 @@ $captureDir = Join-Path $RepoRoot "debug-captures\android-speed-sprint\$stamp-th
 New-Item -ItemType Directory -Force -Path $captureDir | Out-Null
 $strictGuestDrawStream = $Profile -eq "eternal-sonata-battle-intro-route" -and -not $AllowUnknownDraw
 $thorDisplayPacingValue = if ($ThorDisplayPacing -eq "on") { "true" } else { "false" }
+$requireManagedProfileValue = if ($RequireManagedProfile -eq "on") { "true" } else { "false" }
+$replaceCustomProfileValue = if ($ReplaceCustomProfile -eq "on") { "true" } else { "false" }
 $normalizedExpectedInstalledApkSha256 = $ExpectedInstalledApkSha256.ToUpperInvariant()
 
 $keyAliases = @{
@@ -401,7 +422,15 @@ function Invoke-ThorDirectPadKey {
     $bits = ConvertTo-ThorDirectPadBits $Key
     $digital1 = [int]$bits[0]
     $digital2 = [int]$bits[1]
-    & $Adb shell "am broadcast -a net.rpcsx.THOR_DEBUG_PAD -n $Package/net.rpcsx.ThorDebugPadReceiver --ei digital1 $digital1 --ei digital2 $digital2 --el durationMs $DurationMs" | Out-Null
+    $broadcastOutput = @(& $Adb -s $DeviceSerial shell "am broadcast -a net.rpcsx.THOR_DEBUG_PAD -n $Package/net.rpcsx.ThorDebugPadReceiver --ei digital1 $digital1 --ei digital2 $digital2 --el durationMs $DurationMs" 2>&1)
+    $broadcastExit = $LASTEXITCODE
+    $broadcastText = ($broadcastOutput | ForEach-Object { $_.ToString().Trim() }) -join " | "
+    "$(Get-Date -Format o) key=$Key duration_ms=$DurationMs exit=$broadcastExit response=$broadcastText" |
+        Out-File -LiteralPath (Join-Path $captureDir "direct-pad.log") -Append -Encoding UTF8
+
+    if ($broadcastExit -ne 0 -or $broadcastText -notmatch 'Broadcast completed: result=-1') {
+        throw "The app did not accept the direct pad input '$Key': $broadcastText"
+    }
 }
 
 function Invoke-ThorDirectStick {
@@ -495,6 +524,69 @@ function Invoke-ThorPadCombo {
     & $Adb shell input gamepad -d $Display keycombination -t $DurationMs @codes | Out-Null
 }
 
+function Invoke-ThorControlPause {
+    & $Adb -s $DeviceSerial forward tcp:8099 tcp:8099 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not forward the Thor control port."
+    }
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $attempt = 0
+    while ($timer.ElapsedMilliseconds -lt 8000) {
+        $attempt++
+        try {
+            $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/pause" -TimeoutSec 2
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) response=$($response | ConvertTo-Json -Compress)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-pause.log") -Append -Encoding UTF8
+            # A startup handoff can pause RPCSX before this request reaches the
+            # core. In that case, the pause action reports false because it did
+            # not change the state, but the reported state is already correct.
+            if ($response.paused) {
+                $response | ConvertTo-Json -Compress |
+                    Set-Content -LiteralPath (Join-Path $captureDir "control-pause.json") -Encoding UTF8
+                return
+            }
+        } catch {
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) error=$($_.Exception.Message)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-pause.log") -Append -Encoding UTF8
+        }
+
+        Assert-ThorDeviceThermalGuardAlive
+        Start-Sleep -Milliseconds 100
+    }
+    throw "The Thor control API did not confirm the paused state within 8000 ms."
+}
+
+function Invoke-ThorControlResume {
+    & $Adb -s $DeviceSerial forward tcp:8099 tcp:8099 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not forward the Thor control port."
+    }
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $attempt = 0
+    while ($timer.ElapsedMilliseconds -lt 8000) {
+        $attempt++
+        try {
+            $response = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8099/resume" -TimeoutSec 2
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) response=$($response | ConvertTo-Json -Compress)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-resume.log") -Append -Encoding UTF8
+            if ($response.ok -and -not $response.paused) {
+                $response | ConvertTo-Json -Compress |
+                    Set-Content -LiteralPath (Join-Path $captureDir "control-resume.json") -Encoding UTF8
+                return
+            }
+        } catch {
+            "$(Get-Date -Format o) attempt=$attempt elapsed_ms=$($timer.ElapsedMilliseconds) error=$($_.Exception.Message)" |
+                Out-File -LiteralPath (Join-Path $captureDir "control-resume.log") -Append -Encoding UTF8
+        }
+
+        Assert-ThorDeviceThermalGuardAlive
+        Start-Sleep -Milliseconds 100
+    }
+    throw "The Thor control API did not confirm the running state within 8000 ms."
+}
+
 function Save-ThorScreenshot {
     param(
         [string]$Label,
@@ -520,10 +612,34 @@ function Save-ThorThreadSnapshot {
     & $snapshotScript -Package $Package -Label $safe -Samples 3 -IntervalMs 1000 -OutputRoot $captureDir
 }
 
+function Save-ThorDiagnosticSnapshot {
+    param([string]$Label)
+
+    $safe = New-ThorSafeLabel $Label
+    & $Adb -s $DeviceSerial forward tcp:8099 tcp:8099 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not forward the Thor control port."
+    }
+
+    $response = Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8099/diag" -TimeoutSec 2
+    $response | ConvertTo-Json -Depth 8 -Compress |
+        Set-Content -LiteralPath (Join-Path $captureDir "diag-$safe.json") -Encoding UTF8
+}
+
 function Get-ThorTemperatureSnapshot {
-    $thermalZoneCommand = Get-ThorThermalZoneShellCommand
+    param([switch]$RuntimeFast)
+
+    $thermalZoneCommand = if ($RuntimeFast) {
+        Get-ThorFastThermalZoneShellCommand
+    } else {
+        Get-ThorThermalZoneShellCommand
+    }
+    # A full Thor zone walk can take more than three seconds while ADB is
+    # responsive. Give the cold-start census enough time to finish. Keep the
+    # short bound for the fixed runtime sensor list.
+    $telemetryTimeoutSeconds = if ($RuntimeFast) { 3 } else { 8 }
     $telemetryCommand = 'printf "__THOR_BATTERY__\n"; dumpsys battery; printf "__THOR_HARDWARE__\n"; dumpsys hardware_properties; printf "__THOR_ZONES__\n"; ' + $thermalZoneCommand
-    $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds 3)
+    $telemetryLines = @(Invoke-ThorAdbLines -Adb $Adb -AdbArgs @("shell", $telemetryCommand) -ScratchDir $captureDir -TimeoutSeconds $telemetryTimeoutSeconds)
     $batteryLines = @()
     $hardwareLines = @()
     $thermalZoneLines = @()
@@ -552,6 +668,102 @@ function Get-ThorTemperatureSnapshot {
 }
 
 $script:ExpectedThorPackageProcessId = $null
+$script:ThorFullThermalBaseline = $null
+$script:ThorDeviceThermalGuardPowerShell = $null
+$script:ThorDeviceThermalGuardAsync = $null
+$script:ThorDeviceThermalGuardText = $null
+$script:ThorDeviceThermalGuardOutput = $null
+$script:ThorDeviceThermalGuardError = $null
+
+function Complete-ThorDeviceThermalGuard {
+    if ($null -ne $script:ThorDeviceThermalGuardText) {
+        return $script:ThorDeviceThermalGuardText
+    }
+
+    $outputLines = @()
+    try {
+        $outputLines = @($script:ThorDeviceThermalGuardPowerShell.EndInvoke($script:ThorDeviceThermalGuardAsync) |
+            ForEach-Object { $_.ToString() })
+    } catch {
+        $outputLines += "status=host-completion-error message=$($_.Exception.Message)"
+    }
+    $errorLines = @($script:ThorDeviceThermalGuardPowerShell.Streams.Error |
+        ForEach-Object { $_.ToString() })
+    $outputLines | Set-Content -LiteralPath $script:ThorDeviceThermalGuardOutput -Encoding UTF8
+    $errorLines | Set-Content -LiteralPath $script:ThorDeviceThermalGuardError -Encoding UTF8
+    $script:ThorDeviceThermalGuardText = ($outputLines -join [Environment]::NewLine).Trim()
+    return $script:ThorDeviceThermalGuardText
+}
+
+function Start-ThorDeviceThermalGuard {
+    if ($ThermalRuntimeTelemetry -ne "device") {
+        return
+    }
+
+    # Prove that the exact device-side list still matches the full preflight
+    # source set before the asynchronous guard can authorize any runtime work.
+    Assert-ThorThermalBudget "device-guard-source-check" -FastTelemetry -PassThru | Out-Null
+
+    $localGuard = Join-Path $PSScriptRoot "thor_device_thermal_guard.sh"
+    $remoteGuard = "/data/local/tmp/rpcsx-thor-thermal-guard.sh"
+    Invoke-ThorAdbText $Adb $captureDir "device-thermal-guard-push.txt" @("push", $localGuard, $remoteGuard) | Out-Null
+
+    $script:ThorDeviceThermalGuardOutput = Join-Path $captureDir "device-thermal-guard.log"
+    $script:ThorDeviceThermalGuardError = Join-Path $captureDir "device-thermal-guard.stderr.log"
+    $siliconStopMilliC = [int](($MaxSiliconTemperatureC - $ThermalRuntimeStopHeadroomC) * 1000)
+    $siliconHardMilliC = [int]($MaxSiliconTemperatureC * 1000)
+    $junctionHardMilliC = 95000
+    $batteryHardMilliC = [int]($MaxBatteryTemperatureC * 1000)
+    $guardArguments = @(
+        "-s", $Serial, "shell", "sh", $remoteGuard, $Package,
+        "$siliconStopMilliC", "$siliconHardMilliC", "$junctionHardMilliC",
+        "$batteryHardMilliC", "$MaxSkinTemperatureC", "", "2", "stop", "4"
+    )
+
+    # Use an in-process runspace because this workspace can expose both Path
+    # and PATH. Windows PowerShell Start-Process rejects that environment.
+    $script:ThorDeviceThermalGuardPowerShell = [PowerShell]::Create()
+    $null = $script:ThorDeviceThermalGuardPowerShell.AddCommand($Adb)
+    foreach ($argument in $guardArguments) {
+        $null = $script:ThorDeviceThermalGuardPowerShell.AddArgument([string]$argument)
+    }
+    $script:ThorDeviceThermalGuardAsync = $script:ThorDeviceThermalGuardPowerShell.BeginInvoke()
+    Start-Sleep -Milliseconds 250
+    if ($script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $guardText = Complete-ThorDeviceThermalGuard
+        throw "The device thermal guard exited before boot: $guardText"
+    }
+}
+
+function Assert-ThorDeviceThermalGuardAlive {
+    if ($ThermalRuntimeTelemetry -ne "device" -or $null -eq $script:ThorDeviceThermalGuardAsync) {
+        return
+    }
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        return
+    }
+
+    $guardText = Complete-ThorDeviceThermalGuard
+    if ($guardText -match 'status=failed') {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "The device thermal guard stopped RPCSX: $guardText"
+    }
+}
+
+function Stop-ThorDeviceThermalGuard {
+    if ($null -eq $script:ThorDeviceThermalGuardPowerShell) {
+        return
+    }
+
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $script:ThorDeviceThermalGuardAsync.AsyncWaitHandle.WaitOne(5000) | Out-Null
+    }
+    if (-not $script:ThorDeviceThermalGuardAsync.IsCompleted) {
+        $script:ThorDeviceThermalGuardPowerShell.Stop()
+    }
+    Complete-ThorDeviceThermalGuard | Out-Null
+    $script:ThorDeviceThermalGuardPowerShell.Dispose()
+}
 
 function Get-ThorPackageProcessId {
     $processIdLines = @(& $Adb shell pidof $Package 2>$null)
@@ -706,6 +918,7 @@ function Assert-ThorThermalBudget {
         [double]$BatteryLimitC = $MaxBatteryTemperatureC,
         [double]$SkinLimitC = $MaxSkinTemperatureC,
         [double]$SiliconLimitC = $MaxSiliconTemperatureC,
+        [switch]$FastTelemetry,
         [switch]$PassThru
     )
 
@@ -713,12 +926,28 @@ function Assert-ThorThermalBudget {
         return
     }
 
-    $snapshot = Get-ThorTemperatureSnapshot
+    $snapshot = Get-ThorTemperatureSnapshot -RuntimeFast:$FastTelemetry
     $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
     $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
     $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
     "$(Get-Date -Format o) stage=$Stage battery_temperature_c=$batteryText battery_source=$($snapshot.battery_source) battery_limit_c=$BatteryLimitC skin_temperature_c=$skinText skin_source=$($snapshot.skin_source) skin_limit_c=$SkinLimitC silicon_temperature_c=$siliconText silicon_source=$($snapshot.silicon_source) silicon_limit_c=$SiliconLimitC skin_sensor_count=$($snapshot.skin_sensor_count) silicon_sensor_count=$($snapshot.silicon_sensor_count) guard_sensor_count=$($snapshot.guard_sensor_count) thermal_zone_count=$($snapshot.thermal_zone_count) hardware_sensor_count=$($snapshot.hardware_sensor_count) sources=$($snapshot.source_summary)" |
         Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($FastTelemetry) {
+        if ($null -eq $script:ThorFullThermalBaseline) {
+            & $Adb shell am force-stop $Package | Out-Null
+            throw "Fast runtime thermal telemetry has no full preflight baseline. Stage '$Stage'. RPCSX was force-stopped."
+        }
+
+        $expectedSources = Get-ThorThermalGuardSourceSignature -Snapshot $script:ThorFullThermalBaseline
+        $actualSources = Get-ThorThermalGuardSourceSignature -Snapshot $snapshot
+        if ($actualSources -cne $expectedSources) {
+            "$(Get-Date -Format o) stage=$Stage status=failed code=fast-thermal-source-mismatch expected_sources=$expectedSources actual_sources=$actualSources" |
+                Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+            & $Adb shell am force-stop $Package | Out-Null
+            throw "Fast runtime thermal telemetry did not match the full preflight sensor set. Stage '$Stage'. RPCSX was force-stopped."
+        }
+    }
 
     $violationParams = @{
         Snapshot = $snapshot
@@ -744,7 +973,12 @@ function Assert-ThorRuntimeThermalBudget {
         return
     }
 
-    $snapshot = Assert-ThorThermalBudget $Stage -PassThru
+    if ($ThermalRuntimeTelemetry -eq "device") {
+        Assert-ThorDeviceThermalGuardAlive
+        return
+    }
+
+    $snapshot = Assert-ThorThermalBudget $Stage -FastTelemetry:($ThermalRuntimeTelemetry -eq "fast") -PassThru
     $decisionParams = @{
         Snapshot = $snapshot
         MaxSiliconTemperatureC = $MaxSiliconTemperatureC
@@ -827,10 +1061,43 @@ function Assert-ThorThermalPreflight {
         & $Adb shell am force-stop $Package | Out-Null
         throw "$($trendViolation.message) Stage '$Stage'. RPCSX was force-stopped."
     }
+
+    $script:ThorFullThermalBaseline = $snapshots[-1]
+}
+
+function Assert-ThorStrictColdStartGate {
+    param([string]$Stage)
+
+    $launchLimitC = 70.0
+    $snapshot = Get-ThorTemperatureSnapshot
+    $batteryText = Format-ThorTemperatureC $snapshot.battery_temperature_c
+    $skinText = Format-ThorTemperatureC $snapshot.skin_temperature_c
+    $siliconText = Format-ThorTemperatureC $snapshot.silicon_temperature_c
+    "$(Get-Date -Format o) stage=$Stage gate=fixed-silicon-only battery_temperature_c=$batteryText skin_temperature_c=$skinText silicon_temperature_c=$siliconText silicon_limit_c=$launchLimitC silicon_sensor_count=$($snapshot.silicon_sensor_count) sources=$($snapshot.source_summary)" |
+        Out-File -LiteralPath (Join-Path $captureDir "thermal-guard.log") -Append -Encoding UTF8
+
+    if ($snapshot.silicon_sensor_count -lt 1 -or $null -eq $snapshot.silicon_temperature_c) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Thor fixed-silicon temperature could not be read. Stage '$Stage'. RPCSX was force-stopped."
+    }
+
+    if ([double]$snapshot.silicon_temperature_c -ge $launchLimitC) {
+        & $Adb shell am force-stop $Package | Out-Null
+        throw "Thor fixed-silicon temperature is $siliconText C, at or above the $launchLimitC C cold-start limit. Stage '$Stage'. RPCSX was force-stopped."
+    }
+
+    $script:ThorFullThermalBaseline = $snapshot
 }
 
 function Wait-ThorThermallyBounded {
     param([int]$Milliseconds)
+
+    if ($ThermalRuntimeTelemetry -eq "device") {
+        Start-Sleep -Milliseconds $Milliseconds
+        Assert-ThorDeviceThermalGuardAlive
+        Assert-ThorProcessIdentity "wait-$Milliseconds-ms"
+        return
+    }
 
     $remaining = $Milliseconds
     while ($remaining -gt 0) {
@@ -1029,6 +1296,11 @@ function Assert-ThorInstalledApkIdentity {
 
 $resolvedMacro = Get-ThorMacroForProfile $Profile
 
+if ($ThermalRuntimeTelemetry -eq "device" -and -not $StopAfterMacro -and
+    $resolvedMacro -notmatch '(?:^|;)\s*stop\s*(?:;|$)') {
+    throw "Device runtime thermal telemetry requires a stop token or -StopAfterMacro."
+}
+
 @(
     "# Thor Input Macro",
     "",
@@ -1040,6 +1312,8 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Title ID: $TitleId",
     "- Display: $Display",
     "- Thor display pacing: $ThorDisplayPacing",
+    "- Require managed profile: $RequireManagedProfile",
+    "- Replace custom profile: $ReplaceCustomProfile",
     "- Input mode requested: $requestedInputMode",
     "- Input mode: $InputMode",
     "- Battle profile forced direct input: $profileForcesDirectInput",
@@ -1050,6 +1324,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Max launch silicon temperature C: $MaxLaunchSiliconTemperatureC",
     "- Thermal preflight max silicon rise C: $ThermalPreflightMaxRiseC",
     "- Thermal poll interval seconds: $ThermalPollIntervalSeconds",
+    "- Runtime thermal telemetry: $ThermalRuntimeTelemetry",
     "- Runtime thermal early-stop headroom C: $ThermalRuntimeStopHeadroomC",
     "- Runtime thermal confirmation window C: $ThermalRuntimeProbeWindowC",
     "- Runtime thermal probe sustain seconds: $ThermalRuntimeProbeSustainSeconds",
@@ -1063,6 +1338,9 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- SPU cached-program preload limit (0=all): $SpuCachePreloadLimit",
     "- SPU cached-program compile budget ms (0=unbounded): $SpuCacheCompileBudgetMs",
     "- SPU startup native-object cache: $SpuNativeObjectCache",
+    "- SPURS ANY2ANY LFQueue: $LfqAny2Any",
+    "- SPURS selector repair pair: $SpursSelectorFixes",
+    "- SPURS taskset atomic selection: $TasksetSelectAtomic",
     "- Startup cache-worker affinity mask (unset=core default 0x07, explicit 0=ordinary scheduler): $(if ($PSBoundParameters.ContainsKey('CacheWorkerAffinityMask')) { $CacheWorkerAffinityMask } else { 'unset' })",
     "- Persistent Vulkan driver pipeline cache: $VkPipelineCache",
     "- Vulkan preload cache hits only: $VkPreloadCacheHitsOnly",
@@ -1080,7 +1358,7 @@ $resolvedMacro = Get-ThorMacroForProfile $Profile
     "- Stop after macro: $StopAfterMacro",
     "- Macro: $resolvedMacro",
     "",
-    'Syntax: `wait:MS`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
+    'Syntax: `wait:MS`, `pause`, `resume`, `diag:NAME`, `gate:ppu-ready:MAX_MS`, `gate:visual:load-menu:MAX_MS`, `gate:visual:load-complete:MAX_MS`, `gate:visual:field-frame:MAX_MS`, `shot:NAME`, `threads:NAME`, `check:guest:NAME`, `check:visual:not-ppu-compilation`, `check:visual:title-menu`, `check:visual:load-menu`, `check:visual:field-frame`, `check:visual:battle-frame`, `check:visual:changed:REFERENCE_LABEL`, `stop`, key aliases such as `cross`/`dpad_down`, and `combo:select+r1:800`. Eternal Sonata battle proofs fail closed on wrong-route, black-battle, and unknown-draw states; use `-AllowUnknownDraw` only for an explicit diagnostic capture.'
     'Hybrid input overrides: `virtual:cross` forces Android virtual gamepad input; `raw:dpad_down` forces Odin `/dev/input` injection; `direct:cross` sends a debug-only RPCSX overlay pad press.',
     'Direct stick syntax: `stick:left:up:1000`, `stick:ls:down_right:750`, or `stick:rs:left:500`.'
     'State-gated battle approach: `approach:battle:left:left:900:3:11000` retries a bounded stick pulse until the Eternal Sonata battle HUD is detected.'
@@ -1096,6 +1374,9 @@ if ($ForceStop -or $BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-prelaunch-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-prelaunch-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1108,8 +1389,74 @@ if ($ForceStop -or $BootGame) {
 }
 
 if ($BootGame) {
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "prelaunch-smart"
     Write-ThorLaunchPowerState -Adb $Adb -CaptureDir $captureDir
 }
+
+$spursProfilePropertyNames = @(
+    "debug.rpcsx.thor.cmp_rdata",
+    "debug.rpcsx.thor.contention_atomic_fix",
+    "debug.rpcsx.thor.contention_orphan_fix",
+    "debug.rpcsx.thor.cpu_affinity_mask",
+    "debug.rpcsx.thor.dma_nontemporal",
+    "debug.rpcsx.thor.entry_pollstatus_fix",
+    "debug.rpcsx.thor.es_getllar",
+    "debug.rpcsx.thor.exit_destroy_fix",
+    "debug.rpcsx.thor.getllar_busy_percent",
+    "debug.rpcsx.thor.getllar_census",
+    "debug.rpcsx.thor.getllar_outbuf_cap",
+    "debug.rpcsx.thor.getllar_spin_cycles",
+    "debug.rpcsx.thor.getllar_spin_limit",
+    "debug.rpcsx.thor.jobchain_grab_seed",
+    "debug.rpcsx.thor.jobchain_pm_variant",
+    "debug.rpcsx.thor.jobchain_readycount",
+    "debug.rpcsx.thor.jobchain_trace",
+    "debug.rpcsx.thor.lfq_any2any",
+    "debug.rpcsx.thor.max_spurs_threads",
+    "debug.rpcsx.thor.movsb_threshold",
+    "debug.rpcsx.thor.pending_contention_fix",
+    "debug.rpcsx.thor.ppu_cached_rtime_fix",
+    "debug.rpcsx.thor.put_census",
+    "debug.rpcsx.thor.queue_monotonic_fix",
+    "debug.rpcsx.thor.queue_publish_order",
+    "debug.rpcsx.thor.queue_reserve_fix",
+    "debug.rpcsx.thor.queue_watch_ea",
+    "debug.rpcsx.thor.release_idle_taskset",
+    "debug.rpcsx.thor.sel_probe_nth",
+    "debug.rpcsx.thor.signal_atomic_fix",
+    "debug.rpcsx.thor.spu_accurate_reservations",
+    "debug.rpcsx.thor.spu_channel_spin",
+    "debug.rpcsx.thor.spu_loop_detection",
+    "debug.rpcsx.thor.spu_pc_census",
+    "debug.rpcsx.thor.spu_event_census",
+    "debug.rpcsx.thor.edge_event_interp",
+    "debug.rpcsx.thor.edge_event_wait_trace",
+    "debug.rpcsx.thor.fmod_event_wait_trace",
+    "debug.rpcsx.thor.fmod_event_interp",
+    "debug.rpcsx.thor.transformers_audio_wake_fix",
+    "debug.rpcsx.thor.transformers_physx_queue_wait",
+    "debug.rpcsx.thor.transformers_physx_start_interp",
+    "debug.rpcsx.thor.transformers_fifo_ordered",
+    "debug.rpcsx.thor.spurs_always_notify",
+    "debug.rpcsx.thor.spurs_atomic_census",
+    "debug.rpcsx.thor.spurs_drop_notify",
+    "debug.rpcsx.thor.spurs_max_run_clamp",
+    "debug.rpcsx.thor.spurs_store_exclusive",
+    "debug.rpcsx.thor.spurs_tear_probe",
+    "debug.rpcsx.thor.spurs_wait_honour_maxrun",
+    "debug.rpcsx.thor.spurs_wait_scale",
+    "debug.rpcsx.thor.syscall_dma_wait",
+    "debug.rpcsx.thor.task_attr_fix",
+    "debug.rpcsx.thor.transformers_spu_reserve",
+    "debug.rpcsx.thor.task_ls_clear_fix",
+    "debug.rpcsx.thor.taskset_enabled_fix",
+    "debug.rpcsx.thor.taskset_select_atomic",
+    "debug.rpcsx.thor.taskset_snapshot_fix",
+    "debug.rpcsx.thor.taskset_syscall_fix",
+    "debug.rpcsx.thor.taskset_writeback_fix",
+    "debug.rpcsx.thor.yield_poll_always",
+    "debug.rpcsx.thor.yield_redispatch_fix"
+)
 
 function Get-ThorStartupProfileResetPropertyCommand {
     $propertyNames = @(
@@ -1120,6 +1467,8 @@ function Get-ThorStartupProfileResetPropertyCommand {
         "debug.rpcsx.thor.spu_cache_preload_limit",
         "debug.rpcsx.thor.spu_cache_compile_budget_ms",
         "debug.rpcsx.thor.spu_native_object_cache",
+        "debug.rpcsx.thor.spurs_sel_cond_fix",
+        "debug.rpcsx.thor.spurs_signal_fix",
         "debug.rpcsx.thor.cache_worker_affinity_mask",
         "debug.rpcsx.thor.vk_pipeline_cache",
         "debug.rpcsx.thor.vk_preload_cache_hits_only",
@@ -1135,7 +1484,7 @@ function Get-ThorStartupProfileResetPropertyCommand {
         "debug.rpcsx.thor.es_frame_wait",
         "debug.rpcsx.thor.es_frame_wait_grace_us",
         "debug.rpcsx.thor.es_frame_wait_continuous_rearm"
-    )
+    ) + $spursProfilePropertyNames
     return 'for p in ' + ($propertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
 }
 $tokens = @()
@@ -1144,7 +1493,12 @@ $script:LastThorScreenshotPath = $null
 $script:ThorDebugBootRequested = $false
 try {
 Assert-ThorInstalledApkIdentity
-Assert-ThorThermalPreflight "pre-run"
+if ($Profile -eq "strict-cool-gate") {
+    Assert-ThorStrictColdStartGate "pre-run"
+} else {
+    Assert-ThorThermalPreflight "pre-run"
+}
+Start-ThorDeviceThermalGuard
 
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-set.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers $RsxCacheWorkers") | Out-Null
@@ -1161,6 +1515,12 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_cache_compile_budget_ms") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-set.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache $SpuNativeObjectCache") | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-effective.txt" @("shell", "getprop debug.rpcsx.thor.spu_native_object_cache") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-set.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any $lfqAny2AnyPropertyValue") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-effective.txt" @("shell", "getprop debug.rpcsx.thor.lfq_any2any") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-set.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix $spursSelectorFixPropertyValue; setprop debug.rpcsx.thor.spurs_signal_fix $spursSelectorFixPropertyValue") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-effective.txt" @("shell", 'printf "spurs_sel_cond_fix=%s\nspurs_signal_fix=%s\n" "$(getprop debug.rpcsx.thor.spurs_sel_cond_fix)" "$(getprop debug.rpcsx.thor.spurs_signal_fix)"') | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-set.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic $tasksetSelectAtomicPropertyValue") | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-effective.txt" @("shell", "getprop debug.rpcsx.thor.taskset_select_atomic") | Out-Null
     # Leave the property empty unless the caller asked for a specific mask, so a
     # plain run measures the core's own default instead of overriding it with 0.
     $cacheWorkerAffinityProperty = if ($PSBoundParameters.ContainsKey("CacheWorkerAffinityMask")) { "$CacheWorkerAffinityMask" } else { '""' }
@@ -1201,6 +1561,19 @@ if ($BootGame) {
         "debug.rpcsx.thor.spu_reduced_loop_detect",
         "debug.rpcsx.thor.spu_reduced_loop_emit",
         "debug.rpcsx.thor.spurs_probe",
+        "debug.rpcsx.thor.spurs_sel_cond_fix",
+        "debug.rpcsx.thor.spurs_signal_fix",
+        "debug.rpcsx.thor.hle_libs",
+        "debug.rpcsx.thor.hle_spurs_kernel",
+        "debug.rpcsx.thor.real_spu_kernel",
+        "debug.rpcsx.thor.real_taskset_pm",
+        "debug.rpcsx.thor.yield_fast_path",
+        "debug.rpcsx.thor.yield_redispatch_fix",
+        "debug.rpcsx.thor.pm_capture",
+        "debug.rpcsx.thor.draw_census",
+        "debug.rpcsx.thor.ppu_pc_census",
+        "debug.rpcsx.thor.ppu_prof",
+        "debug.rpcsx.thor.ppu_call_trace",
         "debug.rpcsx.thor.es_sema_superpath",
         "debug.rpcsx.thor.es_dma_superpath",
         "debug.rpcsx.thor.rsx_blit_source_resolve",
@@ -1211,7 +1584,7 @@ if ($BootGame) {
         "debug.rpcsx.thor.es_frame_wait_continuous_rearm",
         "log.tag.RPCS3",
         "log.tag.RPCSX-UI"
-    )
+    ) + $spursProfilePropertyNames
     $startupProfilePropertyCommand = 'for p in ' + ($startupProfilePropertyNames -join ' ') + '; do printf "%s=%s\n" "$p" "$(getprop "$p")"; done'
     Invoke-ThorAdbText $Adb $captureDir "startup-profile-effective.txt" @("shell", $startupProfilePropertyCommand) | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "wake-display.txt" @("shell", "input keyevent KEYCODE_WAKEUP") -AllowFailure | Out-Null
@@ -1222,9 +1595,11 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "debug-boot-logcat-clear.txt" @("logcat", "-c") -AllowFailure | Out-Null
     $quotedPath = ConvertTo-ShellSingleQuoted $GamePath
     $script:ThorDebugBootRequested = $true
-    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "debug-boot.txt" @("shell", "am start -a net.rpcsx.THOR_DEBUG_BOOT -n $Package/net.rpcsx.MainActivity --es path $quotedPath --es titleId $TitleId --es thorDebugBootRequestId $debugBootRequestId --ez thorRequireManagedProfile $requireManagedProfileValue --ez thorReplaceCustomProfile $replaceCustomProfileValue --ez thorDisplayPacing $thorDisplayPacingValue") -AllowFailure | Out-Null
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "debug-boot-smart"
     Initialize-ThorProcessIdentity
     Assert-ThorDebugBootAccepted -RequestId $debugBootRequestId
+    Set-ThorSmartFanMode -Adb $Adb -CaptureDir $captureDir -EvidencePrefix "debug-boot-accepted-smart"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
@@ -1489,8 +1864,16 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
             if (-not $battleUiReached) {
                 Throw-ThorVisualFailure "Battle UI was not detected after $approachAttempts bounded movement attempts." "visual-battle-approach-failure"
             }
+        } elseif ($token -eq 'pause') {
+            Invoke-ThorControlPause
+            Assert-ThorRuntimeThermalBudget "control-pause"
+        } elseif ($token -eq 'resume') {
+            Invoke-ThorControlResume
+            Assert-ThorRuntimeThermalBudget "control-resume"
         } elseif ($token -eq 'stop') {
             Stop-ThorPackageAndVerify -EvidencePrefix "macro-stop"
+        } elseif ($token -match '^diag:(.+)$') {
+            Save-ThorDiagnosticSnapshot $Matches[1]
         } elseif ($token -match '^threads:(.+)$') {
             Save-ThorThreadSnapshot $Matches[1]
         } elseif ($token -match '^virtual:(.+)$') {
@@ -1499,8 +1882,13 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         } elseif ($token -match '^raw:(.+)$') {
             Invoke-ThorRawKey -Key $Matches[1] -DurationMs 80
             Start-Sleep -Milliseconds $DefaultWaitMs
-        } elseif ($token -match '^direct:(.+)$') {
-            Invoke-ThorDirectPadKey -Key $Matches[1] -DurationMs 80
+        } elseif ($token -match '^direct:([^:]+)(?::(\d+))?$') {
+            $directKey = $Matches[1]
+            $directDuration = if ($Matches[2]) { [int]$Matches[2] } else { 80 }
+            if ($directDuration -lt 20 -or $directDuration -gt 5000) {
+                throw "Direct pad duration must be from 20 through 5000 ms."
+            }
+            Invoke-ThorDirectPadKey -Key $directKey -DurationMs $directDuration
             Start-Sleep -Milliseconds $DefaultWaitMs
         } elseif ($token -match '^stick:([^:]+):([^:]+)(?::(\d+))?$') {
             $duration = if ($Matches[3]) { [int]$Matches[3] } else { 500 }
@@ -1528,6 +1916,7 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     if ($ForceStop -or $BootGame -or $tokens -contains 'stop') {
         Invoke-ThorAdbText $Adb $captureDir "macro-failure-stop.txt" @("shell", "am force-stop $Package") -AllowFailure | Out-Null
     }
+    Stop-ThorDeviceThermalGuard
 
     if ($ForceStop -and -not $BootGame -and -not $PostSnapshot) {
         Invoke-ThorAdbText $Adb $captureDir "failure-pid.txt" @("shell", "pidof $Package") -AllowFailure | Out-Null
@@ -1562,6 +1951,9 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+        Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-failure-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
         Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-failure-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1578,6 +1970,8 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedMacro)) {
     throw $failure
 }
 
+Stop-ThorDeviceThermalGuard
+
 if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-workers-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_workers 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "rsx-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.rsx_cache_preload_limit 0") -AllowFailure | Out-Null
@@ -1586,6 +1980,9 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-preload-limit-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_preload_limit 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-cache-compile-budget-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_cache_compile_budget_ms 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "spu-native-object-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.spu_native_object_cache off") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "lfq-any2any-reset.txt" @("shell", "setprop debug.rpcsx.thor.lfq_any2any 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "spurs-selector-fixes-reset.txt" @("shell", "setprop debug.rpcsx.thor.spurs_sel_cond_fix 0; setprop debug.rpcsx.thor.spurs_signal_fix 0") -AllowFailure | Out-Null
+    Invoke-ThorAdbText $Adb $captureDir "taskset-select-atomic-reset.txt" @("shell", "setprop debug.rpcsx.thor.taskset_select_atomic 0") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "cache-worker-affinity-reset.txt" @("shell", 'setprop debug.rpcsx.thor.cache_worker_affinity_mask ""') -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-pipeline-cache-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_pipeline_cache on") -AllowFailure | Out-Null
     Invoke-ThorAdbText $Adb $captureDir "vk-preload-cache-hits-only-reset.txt" @("shell", "setprop debug.rpcsx.thor.vk_preload_cache_hits_only off") -AllowFailure | Out-Null
@@ -1599,7 +1996,13 @@ if ($BootGame) {
     Invoke-ThorAdbText $Adb $captureDir "startup-profile-reset-effective.txt" @("shell", $startupProfileResetPropertyCommand) | Out-Null
 }
 
-Assert-ThorRuntimeThermalBudget "post-run"
+if ($Profile -ne "strict-cool-gate") {
+    if ($BootGame) {
+        Assert-ThorRuntimeThermalBudget "post-run"
+    } else {
+        Assert-ThorThermalBudget "post-run"
+    }
+}
 
 if ($PostSnapshot) {
     Write-ThorStandardSnapshot -Adb $Adb -CaptureDir $captureDir -Package $Package -Prefix "post"
