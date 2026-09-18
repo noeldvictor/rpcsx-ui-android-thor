@@ -310,3 +310,21 @@ change is zero. The port counts clones per frame so the device can say so.
 
 None of the four ports is measured. Each wants a device A/B against a core
 built before it.
+
+### 2026-09-17 — open RPCS3 pull requests, second pass
+
+58 open on RPCS3. ARMSX3 has none open. RPCSX has five, none for PS3. Read
+after the tenth ARMSX3 pass, on the same day.
+
+| Pull request | Verdict |
+| --- | --- |
+| `#19521` add the LLVM InstCombine pass to SPU LLVM (Walter, 2 lines, opened 2026-09-17) | **Candidate.** This tree's own audit, `arm64/x86-tricks-arm64-answers.md`, already names InstCombine as the pass the JIT lacks and shows a fold the JIT loses without it. The cost is compile time, which this device pays on every cold boot because the native SPU object cache is off. Port behind a property, then measure the compile burst and one combat window. |
+| `#17646` SPU CELL communication performance (elad335, 13 files, 2025-11) | **Read in full before the next SPU round.** Its one-chunk PUTLLC commit is the idea this tree shipped on 2026-09-08 through ARMSX3 `813774767`. Two parts are absent here. `sys_memory_get_page_attribute` takes a full `vm::writer_lock` on every call in `kernel/cellos/src/sys_memory.cpp`; the PR reads the page flags lock-free. Only 6 calls appear in this tree's logs, so no reach yet. `sys_rsx_context_iomap` has no unchanged-mapping fast path here; 6,420 calls appear in this tree's logs. Count them per window first. |
+| `#19230` remove the unsafe ARM checksum (draft, unchanged since 2026-08-17) | Already answered here. `debug.rpcsx.thor.spu_strict_checksum=1` gives the one-to-one form; the default is still the folded form. Unmeasured either way. |
+| `#16481` LV2 dynamic timer signals (elad335, 16 files, updated 2026-08-07) | Adaptation queue. It attacks the problem this tree's `lv2_spin=0` attacks, in a different kernel layout. Read it when the PPU wait sites come up again. |
+| `#17172` RdDec pseudo-read loop detection (draft, 2025-05, "does not work at all") | No change. Still the upstream answer to the Transformers 2400-iteration loop, still not working. |
+| `#14252` Linux thread priority through nice values | Not for Android. An unprivileged process cannot raise a priority, and this tree measured that the OS scheduler beats every explicit placement. |
+| `#12559` round-to-zero float clamping, `#12558` -0 in accurate xfloat, `#15308` PPU recycle identical functions, `#12060` second VBlank rate | Read, not queued. The first two touch xfloat modes the tracked titles do not run. The third is PPU compile time, not frames. The fourth is pacing. |
+| `#18847` Apple M2 `-mcpu` | Unchanged since 2026-08-11. It still lands on the `cortex-a78` pin lines. A rebase hazard, nothing more. |
+
+Nothing was ported from this pass.
