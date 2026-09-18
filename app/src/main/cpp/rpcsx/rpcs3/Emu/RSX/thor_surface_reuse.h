@@ -13,9 +13,12 @@
 // titles on NVIDIA GPUs, and no change on AMD.
 //
 // On the Thor the create path is Turnip on Adreno 740. Its cost is not the
-// NVIDIA cost, and nobody has measured it. So the port is a property, off by
-// default, and two counters on the perf_monitor Frames line say whether the
-// path fires at all in a scene:
+// NVIDIA cost, and nobody has measured it. The port is on by default, at the
+// owner's decision of 2026-09-17, before any device measurement. The switch is
+// the Video setting "Reuse Discarded Render Targets" (Advanced settings in the
+// app). It is dynamic, so a change applies at once, without a restart. Two
+// counters on the perf_monitor Frames line say whether the path fires at all
+// in a scene:
 //
 //   surf_clone = clones the split path made with no sink (each one creates an
 //                image unless reuse serves it)
@@ -23,9 +26,15 @@
 //
 // A scene with surf_clone=0 cannot move, and no device time should go to it.
 //
-//   debug.rpcsx.thor.rsx_surface_reuse = 1   (default 0)
+// A property overrides the setting, for A/B runs driven by adb:
 //
-// The gate is read once, on first use. A change needs a process restart.
+//   debug.rpcsx.thor.rsx_surface_reuse = 0   forces off
+//   debug.rpcsx.thor.rsx_surface_reuse = 1   forces on
+//   unset                                     follows the setting
+//
+// The property is read once, on first use. The setting is read on each call.
+
+#include "Emu/system_config.h"
 
 #include <cstdlib>
 
@@ -35,7 +44,8 @@
 
 namespace thor {
 inline bool rsx_surface_reuse() {
-  static const bool enabled = []() -> bool {
+  // -1: no override, follow the setting. 0: forced off. 1: forced on.
+  static const int override_value = []() -> int {
 #if defined(__ANDROID__)
     char value[PROP_VALUE_MAX]{};
     const int length =
@@ -46,14 +56,20 @@ inline bool rsx_surface_reuse() {
 #else
     const char *v = std::getenv("RPCSX_THOR_RSX_SURFACE_REUSE");
 #endif
-    if (!v) {
-      return false;
+    if (!v || !v[0]) {
+      return -1;
     }
 
-    return v[0] == '1' || v[0] == 'y' || v[0] == 'Y' || v[0] == 't' ||
-           v[0] == 'T';
+    return (v[0] == '0' || v[0] == 'n' || v[0] == 'N' || v[0] == 'f' ||
+            v[0] == 'F')
+               ? 0
+               : 1;
   }();
 
-  return enabled;
+  if (override_value >= 0) {
+    return override_value != 0;
+  }
+
+  return g_cfg.video.reuse_discarded_render_targets.get();
 }
 } // namespace thor

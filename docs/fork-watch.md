@@ -297,7 +297,7 @@ change is zero. The port counts clones per frame so the device can say so.
 
 | Change | Verdict |
 | --- | --- |
-| RPCS3 `a65980547` reuse discarded render targets in a surface split | **Ported**, behind `debug.rpcsx.thor.rsx_surface_reuse=1` (default off), with `surf_clone` and `surf_reuse` on the Frames line. |
+| RPCS3 `a65980547` reuse discarded render targets in a surface split | **Ported, on by default** at the owner's decision of 2026-09-17, unmeasured. The switch is the Video setting "Reuse Discarded Render Targets" (Advanced settings); `debug.rpcsx.thor.rsx_surface_reuse=0` overrides it for adb-driven A/B runs. `surf_clone` and `surf_reuse` on the Frames line. |
 | RPCS3 `ec4b1ae65` tbl1 for the ARM64 byteswap | **Ported.** ARMSX3 shipped the same as `86cb3402e` in 0.9.9. |
 | RPCS3 `e826098bc` drop the unused `spu_test_state` and `__spu-null` per module | **Ported.** |
 | RPCS3 `ca223f70b` 8-bit add/sub folds, ABSDB and SHUFB compare fast paths | **Ported.** Target independent. |

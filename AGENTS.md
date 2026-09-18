@@ -525,12 +525,16 @@ account is
 - **The "25 percent on NVIDIA" news is RPCS3 pull request 19500, `a65980547`**
   (Yahfz with kd-11): a surface split reuses a discarded render target instead
   of creating an image. +20 to +30 percent on NVIDIA in Red Dead Redemption,
-  Gran Turismo 5 and Saints Row; no change on AMD. Ported behind
-  `debug.rpcsx.thor.rsx_surface_reuse=1` (default off) with two Frames-line
+  Gran Turismo 5 and Saints Row; no change on AMD. Ported, on by default at
+  the owner's decision of 2026-09-17, unmeasured. The switch is the Video
+  setting "Reuse Discarded Render Targets" (Advanced settings; dynamic, so it
+  applies at once); `debug.rpcsx.thor.rsx_surface_reuse=0` overrides it for
+  adb-driven A/B runs. Two Frames-line
   counters, `surf_clone` and `surf_reuse`. On the Thor the create path is
   Turnip, not the NVIDIA driver, and the Transformers scene is not RSX-thread
   bound, so the expected frame change is zero unless `surf_clone` per frame is
-  large. Read that counter from a control run before any A/B.
+  large. Read both counters from the first run on this build; the control is
+  the same binary with the property at 0.
 - **Three SPU LLVM ports, unconditional**: `ec4b1ae65` tbl1 for the ARM64
   byteswap (Whatcookie; ARMSX3 0.9.9 ships it too), `e826098bc` drop the unused
   per-module helper functions, `ca223f70b` 8-bit add/sub folds and compare fast

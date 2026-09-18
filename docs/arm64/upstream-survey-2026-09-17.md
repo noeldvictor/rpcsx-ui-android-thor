@@ -71,26 +71,35 @@ count. That is what the port measures first.
 
 ### The port, and how to read it
 
-The change is in, behind a property, off by default:
+The change is in and on by default, at the owner's decision of 2026-09-17,
+before any device measurement. The switch is the Video setting "Reuse Discarded
+Render Targets", in the app under Advanced settings, Video. The node is dynamic,
+so a change applies at once, while a game runs. A property overrides the
+setting for A/B runs driven by adb: `0` forces off, `1` forces on, unset
+follows the setting:
 
-    debug.rpcsx.thor.rsx_surface_reuse = 1
+    debug.rpcsx.thor.rsx_surface_reuse = 0
 
-The gate is read once on first use (`thor_surface_reuse.h`). Two counters on
-the perf_monitor Frames line say whether the path fires:
+The property is read once on first use; the setting is read on each call
+(`thor_surface_reuse.h`). Two counters on the perf_monitor Frames line say
+whether the path fires:
 
     surf_clone=<clones with no sink>  surf_reuse=<clones served from the discard list>
 
 `surf_clone` counts with the gate off too. The rule for the device: read
-`surf_clone` per frame from a control run first. If it is near zero in the
-scene, the port has no reach there, and no A/B is needed. If it is large, run
-the standard A/B on one binary, gate off then on, three windows each, and read
-FPS, cores and the two counters. The `thor-measurement-validity` rules apply.
+`surf_clone` and `surf_reuse` per frame from the first run on this build. If
+`surf_clone` is near zero in the scene, the port has no reach there, and the
+default costs nothing. If it is large, run the standard A/B on one binary,
+gate on (the default) then off, three windows each, and read FPS, cores and
+the two counters. The `thor-measurement-validity` rules apply.
 
 Files: `rpcs3/Emu/RSX/Common/surface_store.h` (finder and the gated branch),
 `rpcs3/Emu/RSX/VK/VKRenderTargets.h` and `rpcs3/Emu/RSX/GL/GLRenderTargets.h`
 (`is_reusable_surface`, `prepare_for_reuse`, and the `initialize` restructure of
 `clone_surface`), `rpcs3/Emu/RSX/thor_rsx_counters.h`,
-`rpcs3/Emu/RSX/thor_surface_reuse.h`. This fork's `clone_surface` has no
+`rpcs3/Emu/RSX/thor_surface_reuse.h`, and the config node
+`reuse_discarded_render_targets` in `rpcs3/Emu/system_config.h`. This fork's
+`clone_surface` has no
 resolution scaling config argument, so the finder calls the four-argument
 `apply_resolution_scale`. The GL half is ported so the shared template compiles.
 
@@ -100,7 +109,7 @@ Each port carries the origin hash in its commit message. None is measured.
 
 ### 1. Surface reuse, RPCS3 `a65980547`
 
-Described above. Gated, counted.
+Described above. On by default, gated, counted.
 
 ### 2. TBL for the ARM64 byteswap, RPCS3 `ec4b1ae65`
 
