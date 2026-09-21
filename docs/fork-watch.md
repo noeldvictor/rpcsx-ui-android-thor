@@ -318,7 +318,7 @@ after the tenth ARMSX3 pass, on the same day.
 
 | Pull request | Verdict |
 | --- | --- |
-| `#19521` add the LLVM InstCombine pass to SPU LLVM (Walter, 2 lines, opened 2026-09-17) | **Candidate.** This tree's own audit, `arm64/x86-tricks-arm64-answers.md`, already names InstCombine as the pass the JIT lacks and shows a fold the JIT loses without it. The cost is compile time, which this device pays on every cold boot because the native SPU object cache is off. Port behind a property, then measure the compile burst and one combat window. |
+| `#19521` add the LLVM InstCombine pass to SPU LLVM (Walter, 2 lines, opened 2026-09-17) | **Candidate.** This tree's own audit, `arm64/x86-tricks-arm64-answers.md`, already names InstCombine as the pass the JIT lacks and shows a fold the JIT loses without it. The cost is compile time, which this device pays on every cold boot because the native SPU object cache is off. Port behind a property, then measure the compile burst and one combat window. **Superseded 2026-09-21**: upstream merged and then reverted it. See the entry of 2026-09-21. |
 | `#17646` SPU CELL communication performance (elad335, 13 files, 2025-11) | **Read in full before the next SPU round.** Its one-chunk PUTLLC commit is the idea this tree shipped on 2026-09-08 through ARMSX3 `813774767`. Two parts are absent here. `sys_memory_get_page_attribute` takes a full `vm::writer_lock` on every call in `kernel/cellos/src/sys_memory.cpp`; the PR reads the page flags lock-free. Only 6 calls appear in this tree's logs, so no reach yet. `sys_rsx_context_iomap` has no unchanged-mapping fast path here; 6,420 calls appear in this tree's logs. Count them per window first. |
 | `#19230` remove the unsafe ARM checksum (draft, unchanged since 2026-08-17) | Already answered here. `debug.rpcsx.thor.spu_strict_checksum=1` gives the one-to-one form; the default is still the folded form. Unmeasured either way. |
 | `#16481` LV2 dynamic timer signals (elad335, 16 files, updated 2026-08-07) | Adaptation queue. It attacks the problem this tree's `lv2_spin=0` attacks, in a different kernel layout. Read it when the PPU wait sites come up again. |
@@ -328,3 +328,26 @@ after the tenth ARMSX3 pass, on the same day.
 | `#18847` Apple M2 `-mcpu` | Unchanged since 2026-08-11. It still lands on the `cortex-a78` pin lines. A rebase hazard, nothing more. |
 
 Nothing was ported from this pass.
+
+### 2026-09-21 — RPCS3 master, short pass
+
+Fetched `origin/master` to `d08d568d5`. `armsx3/master` is still `23e119c0c`.
+`RPCSX/rpcsx` master is still `e8ae148`, the commit the vendored core carries.
+Nine RPCS3 commits since `8db660b18`. None is ported. This is a short pass,
+four days after the tenth, so it has no survey document of its own.
+
+| Change | Verdict |
+| --- | --- |
+| RPCS3 `f4a74819d` add the LLVM InstCombine pass to SPU LLVM, and `9e86f165d` revert it | **Parked.** Pull request `#19521` merged on 2026-09-17 and pull request `#19535` reverted it on 2026-09-19. Two regressions closed after the revert and were confirmed to be from this pass and not from `#19512`: `#19531`, Everybody's Golf World Tour crashes after the first prompt, and `#19534`, Leisure Suit Larry Box Office Bust loses sound effects. The revert says the pass should be safe unless the recompiler already emits wrong IR, so the pass exposes a latent fault. Do not take it until upstream lands it again with the fault fixed. If it is taken before that, it goes behind a property, off by default. |
+| RPCS3 `71f8a5e09` flat shading cleanup | Rejected. Replaces `use_last_provoking_vertex` with a `Flags()` accessor. Same behaviour. Most of the diff is a line-ending fix. |
+| RPCS3 `507b395d4` shared pipeline cache for shader linking | Rejected. This tree already passes its own persisted `g_driver_pipeline_cache` to `vkCreateGraphicsPipelines` (`VKPipelineCompiler.cpp`). The new argument goes to a separate-shader-objects `link` path this tree does not have. |
+| RPCS3 `7022a322a`, `accfecd2d`, `d08d568d5` interpreter seed variants and the renderpass key fix | Rejected. This tree has `enable_interpreter_preload = false` in `VKGSRender::on_init_thread`, and the interpreter preload path is retired (`AGENTS.md`, sprint gate, 2026-07-17). The seed is never used here. |
+| RPCS3 `c938d3e04` multi-attachment renderpass keys | Rejected. Extends the `get_renderpass_key(VkFormat, u8, u8)` overloads that this tree does not have. Only the interpreter seed calls them. |
+| RPCS3 `e59ed7047` blit target section reuse, and skip of the background load when the blit covers the whole destination | **Adaptation queue.** It rewrites the `dest_section` block from `e3585a4ec` (2026-07-10, "Ensure blit targets are always locked regardless of origin"), which this tree does not have. The full-overwrite skip saves a load and a clear on a tiler, but it needs `e3585a4ec` first. Read that chain when a title shows blit-engine writes into live render targets. |
+
+The articles of the week (VideoCardz, Wccftech, TweakTown, eTeknix, OC3D,
+TechPowerUp, Notebookcheck, ixbt, 2026-09-17 to 2026-09-19) all report the one
+change already in the tenth pass: pull request 19500, `a65980547`, reuse of
+discarded render targets. The 37 percent figure in Wccftech is the Gran Turismo
+5 light-scene number, 107 to 147 FPS, from the pull request testers. It is
+ported and on by default since 2026-09-17. It is still unmeasured on the Thor.
