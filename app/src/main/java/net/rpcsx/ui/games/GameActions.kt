@@ -2,6 +2,7 @@ package net.rpcsx.ui.games
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -104,6 +105,7 @@ private fun launchGame(
     }
 
     if (game.info.path == "$" || game.findProgress(arrayOf(GameProgressType.Install, GameProgressType.Remove)) != null) {
+        Log.w("RPCSX Launch", "refused '${game.info.path}': install or remove in progress")
         return
     }
 
@@ -115,7 +117,17 @@ private fun launchGame(
         return
     }
 
-    if (RPCSX.state.value == EmulatorState.Stopping) {
+    // Ask the core, not the cached value. The cached value is set from the
+    // game activity's stop watcher, which the activity can outlive, so it can
+    // say Stopping after the core reached Stopped. A refusal here used to be
+    // silent; the tap did nothing and the log held nothing (2026-09-21).
+    val emulatorState = runCatching { RPCSX.getState() }.getOrDefault(RPCSX.state.value)
+    if (emulatorState == EmulatorState.Stopping) {
+        Log.w("RPCSX Launch", "refused '${game.info.path}': the previous game is still stopping")
+        AlertDialogQueue.showDialog(
+            title = context.getString(R.string.failed_to_boot),
+            message = context.getString(R.string.previous_game_still_stopping)
+        )
         return
     }
 

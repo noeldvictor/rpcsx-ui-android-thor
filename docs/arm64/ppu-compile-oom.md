@@ -169,3 +169,51 @@ worker count the allocator chose. The second is the one to check first, because 
 device with plenty free will still choose several workers and will not test the
 change at all. That is this repo's own rule about proving that the arm you think you
 are running is the arm that runs.
+
+## The cause named exactly, 2026-09-21: Scudo's per-size-class region
+
+A second Odin Sphere cold boot died the same way, 10 seconds after `boot ok`,
+with the worker-count lever in. This time the allocator said what it ran out
+of, one line before the 4 KB message:
+
+```
+Scudo OOM: The process has exhausted 256M for size class 262160.
+Scudo ERROR: internal map failure (NO MEMORY) requesting 4KB
+Fatal signal 6 (SIGABRT) in tid 7880 (LLVM JIT)
+```
+
+The size-class table printed with it holds the number that matters:
+
+```
+F 38 (262160): mapped: 261888K ... inuse: 1022 total: 1022
+```
+
+Android's Scudo gives every primary size class a fixed region of 256 MB
+(`PrimaryRegionSizeLog = 28` in the Android config, set at build time, not
+tunable). The 256 KB class had 1,022 blocks live, which is the whole region.
+The process had gigabytes free. The system was not out of memory; one size
+class was.
+
+So the two levers in this document work against the odds, not the cause:
+
+- The worker count lowers how many relocation maps are live at once. It ran
+  with the lever in and still hit 1,022 live 256 KB blocks.
+- The 1536 MB budget counts estimates. It cannot see a size class.
+
+The fix has to move those 256 KB allocations out of Scudo's primary allocator
+or cut their count. Candidates, in order of size:
+
+1. Find what allocates 256 KB blocks in the LLVM JIT thread during PPU
+   linking. LLVM's `BumpPtrAllocator` slabs grow in powers of two and reach
+   256 KB; the RuntimeDyld relocation map in the earlier backtrace is one
+   user. A `MallocAllocator` replaced by an `mmap`-backed one for slabs at or
+   above 64 KB leaves Scudo's regions alone.
+2. Override `operator new` for sizes at or above 64 KB with `mmap`, process
+   wide. Wider, and it changes every large allocation.
+3. Serialize PPU module linking, so at most one relocation map is live. Slow,
+   and it still fails on a single module that needs more than 1,022 blocks.
+
+The RSX thread died a moment later with `VK_ERROR_MEMORY_MAP_FAILED`, which is
+the same exhaustion reached from a Vulkan map.
+
+Log source: logcat of pid 7704, 2026-09-21 19:13:41 to 19:13:52.

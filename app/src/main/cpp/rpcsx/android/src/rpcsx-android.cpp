@@ -2049,10 +2049,28 @@ static void setupCallbacks() {
   Emu.SetCallbacks({
       .call_from_main_thread =
           [](std::function<void()> cb, atomic_t<u32> *wake_up) {
+            // The callback runs on the calling thread. Upstream RPCS3 runs it
+            // on the Qt main thread. The difference matters once: the final
+            // callback of Emulator::Kill owns the last reference to the
+            // "Emulation Join Thread", and it is called FROM that thread. When
+            // the callback object was destroyed here, ~named_thread joined the
+            // thread it was running on. The stop never finished. The log said
+            // "Thread [Emulation Join Thread] is too sleepy" with a doubling
+            // wait, the emulator stayed in Stopping, and the next game could
+            // not start (2026-09-21, Rune Factory exit, RPCSX.old.log).
+            //
+            // The pause-thread callbacks in Emulator::Kill have the same shape.
+            //
+            // So the callback still runs here, at once, because dialogs and
+            // the blocking caller depend on that. Only its destruction moves
+            // to the main-thread processor, which is a different thread, so a
+            // captured named_thread is joined from outside itself.
             cb();
             if (wake_up) {
               *wake_up = true;
             }
+            g_mainThreadProcessor.push(
+                [cb = std::move(cb)](JNIEnv *) mutable { cb = nullptr; });
           },
       .on_run = [](auto...) {},
       .on_pause = [](auto...) {},

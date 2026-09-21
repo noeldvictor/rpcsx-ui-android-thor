@@ -155,8 +155,15 @@ runtime codes stay listed but greyed out until native validation exists.
 
 ## Known issues
 
-- **Launching a second game after closing the first can fail.** Under
-  investigation. Restarting the app is the current workaround.
+- **Launching a second game after closing the first can fail.** Cause found
+  2026-09-21, fix in, not yet confirmed on the device. The Android
+  `call_from_main_thread` ran the final stop callback on the stop thread
+  itself, and that callback owned the stop thread, so its destructor joined the
+  thread it was running on and the core stayed in `Stopping`. The game list
+  then refused every tap without a message. The fix destroys the callback on
+  the main-thread processor, and the game list now asks the core for its state
+  and says why it refuses. Restarting the app remains the workaround on builds
+  before the fix.
 - **A 3D-scene slowdown from 2026-08-22 is found and fixed.** `21493f1e1` added
   a guest memory preflight which calls the RSX fault handler for every protected
   page in a range before a copy, and that handler invalidates the texture cache.
