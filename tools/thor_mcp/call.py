@@ -26,8 +26,8 @@ def main():
         args_text = sys.argv[2] if len(sys.argv) > 2 else "{}"
     args = json.loads(args_text)
 
+    # No THOR_SERIAL default here: the server finds the attached Thor itself.
     env = dict(os.environ)
-    env.setdefault("THOR_SERIAL", "192.168.1.3:5555")
     env.setdefault("THOR_CTRL_PORT", "8099")
 
     reqs = [

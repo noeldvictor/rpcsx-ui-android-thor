@@ -46,3 +46,6 @@ _research/spurs/*/ghidra-headless.log
 # Decrypted guest executables pulled for Ghidra. Game data, never committed.
 _research/transformers-ppu/
 _research/armsx3/
+
+# thor_screenshot default output (a device capture, not source)
+/thor_shot.png

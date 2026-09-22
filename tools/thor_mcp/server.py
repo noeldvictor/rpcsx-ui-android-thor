@@ -73,7 +73,40 @@ def _resolve_adb():
 
 
 ADB = _resolve_adb()
-SERIAL = os.environ.get("THOR_SERIAL", "192.168.1.3:5555")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+FALLBACK_SERIAL = "192.168.1.3:5555"
+
+
+def _resolve_serial():
+    """Find the Thor that adb can see now.
+
+    A fixed serial was wrong more often than right. The sessions used four:
+    USB c3ca0370, and 192.168.1.3, .33 and .5 over Wi-Fi. With the device on
+    USB, a hardcoded Wi-Fi serial made every tool report "device unreachable"
+    while the device was attached.
+
+    THOR_SERIAL wins when set. Otherwise take the one attached AYN Thor, then
+    the one attached device, then the old Wi-Fi default.
+    """
+    env = os.environ.get("THOR_SERIAL")
+    if env:
+        return env
+    try:
+        out = subprocess.run([ADB, "devices", "-l"], capture_output=True, timeout=20)
+        text = out.stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return FALLBACK_SERIAL
+    rows = [line.split() for line in text.splitlines()[1:]]
+    ready = [r for r in rows if len(r) >= 2 and r[1] == "device"]
+    thors = [r for r in ready if "model:AYN_Thor" in r]
+    if len(thors) == 1:
+        return thors[0][0]
+    if len(ready) == 1:
+        return ready[0][0]
+    return FALLBACK_SERIAL
+
+
+SERIAL = _resolve_serial()
 PORT = int(os.environ.get("THOR_CTRL_PORT", "8099"))
 PKG = "net.rpcsx.easy"
 FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
@@ -112,7 +145,17 @@ def adb(args, timeout=300, binary=False):
 
 def reachable():
     """An unreachable device answers empty exactly like a dead process, so this
-    is checked separately before any liveness claim."""
+    is checked separately before any liveness claim.
+
+    The device moves between USB and Wi-Fi during a session. When the current
+    serial fails, find the serial again once before the answer is no."""
+    global SERIAL
+    if sh("echo ok", timeout=20).strip() == "ok":
+        return True
+    found = _resolve_serial()
+    if found == SERIAL:
+        return False
+    SERIAL = found
     return sh("echo ok", timeout=20).strip() == "ok"
 
 
@@ -190,6 +233,7 @@ def t_state(a):
     paused = hold(a, default=a.get("pause", True))
     return {
         "reachable": True,
+        "serial": SERIAL,
         "paused": paused,
         "pid": pid() or None,
         "cpuJunctionC": temp_c(),
@@ -1282,7 +1326,9 @@ def t_screenshot(a):
     p = pid()
     process_held = bool(p) and held_process_pid() == p
     paused = True if process_held else hold(a)
-    out = a.get("path") or os.path.join(os.getcwd(), "thor_shot.png")
+    # The repository root, not the current directory: a server started from
+    # the workspace root must not write outside the repository.
+    out = a.get("path") or os.path.join(REPO_ROOT, "thor_shot.png")
     data = adb(["exec-out", "screencap", "-p"], binary=True)
     if len(data) < 1024:
         return {"error": f"screencap returned {len(data)} bytes"}

@@ -515,11 +515,34 @@ curl 127.0.0.1:8099/                # list every endpoint and button name
 | `GET /log?match=fatal&n=40` | tail of the emulator log, filtered |
 | `POST /savestate` | capture (ONE slot, it overwrites) |
 | `POST /loadstate` | restore |
-| `POST /resume`, `POST /kill` | emulation control |
+| `POST /pause`, `POST /resume`, `POST /kill` | emulation control |
+| `POST /exit` | the home menu's Exit Game; poll `/status` until `state` is 0 |
 | `GET /setting?path=`, `POST /setting?path=&value=` | read or write one config value |
 
 Button names: `UP DOWN LEFT RIGHT CROSS CIRCLE SQUARE TRIANGLE L1 L2 L3 R1 R2
 R3 START SELECT PS`.
+
+#### The `thor` MCP server
+
+For an agent, use the MCP server in `tools/thor_mcp/server.py` instead of raw
+`curl` and `adb`. It wraps this API in 17 tools, for example `thor_state`,
+`thor_boot`, `thor_press`, `thor_screenshot`, `thor_sample`, `thor_setprop`
+and `thor_stop`. Each tool:
+
+- finds the attached AYN Thor by itself, on USB or Wi-Fi (`THOR_SERIAL`
+  overrides it);
+- reports the fixed-silicon temperature in every answer, and stops a run at
+  the 72 C limit;
+- refuses a measurement while a movie plays or the thermal guard is engaged,
+  because both give a wrong number.
+
+Claude Code loads the server from `.mcp.json`. Without an MCP client, run a
+tool from the shell with the same code:
+
+```sh
+python tools/thor_mcp/call.py tools/list
+python tools/thor_mcp/call.py thor_state '{"pause":false}'
+```
 
 Why it exists: the emulated pad cannot be driven from outside the app. Android
 key events do not reach the guest, and injecting on the real gamepad node

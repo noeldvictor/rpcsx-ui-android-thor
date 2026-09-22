@@ -54,11 +54,12 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
 - Vendored RPCSX core: `app/src/main/cpp/rpcsx`.
 - Android JNI full-core bridge: `app/src/main/cpp/rpcsx/android/src/rpcsx-android.cpp`.
 - Lightweight loader wrapper: `app/src/main/cpp/native-lib.cpp`.
-- Upstream RPCS3 comparison checkout: `C:\Users\leanerdesigner\Documents\ps3-thor\rpcs3-upstream`.
+- Upstream RPCS3 comparison checkout: `F:\Projects\ps3-thor\rpcs3-upstream`.
 - Refresh vendored core with `tools/sync_rpcsx_core.ps1`.
 - Hydrate core deps with `tools/hydrate_rpcsx_core_deps.ps1`.
 - Normal debug build: `.\gradlew.bat :app:assembleDebug`.
 - Measurement APK: `.\gradlew.bat :app:assembleThortest -PrpcsxThorDebuggable=1`. Without the property the APK is not debuggable: `run-as` fails, the control API on port 8099 is absent, and the dev-core override cannot be verified. Since 2026-09-07 the debuggable thortest APK also honours `files/dev-core/active-core.path`; before that only the `debug` build type did, and a thortest install ran the bundled core while the pushes went nowhere. Check logcat for `Using Thor dev core override` after any reinstall.
+- Device control: the `thor` MCP server, `tools/thor_mcp/server.py`. Use its tools, or `python tools/thor_mcp/call.py TOOL 'JSON'`, before you write an adb loop. It finds the attached Thor by itself. Read the section `# The thor MCP server: typed tools instead of a hand-written harness`.
 - Fast native-core hot swap: `.\tools\build_push_thor_core.ps1 -Label NAME`.
 - Reset hot swap: `.\tools\build_push_thor_core.ps1 -ResetToBundled`.
 
@@ -89,7 +90,7 @@ pass in `docs/arm64/armsx3-comparison.md`. Say what you rejected, and say why.
 
 ### The comparison checkout is not a build target
 
-`C:\Users\leanerdesigner\Documents\ps3-thor\rpcs3-upstream` exists only to read
+`F:\Projects\ps3-thor\rpcs3-upstream` exists only to read
 upstream work. It carries two remotes:
 
 - `origin` is `RPCS3/rpcs3`.
@@ -9046,10 +9047,67 @@ whole time.
 
 # The `thor` MCP server: typed tools instead of a hand-written harness
 
-**Built 2026-08-23.** `tools/thor_mcp/server.py`, wired in `.mcp.json`. Ten
+**Built 2026-08-23.** `tools/thor_mcp/server.py`. On 2026-09-22 it has 17
 tools: `thor_state`, `thor_cooldown`, `thor_boot`, `thor_wait_ready`,
-`thor_press`, `thor_screenshot`, `thor_sample`, `thor_log`, `thor_setprop`,
-`thor_stop`.
+`thor_press`, `thor_pause`, `thor_resume`, `thor_slice`, `thor_slice_loop`,
+`thor_wait_cool_paused`, `thor_screenshot`, `thor_sample`, `thor_log`,
+`thor_setprop`, `thor_clearprops`, `thor_exit_game`, `thor_stop`.
+
+## Use the tools. The session logs show that they were not used.
+
+On 2026-09-22 the session logs for this workspace were counted:
+
+| agent | tool calls | hand-written adb commands | `thor` MCP calls | `call.py` calls |
+| --- | --- | --- | --- | --- |
+| Claude Code, 5 sessions, 2026-08-22 to 2026-09-22 | 6,844 | 1,518 | 0 | 220 |
+| Codex, 1 session, 2026-08-28 to 2026-08-31 | 14,610 | 892 | 0 | not counted |
+
+583 of the 1,518 Claude Code adb commands contain a `sleep`. 634 contain a
+shell loop. Most experiment rounds were a new bash script, for example
+`thor_transformers_diag_round.sh`. That is the defect this server exists to
+remove.
+
+The server was not loaded, for three reasons:
+
+1. **The sessions start in the workspace root, `F:\Projects\ps3-thor`.** Claude
+   Code reads `.mcp.json` only from the directory where it starts. The file was
+   only in this repository. Since 2026-09-22 the workspace root has its own
+   `.mcp.json` that starts this server.
+2. **The serial was fixed at `192.168.1.3:5555`.** The sessions used four
+   serials: USB `c3ca0370`, and `192.168.1.3`, `.33` and `.5` over Wi-Fi. With
+   the device on USB, every tool reported "device unreachable". Since 2026-09-22
+   the server finds the attached AYN Thor itself. It finds the serial again when
+   a call fails. `THOR_SERIAL` still overrides it.
+3. **Codex has no MCP entry for this server.** Codex uses `call.py`, which runs
+   the same code:
+
+   ```sh
+   python tools/thor_mcp/call.py thor_state '{"pause":false}'
+   ```
+
+Rules:
+
+- Use a `thor_*` tool, or `call.py` with the tool name, for each device action
+  that a tool covers. Do not write a new bash loop for a boot, a cooldown, a
+  press, a screenshot, a sample, a property or a stop.
+- Read `serial` in the `thor_state` answer before you believe "unreachable".
+- If a device action needs a new loop, add it to `server.py` as a tool, with
+  its refusals. Then use the tool.
+
+## What the server does not do yet
+
+The logs name the device work that has no tool. These are the next tools to
+add, in order of the number of hand-written commands they replace:
+
+1. **An A/B arm runner.** Set the properties of each arm, boot, wait for the
+   scene, sample N windows, read the `Frames` line, stop, cool, and repeat in
+   ABBA order. Return one table with each window. Each Transformers round from
+   K to S was this loop, written by hand.
+2. **An install tool.** Install the APK or push a dev core, then check that the
+   build that runs is the build that was installed (`Using Thor dev core
+   override` in logcat). The logs hold 379 hand-written install commands.
+3. **A profile tool.** Run `simpleperf` for a fixed window under the same
+   refusals as `thor_sample`, pull the report, and return the top symbols.
 
 **It exists because the LOOP was the defect, not the primitives.** Every harness
 failure in one day was the same bash logic retyped:
