@@ -2,6 +2,7 @@ package net.rpcsx
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.SystemClock
 import android.content.Intent
 import android.util.Log
 import android.view.InputDevice
@@ -39,6 +40,10 @@ class RPCSXActivity : Activity() {
         const val SELECT_STICK_HOTKEY_TRIGGER = 0.65f
         const val SELECT_STICK_HOTKEY_RELEASE = 0.35f
         const val SELECT_TAP_MS = 80L
+
+        // How long the core must stay Stopped before the game activity closes.
+        // A savestate reload is Stopped for about 0.25 s.
+        const val STOP_SETTLE_MS = 2000L
 
         @Volatile
         private var activeInstance: WeakReference<RPCSXActivity>? = null
@@ -392,8 +397,10 @@ class RPCSXActivity : Activity() {
 
         stopWatcherThread = thread(name = "RPCSX-FinishAfterStop") {
             // Unbounded on purpose. It is armed at boot now, so it must outlive
-            // any 60 second window. It ends on Stopped or when onDestroy
-            // interrupts it. The cost is two cheap JNI reads every 100 ms.
+            // any 60 second window. It ends on a settled Stopped or when
+            // onDestroy interrupts it. The cost is two cheap JNI reads every
+            // 100 ms.
+            var stoppedSinceMs = 0L
             while (true) {
                 if (Thread.interrupted()) {
                     return@thread
@@ -418,25 +425,28 @@ class RPCSXActivity : Activity() {
                     }
                 }
 
-                if (state == EmulatorState.Stopping && !finishAfterStopRequested) {
-                    finishAfterStopRequested = true
-                    RPCSX.state.value = EmulatorState.Stopping
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) {
-                            finish()
-                        }
-                    }
-                }
-
+                // Finish only on a stop that STAYS. A savestate load uses the
+                // Reload path: the core stops, is Stopped for about 0.25 s,
+                // and Emulator::Load moves it to Loading. On 2026-09-22 this
+                // watcher finished the activity on that Stopping. The surface
+                // was destroyed, and the reloaded game waited for a surface
+                // until it was killed. An exit stays Stopped.
                 if (state == EmulatorState.Stopped) {
-                    runOnUiThread {
-                        RPCSX.state.value = EmulatorState.Stopped
-                        RPCSX.activeGame.value = null
-                        if (!isFinishing && !isDestroyed) {
-                            finish()
+                    val now = SystemClock.elapsedRealtime()
+                    if (stoppedSinceMs == 0L) {
+                        stoppedSinceMs = now
+                    } else if (now - stoppedSinceMs >= STOP_SETTLE_MS) {
+                        runOnUiThread {
+                            RPCSX.state.value = EmulatorState.Stopped
+                            RPCSX.activeGame.value = null
+                            if (!isFinishing && !isDestroyed) {
+                                finish()
+                            }
                         }
+                        return@thread
                     }
-                    return@thread
+                } else {
+                    stoppedSinceMs = 0L
                 }
 
                 try {

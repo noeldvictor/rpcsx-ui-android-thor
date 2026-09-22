@@ -113,6 +113,8 @@ def _resolve_serial(current=None):
     if env:
         return env
     thors = [r for r in adb_devices() if r["state"] == "device" and r["thor"]]
+    if not thors and _connect_wireless():
+        thors = [r for r in adb_devices() if r["state"] == "device" and r["thor"]]
     serials = [r["serial"] for r in thors]
     if current in serials:
         return current
@@ -120,6 +122,35 @@ def _resolve_serial(current=None):
     if usb:
         return usb[0]
     return serials[0] if serials else None
+
+
+def _connect_wireless():
+    """Connect to each paired wireless-debugging service that mDNS announces.
+
+    Wireless debugging takes a new port each time it is turned on, so no
+    address can be written down. On 2026-09-22 adb listed nothing while the
+    Thor announced itself as adb-c3ca0370-X4FreV at 192.168.1.5:36587. Only
+    TLS connect services are tried: they belong to devices that this PC has
+    paired. The caller still selects only a device whose model is AYN_Thor.
+    """
+    try:
+        out = subprocess.run([ADB, "mdns", "services"], capture_output=True, timeout=20,
+                             stdin=subprocess.DEVNULL)
+        text = out.stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    connected = False
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1].startswith("_adb-tls-connect._tcp"):
+            try:
+                r = subprocess.run([ADB, "connect", parts[2]], capture_output=True,
+                                   timeout=20, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if b"connected to" in r.stdout:
+                connected = True
+    return connected
 
 
 # Found before each tool call, not at import: an import must not start adb.
@@ -1581,7 +1612,11 @@ TITLE_ISOS = {
     "BLUS30357": "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso",
 }
 VAULT = os.path.join(REPO_ROOT, "debug-captures", "savestates")
-FATAL_RE = re.compile(r"fatal error|Dead FIFO|Access violation|SPU trap|ENGAGED|thermal abort", re.I)
+FATAL_RE = re.compile(r"fatal error|Dead FIFO|Access violation|SPU trap|thermal abort", re.I)
+# The in-app guard's ENGAGED line is counted apart. It caps FPS at 30 on
+# 2026-09-22, above restored combat at about 21 FPS, and each combat boot
+# engages it. The windows check whether the cap binds.
+GUARD_RE = re.compile(r"Thermal guard ENGAGED", re.I)
 PROP_NAME_RE = re.compile(r"debug\.rpcsx\.thor\.[A-Za-z0-9_.]+")
 PROP_VALUE_RE = re.compile(r"[A-Za-z0-9_.:,+-]*")
 
@@ -1667,10 +1702,12 @@ def _summarize_log(path, match=None):
     except OSError:
         return {"missing": True}
     fatal = [line[-200:] for line in lines if FATAL_RE.search(line)]
+    guard = [line[-160:] for line in lines if GUARD_RE.search(line)]
     levers = [line.split("Thor:", 1)[1].strip()[:160] for line in lines
               if "Thor:" in line and any(k in line for k in ("forced", "set to", "ignoring", "applied"))]
     frames = [line[line.index("Frames:"):][:300] for line in lines if "Frames:" in line]
     out = {"path": path, "lines": len(lines), "fatalCount": len(fatal), "fatal": fatal[:6],
+           "guardCount": len(guard), "guard": guard[-2:],
            "levers": levers[:12], "framesLines": len(frames), "lastFrames": frames[-3:]}
     if match:
         rx = re.compile(match)
@@ -1709,7 +1746,16 @@ def t_arm(a):
     ready_timeout = _clamp(int(a.get("readyTimeoutS", 420)), 30, 900)
     gate_timeout = _clamp(int(a.get("gateTimeoutS", 150)), 15, 600)
     start_ceiling = float(a.get("maxStartC", 70))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    start_junction = float(a.get("maxStartJunctionC", 55))
+    # The owner chose a junction limit for arms on 2026-09-22. A Transformers
+    # boot took fixed silicon from 45.8 C to 81.5 C in seconds, so no arm can
+    # reach combat under the 72 C fixed-silicon stop. 95 C is the runtime
+    # junction limit. Restored combat reached 96 C in its first window, so a
+    # combat arm stops there. Rounds K to S ran to the app's abort at 97 C
+    # (thermal_abort_c). The limit for combat arms is not decided.
+    junction_limit = float(a.get("maxJunctionC", 95))
+    silicon_limit = a.get("maxSiliconC")
+    silicon_limit = float(silicon_limit) if silicon_limit is not None else None
     cool_timeout = _clamp(int(a.get("coolTimeoutS", 480)), 0, 900)
     host_limit = _clamp(float(a.get("maxHostS", 900)), 120.0, 1800.0)
     # Relative to the repository root, as for thor_screenshot.
@@ -1720,28 +1766,31 @@ def t_arm(a):
 
     out = {"arm": name, "props": props, "titleId": title, "tag": tag,
            "runDir": run_dir, "valid": False}
-    peak = {"c": -1.0}
+    peak = {"junction": -1, "silicon": -1.0}
     booted = False
 
     def budget(phase):
         if time.time() - started > host_limit:
             raise _ArmStop(f"the {host_limit:.0f} s host limit ended the arm before {phase}")
 
-    def silicon(phase):
-        s = fixed_silicon_c()
-        peak["c"] = max(peak["c"], s)
-        if s < 0:
-            raise _ArmStop("the fixed-silicon sensor domain is unavailable", thermalStop=True)
-        if s >= hard_limit:
-            raise _ArmStop(f"fixed silicon reached {s} C, at or above the {hard_limit} C hard "
+    def thermal(phase):
+        j, s = temp_c(), fixed_silicon_c()
+        peak["junction"] = max(peak["junction"], j)
+        peak["silicon"] = max(peak["silicon"], s)
+        if j < 0:
+            raise _ArmStop("the CPU-junction sensors are unavailable", thermalStop=True)
+        if j >= junction_limit:
+            raise _ArmStop(f"CPU junction reached {j} C, at or above the {junction_limit} C "
+                           f"limit, during {phase}", thermalStop=True, triggerJunctionC=j)
+        if silicon_limit is not None and (s < 0 or s >= silicon_limit):
+            raise _ArmStop(f"fixed silicon reached {s} C, at or above the {silicon_limit} C "
                            f"limit, during {phase}", thermalStop=True, triggerFixedSiliconC=s)
-        return s
 
     def watch(seconds, phase):
-        """Wait, and read fixed silicon every second while the guest runs."""
+        """Wait, and read the temperatures every second while the guest runs."""
         end = time.time() + seconds
         while True:
-            silicon(phase)
+            thermal(phase)
             left = end - time.time()
             if left <= 0:
                 return
@@ -1769,15 +1818,23 @@ def t_arm(a):
                 raise _ArmStop("the savestate byte counts differ; a short file loads another scene")
 
         budget("the cooldown")
-        waited, s = 0, fixed_silicon_c()
-        while (s < 0 or s >= start_ceiling) and waited < cool_timeout:
+
+        def too_warm():
+            s, j = fixed_silicon_c(), temp_c()
+            return (s < 0 or s >= start_ceiling or j < 0 or j >= start_junction), s, j
+
+        waited = 0
+        warm, s, j = too_warm()
+        while warm and waited < cool_timeout:
             time.sleep(5)
             waited += 5
-            s = fixed_silicon_c()
-        if s < 0 or s >= start_ceiling:
-            raise _ArmStop(f"fixed silicon stayed at or above {start_ceiling} C for {cool_timeout} s",
-                           fixedSiliconC=s)
-        out.update(startFixedSiliconC=s, startJunctionC=temp_c(), cooledS=waited,
+            warm, s, j = too_warm()
+        if warm:
+            raise _ArmStop(f"not below {start_ceiling} C fixed silicon and {start_junction} C "
+                           f"junction after {cool_timeout} s", fixedSiliconC=s, junctionC=j)
+        # Equal starts keep the arms comparable. The round script started below
+        # 55 C junction.
+        out.update(startFixedSiliconC=s, startJunctionC=j, cooledS=waited,
                    battery=sh("cat /sys/class/power_supply/battery/capacity").strip())
 
         sh("setprop debug.rpcsx.thor.thermal_abort_c 97")
@@ -1809,17 +1866,33 @@ def t_arm(a):
         out["firstFrameS"] = round(time.time() - boot_t, 1)
 
         if use_state:
-            loaded = 0
-            for attempt in range(1, 6):
+            # One request at a time. The load call can block while the reload
+            # runs, and a second request during a load is refused with "no
+            # compatible savestate" (2026-09-22). So a lost answer is checked
+            # against the core's own log line before another request is sent.
+            loaded, responses = None, []
+            for attempt in range(1, 4):
                 budget("the savestate load")
-                r = api("/loadstate", "POST", timeout=30)
+                r = api("/loadstate", "POST", timeout=60)
+                responses.append(r)
                 if isinstance(r, dict) and r.get("ok") is True:
-                    loaded = attempt
+                    loaded = "ok:true"
+                    break
+                if isinstance(r, dict) and r.get("ok") is False:
+                    watch(12, "the savestate load")
+                    continue
+                seen = api("/log?match=" + urllib.parse.quote(
+                    "Booting the most recent savestate", safe="") + "&n=1")
+                # Count the lines. The answer echoes the match text, so a
+                # text search of the whole answer always finds it.
+                if isinstance(seen, dict) and seen.get("lines"):
+                    loaded = "the core logged the reload; the answer was lost"
                     break
                 watch(12, "the savestate load")
+            out["loadResponses"] = responses
             if not loaded:
-                raise _ArmStop("loadstate never answered ok:true; a failed load measures a lighter scene")
-            out["loadAttempts"] = loaded
+                raise _ArmStop("the savestate did not load; a failed load measures a lighter scene")
+            out["load"] = loaded
 
         gate_t = time.time()
         while True:
@@ -1860,8 +1933,15 @@ def t_arm(a):
                 w["fps"] = None
             w["cores"] = round((j1 - j0) / 100.0 / dt, 3) if j0 is not None and j1 is not None else None
             void = []
-            if d0.get("thermalGuardEngaged") or d1.get("thermalGuardEngaged"):
-                void.append("the thermal guard was engaged")
+            # The in-app guard caps FPS while it is engaged (87 C, 30 FPS on
+            # 2026-09-22). Two arms once read exactly 20.00 FPS at an older
+            # cap. A window at the cap measures the guard. Below the cap, the
+            # guard limits nothing, and restored combat runs at about 94 C.
+            guard = bool(d0.get("thermalGuardEngaged") or d1.get("thermalGuardEngaged"))
+            cap = float(d1.get("thermalGuardCapFps") or d0.get("thermalGuardCapFps") or 0)
+            w["guardEngaged"] = guard
+            if guard and (not cap or (w["fps"] is not None and w["fps"] >= cap - 0.5)):
+                void.append(f"the thermal guard was engaged and FPS is at its {cap:g} FPS cap")
             if scene.get("videoDecoding"):
                 void.append("a movie was playing")
             if w["fps"] is None or w["cores"] is None:
@@ -1893,7 +1973,8 @@ def t_arm(a):
         for row in _nonempty_thor_properties():
             sh(f"setprop {row['name']} ''")
         out["propsLeft"] = _nonempty_thor_properties()
-        out["peakFixedSiliconC"] = peak["c"]
+        out["peakJunctionC"] = peak["junction"]
+        out["peakFixedSiliconC"] = peak["silicon"]
         out["endFixedSiliconC"] = fixed_silicon_c()
         out["hostS"] = round(time.time() - started, 1)
 
@@ -1906,7 +1987,7 @@ def t_arm(a):
     if len(good) != samples:
         problems.append(f"{len(good)} of {samples} windows are valid")
     if (out.get("log") or {}).get("fatalCount"):
-        problems.append("the log has fatal or guard lines")
+        problems.append("the log has fatal lines")
     if (out.get("shot") or {}).get("verdict") not in (None, "DRAWN"):
         problems.append("the screenshot is not drawn")
     out["valid"] = not problems
@@ -1981,7 +2062,7 @@ TOOLS = [
     ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
     ("thor_exit_game", "Exit the running game the way the home menu Exit Game does, releasing any process hold first. Reports when the core reached Stopped, when the game activity closed, and any self-join log lines. Follow with thor_boot sameProcess=true to test the next game in the same process.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}}}, t_exit_game),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
-    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. Stops at the fixed-silicon hard limit. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
+    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC fixed silicon and maxStartJunctionC junction, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. Stops at the CPU-junction limit maxJunctionC (95 C), not at the 72 C fixed-silicon limit of the other tools. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
         "name": {"type": "string", "description": "Arm name. Runs with the same name are grouped in the table."},
         "props": {"type": "object", "additionalProperties": {"type": "string"}, "description": "debug.rpcsx.thor.* property to value. Empty for a control arm."},
         "titleId": {"type": "string", "description": "Default BLUS30357."},
@@ -1993,8 +2074,10 @@ TOOLS = [
         "gateCores": {"type": "number", "description": "Scene gate on coresBusy. Default 4.5 (restored combat)."},
         "readyTimeoutS": {"type": "integer", "description": "Wait for the first frame. Default 420."},
         "gateTimeoutS": {"type": "integer", "description": "Wait for the scene gate. Default 150."},
-        "maxStartC": {"type": "number", "description": "Cold-start ceiling, fixed silicon. Default 70."},
-        "maxSiliconC": {"type": "number", "description": "Hard limit, fixed silicon. Default 72."},
+        "maxStartC": {"type": "number", "description": "Start ceiling, fixed silicon. Default 70."},
+        "maxStartJunctionC": {"type": "number", "description": "Start ceiling, CPU junction. Default 55, as the round script used."},
+        "maxJunctionC": {"type": "number", "description": "Hard stop, CPU junction. Default 95 (chosen by the owner on 2026-09-22)."},
+        "maxSiliconC": {"type": "number", "description": "Optional second hard stop, fixed silicon. No default: a Transformers boot passes 72 C."},
         "coolTimeoutS": {"type": "integer", "description": "Wait to cool below maxStartC. Default 480."},
         "maxHostS": {"type": "number", "description": "Host time limit for the arm, 120 to 1800 s. Default 900."},
         "runDir": {"type": "string", "description": "Directory for results. Default: a new debug-captures/<time>-mcp-ab."},

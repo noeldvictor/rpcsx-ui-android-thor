@@ -155,6 +155,10 @@ runtime codes stay listed but greyed out until native validation exists.
 
 ## Known issues
 
+- **Loading a savestate hung the game on the 2026-09-21 build.** Fixed
+  2026-09-22 and confirmed on the device. The game screen closed at the start
+  of the load, and the reloaded game waited for a screen that never came back.
+  Update to a build from 2026-09-22 or later.
 - **Launching a second game after closing the first can fail.** Cause found
   2026-09-21, fix in, confirmed on the device twice the same day. The Android
   `call_from_main_thread` ran the final stop callback on the stop thread

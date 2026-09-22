@@ -127,6 +127,18 @@ Obey these rules for it:
 
 ## Current PS3 State
 
+- 2026-09-22, savestate load: the 2026-09-21 build hung on each savestate
+  load. The finish-after-stop watcher, armed at boot since `2e82c6b6b`,
+  finished `RPCSXActivity` on `Stopping`. A load uses the Reload path, which
+  passes through Stopping and is Stopped for about 0.25 s before
+  `Emulator::Load` sets Loading. The surface was destroyed, and the reloaded
+  game logged `Still waiting for a Surface` until it was killed (logcat:
+  `wm_finish_activity ... RPCSXActivity,app-request` at the reload). The
+  watcher now finishes only after 2 s of Stopped (`STOP_SETTLE_MS`), and never
+  on Stopping; the OSD Exit Game still finishes at once. Confirmed on the device
+  the same day: `loadstate` answered `ok:true` on the first request and the
+  restored combat scene drew. `tools/test_thor_stop_watcher_settle.ps1` fails
+  on the old watcher.
 - 2026-09-21, app lifecycle: exit-then-relaunch is fixed at the cause and
   confirmed on the device twice. The Android `call_from_main_thread` ran each
   core callback on the calling thread and destroyed it there; the final
@@ -9113,7 +9125,8 @@ tested place. For each arm it does these steps:
 1. Stop the app, and clear every `debug.rpcsx.thor.*` property.
 2. Push the newest vault savestate while the app is stopped. Compare the
    byte counts.
-3. Cool below `maxStartC` (fixed silicon, 70 C).
+3. Cool below `maxStartC` (fixed silicon, 70 C) and below
+   `maxStartJunctionC` (CPU junction, 55 C, as the round script used).
 4. Set the arm's properties, and read each one back.
 5. Boot with the managed profile. The levers are properties because the
    profile rewrites the config at boot.
@@ -9122,11 +9135,31 @@ tested place. For each arm it does these steps:
 8. Score a screenshot.
 9. Sample the windows. FPS is the change of the frame counter over each
    window. Cores come from `/proc`.
-10. Pull the log, and count fatal and guard lines.
+10. Pull the log. Count the fatal lines, which make the arm invalid, and the
+    guard's `ENGAGED` lines, which do not.
 11. Stop, and clear the properties.
 
-Fixed silicon is read each second while the guest runs. At 72 C the arm stops
-and is not valid. Each result is added to `runDir/results.jsonl`.
+The temperatures are read each second while the guest runs. **The arm stops at
+95 C CPU junction (`maxJunctionC`), not at 72 C fixed silicon.** The owner chose
+this on 2026-09-22. The first arm stopped during the boot: fixed silicon went
+from 45.8 C to 81.5 C in seconds. So no Transformers arm can reach combat under
+the 72 C stop. Every other tool keeps the 72 C fixed-silicon stop.
+`maxSiliconC` adds a fixed-silicon stop to one arm.
+
+**A Transformers combat arm does not finish under 95 C.** On 2026-09-22 the
+third control arm loaded the savestate, passed the scene gate (6.28 cores, 1,476
+draws), and drew the combat scene. Junction then reached 96 C in the first
+sample window, and the arm stopped. The log's last two Frames lines read 21.40
+and 20.90 FPS, which agrees with round S (20.97). Rounds K to S ran to the
+app's own abort at 97 C (`thermal_abort_c`), not to 95 C. The limit for combat
+arms is open. The owner has not chosen yet. Do not raise `maxJunctionC` without
+that decision.
+
+The in-app guard engages at 87 C and caps the game at 30 FPS. A window is void
+only when the guard is on and the FPS is at its cap. Below the cap, the guard
+limits nothing.
+
+Each result is added to `runDir/results.jsonl`.
 
 Run the arms in ABBA order with the same `runDir`, then call `thor_ab_table`.
 The table gives each arm's FPS range over its valid runs, and a verdict against

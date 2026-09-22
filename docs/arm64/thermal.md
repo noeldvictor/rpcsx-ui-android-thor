@@ -17,6 +17,31 @@ set.
 The runtime guard is separate. It stops early at 70 C and keeps a 72 C hard
 silicon limit. The CPU-junction hard limit remains 95 C.
 
+## A Transformers boot passes 72 C fixed silicon in seconds
+
+Measured on 2026-09-22 with `thor_arm`, BLUS30357, device on the charger:
+
+| point | fixed silicon | notes |
+| --- | --- | --- |
+| before the boot | 45.8 C | junction 46 C |
+| boot, about 10 s after the start | 81.5 C | the stop was at this reading |
+| in-app guard | | engaged at 87 C junction, 8.7 s into the boot |
+| about one minute after the stop | 48.6 C | |
+
+The boot compile runs on all eight cores. So a continuous combat measurement
+cannot run under the 72 C fixed-silicon stop. The late-August slice route stayed
+at 67 to 69.5 C only because it held the process and cooled it between short
+slices.
+
+The owner decided on 2026-09-22: a `thor_arm` A/B arm stops at 95 C CPU
+junction. Every other tool keeps the 72 C fixed-silicon stop. An arm starts only
+below 70 C fixed silicon and 55 C junction.
+
+Restored Transformers combat passes 95 C junction too. The third control arm
+that day reached 96 C in its first sample window (fixed silicon peak 82.3 C) and
+stopped. Rounds K to S ran to the app's abort at 97 C (`thermal_abort_c 97`).
+The limit for combat arms is not decided.
+
 Do not use the `socd` thermal zone as a temperature. Qualcomm registers this
 zone through `qcom,msm-bcl-soc`, which is a battery state-of-charge sensor.
 The Thor reports it as a bare state value while its real CPU, GPU, DDR, and XO
