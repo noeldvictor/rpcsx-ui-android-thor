@@ -66,6 +66,85 @@ LOG_CHANNEL(jit_log, "JIT");
 #include "Emu/CPU/Backends/AArch64/AArch64Common.h"
 #endif
 
+#ifdef ANDROID
+#include <sys/mman.h>
+#include <unistd.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/MemAlloc.h>
+
+// Large LLVM container memory goes to mmap, not to Scudo.
+//
+// WHY. Android's malloc is Scudo. Scudo's primary allocator gives each size
+// class one region of 256 MB, fixed at build time, and its largest class is
+// 256 KB. So a process may hold at most about 1,024 live blocks of 256 KB,
+// whatever the free memory is. Blocks above 256 KB go to mmap and have no
+// cap. LLVM's DenseMap and StringMap grow their bucket arrays by powers of
+// two through llvm::allocate_buffer, so every large map passes through the
+// 256 KB class, and the JIT keeps each PPU object's tables alive. On
+// 2026-09-21 an Odin Sphere cold boot died at 1,022 live 256 KB blocks:
+// "Scudo OOM: The process has exhausted 256M for size class 262160", then
+// SIGABRT in the LLVM JIT thread, with gigabytes free
+// (docs/arm64/ppu-compile-oom.md).
+//
+// HOW. These two functions are LLVM's single choke point for container
+// memory (lib/Support/MemAlloc.cpp). LLVM is linked as a prebuilt archive,
+// and this object is linked before it, so the linker takes these
+// definitions and never pulls the archive's MemAlloc.o. If it did, the link
+// would fail on a duplicate symbol, which is visible; it cannot fail
+// silently. deallocate_buffer receives the size, so an mmap block is
+// returned by munmap with no header and no lookup. The threshold is 64 KB:
+// the classes at 64 KB, 128 KB and 256 KB have 4,096, 2,048 and 1,024
+// blocks each, and a growing map passes through all three.
+//
+// mmap returns page-aligned memory, which satisfies every alignment LLVM
+// asks for here. If an alignment above the page size ever arrives, the
+// request falls back to operator new, so correctness does not depend on
+// the threshold.
+namespace
+{
+	constexpr std::size_t k_llvm_mmap_threshold = 64 * 1024;
+
+	std::size_t llvm_page_size()
+	{
+		static const std::size_t page = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
+		return page;
+	}
+
+	bool llvm_buffer_uses_mmap(std::size_t size, std::size_t alignment)
+	{
+		return size >= k_llvm_mmap_threshold && alignment <= llvm_page_size();
+	}
+}
+
+LLVM_ATTRIBUTE_RETURNS_NONNULL LLVM_ATTRIBUTE_RETURNS_NOALIAS void*
+llvm::allocate_buffer(size_t Size, size_t Alignment)
+{
+	if (llvm_buffer_uses_mmap(Size, Alignment))
+	{
+		void* ptr = ::mmap(nullptr, Size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (ptr != MAP_FAILED)
+		{
+			return ptr;
+		}
+		// Out of address space or maps: report it the way LLVM would.
+		llvm::report_bad_alloc_error("Allocation failed");
+	}
+
+	return ::operator new(Size, std::align_val_t(Alignment));
+}
+
+void llvm::deallocate_buffer(void* Ptr, size_t Size, size_t Alignment)
+{
+	if (llvm_buffer_uses_mmap(Size, Alignment))
+	{
+		::munmap(Ptr, Size);
+		return;
+	}
+
+	::operator delete(Ptr, Size, std::align_val_t(Alignment));
+}
+#endif
+
 namespace
 {
 	thread_local std::string* g_llvm_fatal_message = nullptr;
