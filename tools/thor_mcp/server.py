@@ -74,39 +74,65 @@ def _resolve_adb():
 
 ADB = _resolve_adb()
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FALLBACK_SERIAL = "192.168.1.3:5555"
-
-
-def _resolve_serial():
-    """Find the Thor that adb can see now.
-
-    A fixed serial was wrong more often than right. The sessions used four:
-    USB c3ca0370, and 192.168.1.3, .33 and .5 over Wi-Fi. With the device on
-    USB, a hardcoded Wi-Fi serial made every tool report "device unreachable"
-    while the device was attached.
-
-    THOR_SERIAL wins when set. Otherwise take the one attached AYN Thor, then
-    the one attached device, then the old Wi-Fi default.
-    """
-    env = os.environ.get("THOR_SERIAL")
-    if env:
-        return env
+def adb_devices():
+    """The rows of `adb devices -l`, one dict per device."""
     try:
-        out = subprocess.run([ADB, "devices", "-l"], capture_output=True, timeout=20)
+        out = subprocess.run([ADB, "devices", "-l"], capture_output=True, timeout=20,
+                             stdin=subprocess.DEVNULL)
         text = out.stdout.decode("utf-8", "replace")
     except (OSError, subprocess.TimeoutExpired):
-        return FALLBACK_SERIAL
-    rows = [line.split() for line in text.splitlines()[1:]]
-    ready = [r for r in rows if len(r) >= 2 and r[1] == "device"]
-    thors = [r for r in ready if "model:AYN_Thor" in r]
-    if len(thors) == 1:
-        return thors[0][0]
-    if len(ready) == 1:
-        return ready[0][0]
-    return FALLBACK_SERIAL
+        return []
+    rows = []
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2:
+            rows.append({"serial": parts[0], "state": parts[1],
+                         "thor": "model:AYN_Thor" in parts,
+                         "usb": ":" not in parts[0] and not parts[0].startswith(("adb-", "emulator-"))})
+    return rows
 
 
-SERIAL = _resolve_serial()
+def _resolve_serial(current=None):
+    """Find the serial of the AYN Thor that adb can use now, or None.
+
+    A fixed serial was wrong more often than right. The sessions used four:
+    USB c3ca0370, and 192.168.1.3, .33 and .5 over Wi-Fi. Wireless debugging
+    also takes a new port each time it is turned on.
+
+    The rules:
+      * THOR_SERIAL, then ANDROID_SERIAL, wins when set.
+      * Keep the current serial while adb still lists it as a ready Thor.
+      * Otherwise take a ready Thor, USB first. The Thor is often on USB and
+        Wi-Fi at the same time.
+      * Select only a device whose model is AYN_Thor. The tools force-stop
+        apps and set properties, and another phone or an AVD must not get
+        those commands.
+      * Never return a serial that adb does not list.
+    """
+    env = os.environ.get("THOR_SERIAL") or os.environ.get("ANDROID_SERIAL")
+    if env:
+        return env
+    thors = [r for r in adb_devices() if r["state"] == "device" and r["thor"]]
+    serials = [r["serial"] for r in thors]
+    if current in serials:
+        return current
+    usb = [r["serial"] for r in thors if r["usb"]]
+    if usb:
+        return usb[0]
+    return serials[0] if serials else None
+
+
+# Found before each tool call, not at import: an import must not start adb.
+SERIAL = None
+
+
+def ensure_serial():
+    """Check the serial before each tool call. The device moves between USB
+    and Wi-Fi during a session, and a stale serial makes every adb command
+    answer empty. An empty answer looks like a stopped emulator."""
+    global SERIAL
+    SERIAL = _resolve_serial(SERIAL)
+    return SERIAL
 PORT = int(os.environ.get("THOR_CTRL_PORT", "8099"))
 PKG = "net.rpcsx.easy"
 FILES = f"/storage/emulated/0/Android/data/{PKG}/files"
@@ -127,6 +153,8 @@ _process_hold_pid = None
 def sh(cmd, timeout=120):
     """Run one adb shell command. MSYS_NO_PATHCONV stops Git Bash rewriting
     DEVICE paths into local ones, which fails with a confusing error."""
+    if not SERIAL:
+        return ""
     env = dict(os.environ, MSYS_NO_PATHCONV="1")
     try:
         out = subprocess.run([ADB, "-s", SERIAL, "shell", cmd],
@@ -137,6 +165,8 @@ def sh(cmd, timeout=120):
 
 
 def adb(args, timeout=300, binary=False):
+    if not SERIAL:
+        return b"" if binary else ""
     env = dict(os.environ, MSYS_NO_PATHCONV="1")
     out = subprocess.run([ADB, "-s", SERIAL] + args, capture_output=True,
                          timeout=timeout, env=env)
@@ -145,17 +175,9 @@ def adb(args, timeout=300, binary=False):
 
 def reachable():
     """An unreachable device answers empty exactly like a dead process, so this
-    is checked separately before any liveness claim.
-
-    The device moves between USB and Wi-Fi during a session. When the current
-    serial fails, find the serial again once before the answer is no."""
-    global SERIAL
-    if sh("echo ok", timeout=20).strip() == "ok":
-        return True
-    found = _resolve_serial()
-    if found == SERIAL:
+    is checked separately before any liveness claim."""
+    if not SERIAL and not ensure_serial():
         return False
-    SERIAL = found
     return sh("echo ok", timeout=20).strip() == "ok"
 
 
@@ -194,11 +216,22 @@ def api(path, method="GET", timeout=8):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             body = r.read().decode("utf-8", "replace")
     except (urllib.error.URLError, OSError, TimeoutError) as e:
-        return {"error": f"control API unreachable: {e}. Run: adb forward tcp:{PORT} tcp:{PORT}"}
+        return {"error": f"control API unreachable: {e}. {_api_down_cause()}"}
     try:
         return json.loads(body)
     except json.JSONDecodeError:
         return {"raw": body}
+
+
+def _api_down_cause():
+    """Say why the control API did not answer. The old text always said to run
+    adb forward, which is the wrong fix for a stopped or held process."""
+    p = pid()
+    if not p:
+        return f"The emulator process is not running (pidof {PKG} is empty)."
+    if _process_state(p) in ("T", "t"):
+        return "The emulator process is held with SIGSTOP, so the API cannot answer."
+    return f"Run: adb forward tcp:{PORT} tcp:{PORT}"
 
 
 def ensure_forward():
@@ -228,7 +261,8 @@ def proc_jiffies(p):
 def t_state(a):
     """Everything at once, so a caller does not stitch three calls together."""
     if not reachable():
-        return {"error": "device unreachable; an empty answer here is NOT a dead emulator"}
+        return {"error": "device unreachable; an empty answer here is NOT a dead emulator",
+                "serial": SERIAL, "adbDevices": adb_devices()}
     ensure_forward()
     p = pid()
     result = {
@@ -240,10 +274,21 @@ def t_state(a):
         "battery": sh("cat /sys/class/power_supply/battery/capacity").strip(),
     }
     if not p:
-        # With no process the control API cannot answer. Its error text says
-        # to run adb forward, which is the wrong fix here.
-        result["paused"] = False
-        result["emulator"] = f"not running: pidof {PKG} is empty"
+        # pidof can read empty while the app runs, during a respawn or after a
+        # timeout. So ask the control API before "not running" is said.
+        status = api("/status", timeout=3)
+        if isinstance(status, dict) and "error" not in status:
+            result["pidNote"] = "pidof read empty, but the control API answered"
+        else:
+            result["paused"] = False
+            result["emulator"] = "not running: pidof is empty and the control API does not answer"
+            return result
+    elif held_process_pid() == p:
+        # A SIGSTOP-held process cannot answer the API. A /pause sent now can
+        # run after the next continue and pause the next slice.
+        result["paused"] = True
+        result["holdMode"] = "process"
+        result["emulator"] = "held with SIGSTOP; the control API answers after the process continues"
         return result
     result["paused"] = hold(a, default=a.get("pause", True))
     result["status"] = api("/status")
@@ -457,7 +502,10 @@ def t_press(a):
     r = api(f"/pad/press?buttons={a['buttons']}&ms={int(a.get('ms', 150))}",
             "POST", timeout=1.0)
     if isinstance(r, dict) and r.get("error"):
-        process_hold = stop_process_for_slice(p) if p else None
+        # Put the process back the way it was found. Hold it only when it was
+        # paused before and the caller did not ask for rePause=false.
+        process_hold = (stop_process_for_slice(p)
+                        if p and was_paused and a.get("rePause", True) else None)
         return {"error": "the guarded pad press was not acknowledged",
                 "press": r, "wasPaused": was_paused, "resume": resume,
                 "processHold": process_hold,
@@ -649,10 +697,14 @@ def hold(a, default=True):
     makes an observation mean anything.
 
     Pass pause=false when you deliberately want a live reading.
+
+    Return the paused state that /pause reports, not True for a pause that was
+    only sent. A pause can fail, for example with the core stopped at the game
+    list.
     """
     if a.get("pause", default):
-        api("/pause", "POST")
-        return True
+        r = api("/pause", "POST")
+        return bool(isinstance(r, dict) and r.get("paused"))
     return False
 
 
@@ -1333,18 +1385,24 @@ def t_screenshot(a):
     p = pid()
     process_held = bool(p) and held_process_pid() == p
     paused = True if process_held else hold(a)
-    # The repository root, not the current directory: a server started from
-    # the workspace root must not write outside the repository.
-    out = a.get("path") or os.path.join(REPO_ROOT, "thor_shot.png")
+    # Resolve against the repository root, not the current directory. The
+    # server starts from the workspace root or from the repository, and the
+    # same argument must give the same file.
+    out = os.path.join(REPO_ROOT, a.get("path") or "thor_shot.png")
     data = adb(["exec-out", "screencap", "-p"], binary=True)
     if len(data) < 1024:
         return {"error": f"screencap returned {len(data)} bytes"}
     with open(out, "wb") as f:
         f.write(data)
+    if paused:
+        hold_mode = "process" if process_held else "emulator"
+        note = ("still PAUSED; the picture stays true until you resume. "
+                "thor_press resumes for you and re-pauses after.")
+    else:
+        hold_mode = None
+        note = "LIVE capture; the emulator runs on, so the scene may have changed."
     result = {"path": out, "bytes": len(data), "paused": paused,
-              "holdMode": "process" if process_held else "emulator",
-              "note": "still PAUSED; the picture stays true until you resume. "
-                      "thor_press resumes for you and re-pauses after."}
+              "holdMode": hold_mode, "note": note}
     if not process_held:
         result["scene"] = api("/scene")
     return result
@@ -1472,6 +1530,11 @@ def t_stop(_):
     with the app back at 542% CPU while pidof had read empty."""
     global _process_hold_pid
     _process_hold_pid = None
+    # An unreachable device answers empty, and an empty pidof and an empty top
+    # read as quiet. Never report quiet for a device this call cannot reach.
+    if not reachable():
+        return {"quiet": False, "serial": SERIAL, "adbDevices": adb_devices(),
+                "error": "device unreachable; nothing was stopped, and the emulator may still run"}
     for _ in range(5):
         sh(f"am force-stop {PKG}")
         p = pid()
@@ -1484,9 +1547,420 @@ def t_stop(_):
     # Confirm with top, not pidof. An unreachable device and a dead process both
     # answer empty, and a respawn refills the pid a second later.
     busy = sh("top -b -n 2 -d 2 -o %CPU 2>/dev/null | grep -ci rpcsx").strip()
+    still_reachable = reachable()
     return {"pid": pid() or None, "rpcsxRowsInTop": busy,
-            "quiet": (not pid()) and busy in ("0", ""),
+            # grep -c prints 0 when nothing matches. Empty means top failed.
+            "quiet": still_reachable and (not pid()) and busy == "0",
+            "reachable": still_reachable,
             "note": "quiet means top agrees, not just pidof"}
+
+
+# --------------------------------------------------------------------------
+# A/B arms
+# --------------------------------------------------------------------------
+# thor_arm is the loop of tools/thor_transformers_diag_round.sh, which gave
+# rounds K to S, moved into one tested place. Each step below is there because
+# a number was wrong without it:
+#
+#   * a FRESH PROCESS per arm: each debug.rpcsx.thor.* property is read once
+#     into a static for the life of the process;
+#   * levers are PROPERTIES, not config: the managed profile rewrites the
+#     per-title config at boot, and a boot without the managed profile applies
+#     no profile at all (a 6.24 FPS "control" against a true 18.4);
+#   * the savestate is pushed while the app is STOPPED (a running app held the
+#     slot open: 123821207 bytes sent, 28180480 on the device);
+#   * loadstate must answer ok:true: a failed load measures a lighter scene at
+#     about 29 FPS;
+#   * the scene gate is coresBusy above 4.5 with no movie: pressing through
+#     cutscenes gave 3.78 and 5.89 cores for one configuration;
+#   * the lever is read back off the device before the boot;
+#   * the log is read for fatal lines before a number is believed.
+#
+# FPS is the frame counter's change over the window, not a point reading.
+TITLE_ISOS = {
+    "BLUS30357": "/storage/2664-21DE/Roms/ps3/Transformers War for Cybertron.iso",
+}
+VAULT = os.path.join(REPO_ROOT, "debug-captures", "savestates")
+FATAL_RE = re.compile(r"fatal error|Dead FIFO|Access violation|SPU trap|ENGAGED|thermal abort", re.I)
+PROP_NAME_RE = re.compile(r"debug\.rpcsx\.thor\.[A-Za-z0-9_.]+")
+PROP_VALUE_RE = re.compile(r"[A-Za-z0-9_.:,+-]*")
+
+
+class _ArmStop(Exception):
+    """End an arm early. The fields say why. The arm is then not valid."""
+
+    def __init__(self, reason, **fields):
+        super().__init__(reason)
+        self.fields = dict(reason=reason, **fields)
+
+
+def _clamp(value, low, high):
+    return max(low, min(value, high))
+
+
+def _device():
+    d = api("/device")
+    return d.get("device", {}) if isinstance(d, dict) else {}
+
+
+def _scene():
+    s = api("/scene")
+    return s if isinstance(s, dict) else {}
+
+
+def _vault_file(title, name=None):
+    """The newest vault savestate for a title, as tools/thor_savestate_vault.sh
+    picks it, or the named file."""
+    folder = os.path.join(VAULT, title)
+    if name:
+        path = name if os.path.isabs(name) else os.path.join(folder, name)
+        return path if os.path.isfile(path) else None
+    try:
+        files = [os.path.join(folder, f) for f in os.listdir(folder)
+                 if f.endswith(".SAVESTAT.zst")]
+    except OSError:
+        return None
+    return max(files, key=os.path.getmtime) if files else None
+
+
+def _push_savestate(title, local):
+    """Push a vault savestate into the app's slot. The app must be STOPPED.
+
+    Shell cannot create files in the app's directory, so the file goes to
+    /data/local/tmp and the app's own uid copies it. The old slot is removed
+    first: a failed push once passed the byte check because the device still
+    held a good copy."""
+    folder = f"{FILES}/config/savestates/{title}"
+    dst = f"{folder}/{title}_1_0.SAVESTAT.zst"
+    stage = f"/data/local/tmp/thor_ss_{title}.zst"
+    sh(f"mkdir -p {folder}; run-as {PKG} rm -f {dst}")
+    adb(["push", local, stage], timeout=600)
+    sh(f"run-as {PKG} cp {stage} {dst}; rm -f {stage}", timeout=180)
+    local_n = os.path.getsize(local)
+    # stat and wc fail on this path for shell; field 5 of ls -l works.
+    fields = sh(f"ls -l {dst} 2>/dev/null").split()
+    dev_n = int(fields[4]) if len(fields) > 4 and fields[4].isdigit() else -1
+    return {"file": os.path.basename(local), "localBytes": local_n,
+            "deviceBytes": dev_n, "match": local_n == dev_n}
+
+
+def _score_shot(path):
+    """A black frame is about 29 KB with about 160 colours. A drawn combat frame
+    is about 2 MB with more than 16,000."""
+    size = os.path.getsize(path) if os.path.isfile(path) else 0
+    colours = None
+    try:
+        from PIL import Image
+        im = Image.open(path).convert("RGB")
+        im = im.resize((max(1, im.width // 4), max(1, im.height // 4)))
+        colours = len(set(im.getdata()))
+    except Exception:
+        pass
+    drawn = size > 300000 or (colours or 0) > 4000
+    return {"bytes": size, "colours": colours, "verdict": "DRAWN" if drawn else "BLANK?"}
+
+
+def _summarize_log(path, match=None):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {"missing": True}
+    fatal = [line[-200:] for line in lines if FATAL_RE.search(line)]
+    levers = [line.split("Thor:", 1)[1].strip()[:160] for line in lines
+              if "Thor:" in line and any(k in line for k in ("forced", "set to", "ignoring", "applied"))]
+    frames = [line[line.index("Frames:"):][:300] for line in lines if "Frames:" in line]
+    out = {"path": path, "lines": len(lines), "fatalCount": len(fatal), "fatal": fatal[:6],
+           "levers": levers[:12], "framesLines": len(frames), "lastFrames": frames[-3:]}
+    if match:
+        rx = re.compile(match)
+        hits = [line[-200:] for line in lines if rx.search(line)]
+        out["match"] = {"pattern": match, "count": len(hits), "last": hits[-3:]}
+    return out
+
+
+def _stats(values):
+    values = [v for v in values if isinstance(v, (int, float))]
+    if not values:
+        return None
+    return {"mean": round(sum(values) / len(values), 2), "min": round(min(values), 2),
+            "max": round(max(values), 2), "n": len(values)}
+
+
+def t_arm(a):
+    """Run ONE A/B arm from a clean start, and return its numbers and evidence."""
+    started = time.time()
+    name = str(a.get("name") or "arm")
+    props = {str(k): str(v) for k, v in (a.get("props") or {}).items()}
+    title = str(a.get("titleId", "BLUS30357"))
+    iso = a.get("isoPath") or TITLE_ISOS.get(title)
+    if not iso:
+        return {"refused": True, "reason": f"no isoPath given, and no default for {title}"}
+    for k, v in props.items():
+        if not PROP_NAME_RE.fullmatch(k):
+            return {"refused": True, "reason": f"{k} is not a debug.rpcsx.thor property. "
+                    "Arms are properties: the managed profile rewrites the config at boot."}
+        if not PROP_VALUE_RE.fullmatch(v):
+            return {"refused": True, "reason": f"value {v!r} for {k} has characters a shell would change"}
+    use_state = bool(a.get("savestate", True))
+    play_s = _clamp(float(a.get("playS", 60)), 10.0, 300.0)
+    samples = int(_clamp(int(a.get("samples", 3)), 1, 10))
+    gate_cores = float(a.get("gateCores", 4.5))
+    ready_timeout = _clamp(int(a.get("readyTimeoutS", 420)), 30, 900)
+    gate_timeout = _clamp(int(a.get("gateTimeoutS", 150)), 15, 600)
+    start_ceiling = float(a.get("maxStartC", 70))
+    hard_limit = float(a.get("maxSiliconC", 72))
+    cool_timeout = _clamp(int(a.get("coolTimeoutS", 480)), 0, 900)
+    host_limit = _clamp(float(a.get("maxHostS", 900)), 120.0, 1800.0)
+    # Relative to the repository root, as for thor_screenshot.
+    run_dir = os.path.join(REPO_ROOT, a.get("runDir") or os.path.join(
+        "debug-captures", time.strftime("%Y%m%d-%H%M%S") + "-mcp-ab"))
+    os.makedirs(run_dir, exist_ok=True)
+    tag = time.strftime("%H%M%S") + "-" + re.sub(r"[^A-Za-z0-9_.-]", "_", name)[:40]
+
+    out = {"arm": name, "props": props, "titleId": title, "tag": tag,
+           "runDir": run_dir, "valid": False}
+    peak = {"c": -1.0}
+    booted = False
+
+    def budget(phase):
+        if time.time() - started > host_limit:
+            raise _ArmStop(f"the {host_limit:.0f} s host limit ended the arm before {phase}")
+
+    def silicon(phase):
+        s = fixed_silicon_c()
+        peak["c"] = max(peak["c"], s)
+        if s < 0:
+            raise _ArmStop("the fixed-silicon sensor domain is unavailable", thermalStop=True)
+        if s >= hard_limit:
+            raise _ArmStop(f"fixed silicon reached {s} C, at or above the {hard_limit} C hard "
+                           f"limit, during {phase}", thermalStop=True, triggerFixedSiliconC=s)
+        return s
+
+    def watch(seconds, phase):
+        """Wait, and read fixed silicon every second while the guest runs."""
+        end = time.time() + seconds
+        while True:
+            silicon(phase)
+            left = end - time.time()
+            if left <= 0:
+                return
+            time.sleep(min(1.0, left))
+
+    try:
+        if not reachable():
+            raise _ArmStop("device unreachable")
+
+        stop = t_stop({})
+        if not stop.get("quiet"):
+            raise _ArmStop("the emulator did not stop before the arm", stop=stop)
+        leftovers = _nonempty_thor_properties()
+        for row in leftovers:
+            sh(f"setprop {row['name']} ''")
+        out["clearedBefore"] = leftovers
+
+        if use_state:
+            local = _vault_file(title, a.get("savestateFile"))
+            if not local:
+                raise _ArmStop(f"no savestate for {title} in {VAULT}")
+            push = _push_savestate(title, local)
+            out["savestate"] = push
+            if not push["match"]:
+                raise _ArmStop("the savestate byte counts differ; a short file loads another scene")
+
+        budget("the cooldown")
+        waited, s = 0, fixed_silicon_c()
+        while (s < 0 or s >= start_ceiling) and waited < cool_timeout:
+            time.sleep(5)
+            waited += 5
+            s = fixed_silicon_c()
+        if s < 0 or s >= start_ceiling:
+            raise _ArmStop(f"fixed silicon stayed at or above {start_ceiling} C for {cool_timeout} s",
+                           fixedSiliconC=s)
+        out.update(startFixedSiliconC=s, startJunctionC=temp_c(), cooledS=waited,
+                   battery=sh("cat /sys/class/power_supply/battery/capacity").strip())
+
+        sh("setprop debug.rpcsx.thor.thermal_abort_c 97")
+        for k, v in props.items():
+            sh(f"setprop {k} '{v}'")
+        readback = {k: sh(f"getprop {k}").strip() for k in props}
+        out["readback"] = readback
+        if any(readback[k] != props[k] for k in props):
+            raise _ArmStop("a property did not read back as set", expected=props)
+
+        budget("the boot")
+        sh(f"rm -f {FILES}/cache/RPCSX.log; logcat -c; input keyevent KEYCODE_WAKEUP; "
+           "svc power stayon true")
+        sh(f"am start -a net.rpcsx.THOR_DEBUG_BOOT -n {PKG}/net.rpcsx.MainActivity "
+           f"--es path '{iso}' --es titleId {title} --es thorDebugBootRequestId mcp-arm "
+           f"--ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true")
+        booted = True
+        ensure_forward()
+        boot_t = time.time()
+        while True:
+            budget("the first frame")
+            watch(5, "the boot")
+            if time.time() - boot_t > 15 and not pid():
+                raise _ArmStop("the process ended during the boot")
+            if float(_device().get("fps") or 0) > 0:
+                break
+            if time.time() - boot_t > ready_timeout:
+                raise _ArmStop(f"no frame in {ready_timeout} s")
+        out["firstFrameS"] = round(time.time() - boot_t, 1)
+
+        if use_state:
+            loaded = 0
+            for attempt in range(1, 6):
+                budget("the savestate load")
+                r = api("/loadstate", "POST", timeout=30)
+                if isinstance(r, dict) and r.get("ok") is True:
+                    loaded = attempt
+                    break
+                watch(12, "the savestate load")
+            if not loaded:
+                raise _ArmStop("loadstate never answered ok:true; a failed load measures a lighter scene")
+            out["loadAttempts"] = loaded
+
+        gate_t = time.time()
+        while True:
+            budget("the scene gate")
+            watch(5, "the scene gate")
+            cores = float(_device().get("coresBusy") or 0)
+            scene = _scene()
+            no_movie = scene.get("videoDecoding") is False and scene.get("videoFilesOpen") == 0
+            if cores > gate_cores and no_movie:
+                break
+            if not pid():
+                raise _ArmStop("the process ended before the scene gate")
+            if time.time() - gate_t > gate_timeout:
+                raise _ArmStop(f"not in the measured scene after {gate_timeout} s: coresBusy "
+                               f"{cores}, gate {gate_cores}", scene=scene)
+        out.update(gateS=round(time.time() - gate_t, 1), gateCoresBusy=cores,
+                   drawsLastFrame=scene.get("drawsLastFrame"))
+
+        shot = os.path.join(run_dir, f"scene_{tag}.png")
+        with open(shot, "wb") as f:
+            f.write(adb(["exec-out", "screencap", "-p"], binary=True, timeout=60))
+        out["shot"] = dict(path=shot, **_score_shot(shot))
+
+        windows = []
+        for i in range(samples):
+            budget("a sample window")
+            p = pid()
+            d0, j0, t0 = _device(), proc_jiffies(p) if p else None, time.time()
+            watch(play_s / samples, "a sample window")
+            d1, j1, t1 = _device(), proc_jiffies(p) if p else None, time.time()
+            scene = _scene()
+            dt = t1 - t0
+            w = {"i": i + 1, "seconds": round(dt, 1), "fpsPoint": d1.get("fps"),
+                 "junctionC": d1.get("cpuJunctionC"), "fixedSiliconC": fixed_silicon_c()}
+            try:
+                w["fps"] = round((int(d1["frames"]) - int(d0["frames"])) / dt, 2)
+            except (KeyError, TypeError, ValueError):
+                w["fps"] = None
+            w["cores"] = round((j1 - j0) / 100.0 / dt, 3) if j0 is not None and j1 is not None else None
+            void = []
+            if d0.get("thermalGuardEngaged") or d1.get("thermalGuardEngaged"):
+                void.append("the thermal guard was engaged")
+            if scene.get("videoDecoding"):
+                void.append("a movie was playing")
+            if w["fps"] is None or w["cores"] is None:
+                void.append("a counter was missing")
+            alive = pid() == p and bool(p)
+            if not alive:
+                void.append("the process ended")
+            w["void"] = "; ".join(void) or None
+            windows.append(w)
+            if not alive:
+                out["windows"] = windows
+                raise _ArmStop("the process ended during a sample window")
+        out["windows"] = windows
+    except _ArmStop as e:
+        out.update(e.fields)
+    except Exception as e:  # the stop below must still run
+        out["reason"] = f"{type(e).__name__}: {e}"
+    finally:
+        if booted:
+            log_path = os.path.join(run_dir, f"RPCSX_{tag}.log")
+            try:
+                data = adb(["exec-out", f"cat {FILES}/cache/RPCSX.log"], binary=True, timeout=300)
+                with open(log_path, "wb") as f:
+                    f.write(data)
+                out["log"] = _summarize_log(log_path, a.get("logMatch"))
+            except Exception as e:
+                out["log"] = {"error": f"{type(e).__name__}: {e}"}
+        out["stop"] = t_stop({})
+        for row in _nonempty_thor_properties():
+            sh(f"setprop {row['name']} ''")
+        out["propsLeft"] = _nonempty_thor_properties()
+        out["peakFixedSiliconC"] = peak["c"]
+        out["endFixedSiliconC"] = fixed_silicon_c()
+        out["hostS"] = round(time.time() - started, 1)
+
+    good = [w for w in out.get("windows", []) if not w["void"]]
+    out["fps"] = _stats([w["fps"] for w in good])
+    out["cores"] = _stats([w["cores"] for w in good])
+    problems = []
+    if "reason" in out:
+        problems.append(out["reason"])
+    if len(good) != samples:
+        problems.append(f"{len(good)} of {samples} windows are valid")
+    if (out.get("log") or {}).get("fatalCount"):
+        problems.append("the log has fatal or guard lines")
+    if (out.get("shot") or {}).get("verdict") not in (None, "DRAWN"):
+        problems.append("the screenshot is not drawn")
+    out["valid"] = not problems
+    out["problems"] = problems
+    try:
+        with open(os.path.join(run_dir, "results.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(out) + "\n")
+    except OSError as e:
+        out["resultsWriteError"] = str(e)
+    return out
+
+
+def t_ab_table(a):
+    """Build the A/B table for a run directory from its results.jsonl."""
+    if not a.get("runDir"):
+        return {"refused": True, "reason": "runDir is required"}
+    run_dir = os.path.join(REPO_ROOT, a["runDir"])
+    try:
+        with open(os.path.join(run_dir, "results.jsonl"), encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    except OSError as e:
+        return {"error": f"no results in {run_dir}: {e}"}
+    order, arms = [], {}
+    for r in rows:
+        if r["arm"] not in arms:
+            order.append(r["arm"])
+            arms[r["arm"]] = {"fps": [], "cores": [], "invalid": []}
+        if r.get("valid") and r.get("fps"):
+            arms[r["arm"]]["fps"].append(r["fps"]["mean"])
+            arms[r["arm"]]["cores"].append((r.get("cores") or {}).get("mean"))
+        else:
+            arms[r["arm"]]["invalid"].append({"tag": r.get("tag"), "problems": r.get("problems")})
+    control = a.get("control") or order[0]
+    if control not in arms:
+        return {"error": f"no arm named {control}", "arms": order}
+    c = _stats(arms[control]["fps"])
+    table = []
+    for name in order:
+        fps = _stats(arms[name]["fps"])
+        row = {"arm": name, "fps": fps, "cores": _stats(arms[name]["cores"]),
+               "runs": arms[name]["fps"], "invalid": arms[name]["invalid"]}
+        if name != control and fps and c:
+            row["fpsVsControlPct"] = round(100.0 * (fps["mean"] - c["mean"]) / c["mean"], 1)
+            overlap = not (fps["min"] > c["max"] or fps["max"] < c["min"])
+            if fps["n"] < 2 or c["n"] < 2:
+                row["verdict"] = "not shown: n=1. Never quote n=1."
+            elif overlap:
+                row["verdict"] = "not shown: the ranges overlap"
+            else:
+                row["verdict"] = "shown: the ranges do not overlap"
+        table.append(row)
+    return {"runDir": run_dir, "control": control, "table": table,
+            "note": "a restored savestate varies about +/-5 percent in one configuration; "
+                    "a smaller difference is not a result"}
 
 
 TOOLS = [
@@ -1507,6 +1981,27 @@ TOOLS = [
     ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
     ("thor_exit_game", "Exit the running game the way the home menu Exit Game does, releasing any process hold first. Reports when the core reached Stopped, when the game activity closed, and any self-join log lines. Follow with thor_boot sameProcess=true to test the next game in the same process.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}}}, t_exit_game),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
+    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. Stops at the fixed-silicon hard limit. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
+        "name": {"type": "string", "description": "Arm name. Runs with the same name are grouped in the table."},
+        "props": {"type": "object", "additionalProperties": {"type": "string"}, "description": "debug.rpcsx.thor.* property to value. Empty for a control arm."},
+        "titleId": {"type": "string", "description": "Default BLUS30357."},
+        "isoPath": {"type": "string", "description": "Device path of the disc image. Known for BLUS30357."},
+        "savestate": {"type": "boolean", "description": "Default true: push and load the newest vault savestate."},
+        "savestateFile": {"type": "string", "description": "A vault file name, instead of the newest."},
+        "playS": {"type": "number", "description": "Measured seconds, 10 to 300. Default 60."},
+        "samples": {"type": "integer", "description": "Windows in playS, 1 to 10. Default 3."},
+        "gateCores": {"type": "number", "description": "Scene gate on coresBusy. Default 4.5 (restored combat)."},
+        "readyTimeoutS": {"type": "integer", "description": "Wait for the first frame. Default 420."},
+        "gateTimeoutS": {"type": "integer", "description": "Wait for the scene gate. Default 150."},
+        "maxStartC": {"type": "number", "description": "Cold-start ceiling, fixed silicon. Default 70."},
+        "maxSiliconC": {"type": "number", "description": "Hard limit, fixed silicon. Default 72."},
+        "coolTimeoutS": {"type": "integer", "description": "Wait to cool below maxStartC. Default 480."},
+        "maxHostS": {"type": "number", "description": "Host time limit for the arm, 120 to 1800 s. Default 900."},
+        "runDir": {"type": "string", "description": "Directory for results. Default: a new debug-captures/<time>-mcp-ab."},
+        "logMatch": {"type": "string", "description": "A regular expression to count in the log, for example a lever's counter line."}}}, t_arm),
+    ("thor_ab_table", "Build the A/B table from runDir/results.jsonl: per arm the FPS and cores over its valid runs, the change against the control, and a verdict. Overlapping ranges, or n=1, is 'not shown'.", {"type": "object", "properties": {
+        "runDir": {"type": "string"},
+        "control": {"type": "string", "description": "Control arm name. Default: the first arm run."}}, "required": ["runDir"]}, t_ab_table),
 ]
 HANDLERS = {name: fn for name, _, _, fn in TOOLS}
 
@@ -1546,6 +2041,7 @@ def main():
                 send({"jsonrpc": "2.0", "id": rid,
                       "error": {"code": -32601, "message": f"no tool {params.get('name')}"}})
                 continue
+            ensure_serial()
             try:
                 out = fn(params.get("arguments") or {})
             except Exception as e:  # a crash here must not kill the server
@@ -1561,7 +2057,11 @@ def main():
             # So every tool answers with the temperature and, when it is high,
             # says what to do about it. A number nobody asked for is the only
             # kind that gets seen in time.
-            if isinstance(out, dict):
+            if isinstance(out, dict) and not SERIAL:
+                out["NO_DEVICE"] = ("adb lists no ready AYN Thor, so nothing was read or "
+                                    "stopped. Connect it, then call again.")
+                out["adbDevices"] = adb_devices()
+            elif isinstance(out, dict):
                 junction = temp_c()
                 silicon = fixed_silicon_c()
                 out["cpuJunctionC"] = junction

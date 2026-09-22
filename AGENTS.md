@@ -9047,11 +9047,12 @@ whole time.
 
 # The `thor` MCP server: typed tools instead of a hand-written harness
 
-**Built 2026-08-23.** `tools/thor_mcp/server.py`. On 2026-09-22 it has 17
+**Built 2026-08-23.** `tools/thor_mcp/server.py`. On 2026-09-22 it has 19
 tools: `thor_state`, `thor_cooldown`, `thor_boot`, `thor_wait_ready`,
 `thor_press`, `thor_pause`, `thor_resume`, `thor_slice`, `thor_slice_loop`,
 `thor_wait_cool_paused`, `thor_screenshot`, `thor_sample`, `thor_log`,
-`thor_setprop`, `thor_clearprops`, `thor_exit_game`, `thor_stop`.
+`thor_setprop`, `thor_clearprops`, `thor_exit_game`, `thor_stop`, `thor_arm`,
+`thor_ab_table`.
 
 ## Use the tools. The session logs show that they were not used.
 
@@ -9076,8 +9077,12 @@ The server was not loaded, for three reasons:
 2. **The serial was fixed at `192.168.1.3:5555`.** The sessions used four
    serials: USB `c3ca0370`, and `192.168.1.3`, `.33` and `.5` over Wi-Fi. With
    the device on USB, every tool reported "device unreachable". Since 2026-09-22
-   the server finds the attached AYN Thor itself. It finds the serial again when
-   a call fails. `THOR_SERIAL` still overrides it.
+   the server checks the serial before each tool call. It keeps the current
+   serial while adb lists it. Otherwise it takes a ready AYN Thor, USB first.
+   It never selects another model, and never a serial that adb does not list.
+   `THOR_SERIAL`, then `ANDROID_SERIAL`, overrides it. With no Thor listed,
+   each answer has `NO_DEVICE` and the adb device list, and `thor_stop` does
+   not report `quiet`.
 3. **Codex has no MCP entry for this server.** Codex uses `call.py`, which runs
    the same code:
 
@@ -9099,19 +9104,49 @@ Rules:
   paused the emulator. `call.py` sends raw JSON, so it hid the defect. Run
   `python tools/test_thor_mcp_schema.py` after each change to `server.py`.
 
+## Run an A/B with `thor_arm` and `thor_ab_table`
+
+`thor_arm` runs one arm from a clean start. It is the loop of
+`tools/thor_transformers_diag_round.sh`, which gave rounds K to S, in one
+tested place. For each arm it does these steps:
+
+1. Stop the app, and clear every `debug.rpcsx.thor.*` property.
+2. Push the newest vault savestate while the app is stopped. Compare the
+   byte counts.
+3. Cool below `maxStartC` (fixed silicon, 70 C).
+4. Set the arm's properties, and read each one back.
+5. Boot with the managed profile. The levers are properties because the
+   profile rewrites the config at boot.
+6. Wait for a frame, and load the savestate. `ok:true` is required.
+7. Wait until `coresBusy` is above `gateCores` (4.5) with no movie.
+8. Score a screenshot.
+9. Sample the windows. FPS is the change of the frame counter over each
+   window. Cores come from `/proc`.
+10. Pull the log, and count fatal and guard lines.
+11. Stop, and clear the properties.
+
+Fixed silicon is read each second while the guest runs. At 72 C the arm stops
+and is not valid. Each result is added to `runDir/results.jsonl`.
+
+Run the arms in ABBA order with the same `runDir`, then call `thor_ab_table`.
+The table gives each arm's FPS range over its valid runs, and a verdict against
+the control. n=1 or overlapping ranges is "not shown".
+
+```sh
+# Codex, or a shell: one arm per call. A Transformers arm takes 5 to 10 minutes.
+THOR_CALL_TIMEOUT=1500 THOR_CALL_ARGS='{"name":"control","props":{},"runDir":"debug-captures/ab1"}'   python tools/thor_mcp/call.py thor_arm
+THOR_CALL_ARGS='{"runDir":"debug-captures/ab1"}' python tools/thor_mcp/call.py thor_ab_table
+```
+
 ## What the server does not do yet
 
 The logs name the device work that has no tool. These are the next tools to
 add, in order of the number of hand-written commands they replace:
 
-1. **An A/B arm runner.** Set the properties of each arm, boot, wait for the
-   scene, sample N windows, read the `Frames` line, stop, cool, and repeat in
-   ABBA order. Return one table with each window. Each Transformers round from
-   K to S was this loop, written by hand.
-2. **An install tool.** Install the APK or push a dev core, then check that the
+1. **An install tool.** Install the APK or push a dev core, then check that the
    build that runs is the build that was installed (`Using Thor dev core
    override` in logcat). The logs hold 379 hand-written install commands.
-3. **A profile tool.** Run `simpleperf` for a fixed window under the same
+2. **A profile tool.** Run `simpleperf` for a fixed window under the same
    refusals as `thor_sample`, pull the report, and return the top symbols.
 
 **It exists because the LOOP was the defect, not the primitives.** Every harness

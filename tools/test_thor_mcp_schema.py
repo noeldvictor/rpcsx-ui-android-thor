@@ -6,9 +6,12 @@ An MCP client sends only the arguments that a tool's inputSchema declares. On
 dropped `"pause": false` and the tool paused the emulator anyway. `call.py`
 passes raw JSON, so it hid the defect.
 
-This test reads the source of each tool handler, and of the helpers it calls
-with the argument dict, and fails when a key read with `a.get("KEY")` is not in
-the schema.
+The test reads the source of each tool handler. It also reads each helper that
+the handler calls with the argument dict `a`. It finds each key read as
+`a.get("KEY")`, `a.get('KEY')`, `a["KEY"]` or `a['KEY']`. It fails when a key
+is not in the tool's schema.
+
+Limit: a helper that takes the dict under another name is not read.
 """
 import inspect
 import os
@@ -18,7 +21,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "thor_mcp"))
 import server  # noqa: E402
 
-KEY = re.compile(r'\ba\.get\(\s*"([A-Za-z_][A-Za-z0-9_]*)"')
+KEY = re.compile(r"""\ba(?:\.get\(\s*|\[\s*)["']([A-Za-z_][A-Za-z0-9_]*)["']""")
 CALL_WITH_ARGS = re.compile(r'\b([A-Za-z_][A-Za-z0-9_]*)\(\s*a\b')
 
 
