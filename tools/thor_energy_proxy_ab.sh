@@ -40,7 +40,7 @@
 # distribution" is a fair question for it. Do not use it to decide a default, and
 # do not read its nulls as evidence. This file exists as the record of an
 # instrument that was checked before it was trusted, which is the rule that
-# CLAUDE.md states and that this tool was nearly used to break.
+# AGENTS.md states and that this tool was nearly used to break.
 #
 # This is a PROXY. Do not convert its output into watts.
 set -u

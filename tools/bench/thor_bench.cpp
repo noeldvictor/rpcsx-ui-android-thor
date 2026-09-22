@@ -1,11 +1,11 @@
 // Bespoke acceleration benchmarks for the AYN Thor, run outside the emulator.
 //
-// CLAUDE.md states the rule this file exists for: the in-app loop costs about
+// AGENTS.md states the rule this file exists for: the in-app loop costs about
 // forty minutes for one arm, and the out-of-app loop costs seconds. Use this to
 // find out whether an idea is worth having. Use the emulator to confirm it on the
 // real workload.
 //
-// And the limit, which is in CLAUDE.md too: this program says what something
+// And the limit, which is in AGENTS.md too: this program says what something
 // costs in isolation. It cannot say whether the code is hot or what it competes
 // with. Nine of nine manual predictions in the ledger were refuted on exactly
 // that gap, and the BCAX benchmark is the specific warning -- its chain forwarded
@@ -790,7 +790,7 @@ static int mode_wait(int cpu, int waker_cpu)
 // 5,794 of them, against 2,203 `fm` and 399 `fi`. The lowering emits `TBX2`,
 // which `codegen.md` keeps for correctness.
 //
-// The claim to test is in CLAUDE.md and it comes from the vendor guides, not from
+// The claim to test is in AGENTS.md and it comes from the vendor guides, not from
 // this device: `TBX` beats `TBL` on the Cortex-X3 at four pipes against two, and
 // **that inverts on the A715 and A710**, where SPU threads actually run. Nine of
 // nine manual predictions in the ledger were refuted by measurement, so measure.

@@ -3,7 +3,7 @@
 The static search space is finite. This records the whole of it, so nobody
 re-covers ground or mistakes a closed question for an open one.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 ## Dimensions audited, and the one that is not code
 

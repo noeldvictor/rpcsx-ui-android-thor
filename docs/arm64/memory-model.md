@@ -4,7 +4,7 @@ x86 is total-store-ordered and ARM is weakly ordered, so this is where an
 emulator written on x86 is most likely to be subtly wrong. Includes the
 instruction-cache work, since publishing code is the same class of problem.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 ## The memory model, and the one structural gap left
 

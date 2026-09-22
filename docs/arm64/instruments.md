@@ -4,7 +4,7 @@ Every wrong conclusion in this work came from a measurement that was correct
 about something other than the question. This is what each tool measures, what
 it does not, and the mistakes made building them.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 ## Measured, on this silicon
 

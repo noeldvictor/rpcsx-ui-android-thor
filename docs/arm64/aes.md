@@ -236,9 +236,9 @@ yes.
 `__fp16`, `float16x8_t`, or the fp16 convert intrinsics, so enabling it would change
 no code.
 
-## Correction to CLAUDE.md
+## Correction to AGENTS.md
 
-CLAUDE.md stated the AOT build uses `-march=armv8.2-a`. It is **`armv8.4-a`** —
+AGENTS.md stated the AOT build uses `-march=armv8.2-a`. It is **`armv8.4-a`** —
 `app/build.gradle.kts:22` and `app/src/main/cpp/CMakeLists.txt:28` both default to it.
 That changes the conclusion about what comes for free: `lse`, `rcpc`, `dotprod`,
 `crc`, `complxnum` and `jsconv` are all implied, and the missing pieces are the

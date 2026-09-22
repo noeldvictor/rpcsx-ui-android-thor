@@ -860,7 +860,7 @@ namespace vk::thor::rsx_auditor
 		// 2026-08-17 it printed "on_frame_end call #26750 (enabled=1 interval=60)"
 		// during gameplay. What had hidden it earlier was the log channel, not this
 		// function - rsx_log.always() does not reach logcat on this device while
-		// rsx_log.error() does. See CLAUDE.md.
+		// rsx_log.error() does. See AGENTS.md.
 		//
 		// The probes that found it are removed because they were not free. Each ran
 		// per PRESENTED FRAME and called detail::enabled() directly, which is two

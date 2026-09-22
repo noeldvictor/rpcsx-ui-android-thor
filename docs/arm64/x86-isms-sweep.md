@@ -40,7 +40,7 @@ approximately no effect on a running game.
 `movemask` has no NEON equivalent at all — sse2neon synthesises it from shifts and
 a horizontal reduction where x86 has one instruction — so where it *is* hot it is
 worth real attention. The recompiler already knows this: the feature table in
-CLAUDE.md records SPU `GB` being lowered through a shift-and-sum constant with
+AGENTS.md records SPU `GB` being lowered through a shift-and-sum constant with
 `SDOT`, which is the fast path. The interpreter simply never got the same
 treatment, and does not need it.
 
@@ -87,7 +87,7 @@ defines `ARM_FEATURE_LSE2=1`, and refuses to do so on a baseline below Armv8.4-A
 rather than assuming it, which is the right shape: an aligned `LDP` that is not
 architecturally atomic would be a bug that only appears under contention.
 
-Two documentation corrections fall out. CLAUDE.md described the AOT baseline as
+Two documentation corrections fall out. AGENTS.md described the AOT baseline as
 `armv8.2-a` (it is `armv8.4-a`), and indexed `memory-model.md` as covering "the
 dead LSE2 macro". The macro is not dead; this fork set it, which is exactly what
 `atomic.hpp:1049` says happened. Reading either line without checking the build

@@ -419,7 +419,7 @@ the optimisation half of this effort, and pretending otherwise would be the
 thirteenth false claim.
 
 And it is **exactly the item this project predicted would need the Arm ARM**.
-`CLAUDE.md`'s ledger lists the RawSPU MMIO decoder as the one open task requiring
+`AGENTS.md`'s ledger lists the RawSPU MMIO decoder as the one open task requiring
 DDI 0487 for load/store encodings, which is why the manual is vendored at all.
 Upstream has now written it. Reading their decoder against the manual is a far
 better use of those 17,145 pages than any of the twelve timing hypotheses were.

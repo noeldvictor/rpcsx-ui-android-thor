@@ -355,7 +355,7 @@ screen, and two captures twenty seconds apart differ. It is running.
 The lesson is that **"the log stopped" is not a hang detector.** Its own caveat is
 three sections up in this document — the clock does not stop, only new *events* do —
 and normal gameplay produces no events for minutes at a time. The detector that works
-is the one CLAUDE.md already lists as a trap: FPS is only ever drawn, never logged, so
+is the one AGENTS.md already lists as a trap: FPS is only ever drawn, never logged, so
 a screenshot is the measurement. Two screenshots and the overlay separate "hung" from
 "slow" in ten seconds; the log cannot.
 
@@ -525,7 +525,7 @@ they are simply not making progress either.
 
 ### This title has hung on SPURS before
 
-CLAUDE.md's Eternal Sonata profile carries, verbatim:
+AGENTS.md's Eternal Sonata profile carries, verbatim:
 
 > Do not cap SPURS here; SPURS 4 caused a black-screen-alive load hang on Thor.
 
@@ -761,7 +761,7 @@ and has not been found yet.**
 
 Which is the same mistake a third time in one evening, one layer up: a grep produced
 a list, and the list was called "specified rather than guessed" without checking the
-hits were reachable on this architecture. CLAUDE.md already records the identical
+hits were reachable on this architecture. AGENTS.md already records the identical
 failure from the audit ledger — `Emu/Cell/lv2` and `Emu/Cell/Modules` recorded clean
 by grepping paths that do not exist in this fork.
 

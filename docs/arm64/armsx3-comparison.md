@@ -514,7 +514,7 @@ data: their application, not their core.
 
 38 commits past `82f21b16d`. **Six changes ported, none measured on the device.**
 The full account, with the rejected items and their reasons, is in
-[`../../CLAUDE.md`](../../CLAUDE.md), section "ARMSX3 seventh pass". Only the
+[`../../AGENTS.md`](../../AGENTS.md), section "ARMSX3 seventh pass". Only the
 summary is here, so the two do not disagree.
 
 Ported: the `nv4097` redundant vertex program check (`e13fc184f`, and **this tree

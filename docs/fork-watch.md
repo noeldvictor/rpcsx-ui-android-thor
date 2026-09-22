@@ -233,12 +233,12 @@ Nothing was ported from this survey.
 
 The watch list said to read the open pull requests too. This is the first pass
 over them. `54` open, plus every pull request Whatcookie has opened (`112`,
-almost all merged). The findings are written up in `CLAUDE.md`, section
+almost all merged). The findings are written up in `AGENTS.md`, section
 "Open pull requests and Whatcookie, sixth pass, 2026-08-21". In short:
 
 | Pull request | Verdict |
 | --- | --- |
-| `#19230` remove the unsafe ARM checksum specialization | **Take it.** This fork has the same class of bug through a different operation. See the table in `CLAUDE.md`. |
+| `#19230` remove the unsafe ARM checksum specialization | **Take it.** This fork has the same class of bug through a different operation. See the table in `AGENTS.md`. |
 | `#18422` more ARM extensions (closed, unmerged) | Idea only: gate SVE by vector LENGTH, not by presence. Nothing broken on this part, which has no SVE. |
 | `#18847` concrete `-mcpu` for Apple M2 | Not for this part, but it lands on the lines that hold the `cortex-a78` pin. Read before the next rebase. |
 | `#19013` blit engine texture cache rework | Rebase hazard for the preflight landed on 2026-08-21. Draft, testers wanted. Port by intent when it merges. |

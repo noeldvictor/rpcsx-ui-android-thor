@@ -35,7 +35,7 @@ over three runs.
 ### CORRECTED, same day: it is idleness, not permission
 
 The first reading of this was that the X3 could not be targeted, and that
-CLAUDE.md's advice to widen SPU affinity toward CPU7 could not be carried out.
+AGENTS.md's advice to widen SPU affinity toward CPU7 could not be carried out.
 **That was wrong.** The cause is Qualcomm `core_ctl` **pausing** a core: it stays
 online but leaves the scheduler's active mask, and an affinity request naming
 only paused CPUs is rejected.
@@ -269,7 +269,7 @@ with identical settings must be run first, and it must agree with itself.
 
 ## The SPU self-loop park makes it worse, on a real title, reproducibly
 
-This is the item CLAUDE.md calls "the one thing left to build", worth about 20% of
+This is the item AGENTS.md calls "the one thing left to build", worth about 20% of
 gameplay CPU. It was measured on Folklore, booted to its title screen from a warm
 PPU cache, letting the run settle 20 seconds after the first frame and then
 sampling a 60-second window. CPU is `utime + stime` from `/proc/<pid>/stat`;

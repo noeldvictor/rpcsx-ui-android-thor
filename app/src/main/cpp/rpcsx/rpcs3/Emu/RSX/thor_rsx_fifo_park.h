@@ -14,7 +14,7 @@
 //
 // ## Why this is the third attempt
 //
-// Two earlier forms failed, and both are recorded in CLAUDE.md:
+// Two earlier forms failed, and both are recorded in AGENTS.md:
 //
 //   rsx_fifo_park=1        eight rx::pause() then rx::wait_for_event(). Costs +10%
 //                          of this thread in the light state, because a FIFO that
@@ -88,7 +88,7 @@ namespace thor::rsx_fifo
 	// 1823-1890 process ticks per 60 s to 2662-2750 - about +46% - with all three
 	// properties unset and every code path they guard disabled.
 	//
-	// CLAUDE.md already records this exact trap for get_thor_pause_mode, where a
+	// AGENTS.md already records this exact trap for get_thor_pause_mode, where a
 	// runtime property put a guarded static in the SPU reservation spin. A namespace
 	// scope inline variable is initialized during dynamic initialization instead, so
 	// reading it is a plain load.

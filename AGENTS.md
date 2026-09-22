@@ -9,8 +9,11 @@ what the 8 Gen 2 exposes, what the JIT advertises, which features map to which
 lowering, how to verify a codegen change at three levels, and the traps that
 have already cost time. Read it before you propose a codegen change.
 
-`CLAUDE.md` is a pointer to this file. It holds no content. Two copies of a map
-disagree, so do not copy text into it.
+This file is the only instruction file for this repository, for every agent.
+Since 2026-09-22 there is no `CLAUDE.md`: it was a pointer to this file, and it
+was merged here and deleted. Claude Code loads `AGENTS.md` by itself when no
+`CLAUDE.md` exists. Do not create a `CLAUDE.md` again. Two copies of a map
+disagree, and a `CLAUDE.md` would stop Claude Code from loading this file.
 
 The detail behind it is split by topic, because a single file had grown past
 1,600 lines and it is loaded every session:
@@ -627,7 +630,7 @@ measured on the device.** The full account is in Part 2 of this file, section
   old, and it is written against their VK backend, which has diverged from ours.
 - **Upstream did NOT fix Eternal Sonata.** The August fix repairs an upstream
   regression that this tree predates. Three Eternal Sonata issues stay open there.
-  See the CORRECTION section in `CLAUDE.md`.
+  See the CORRECTION section in this file.
 
 ## ARM64 Upstream Perf Uplift
 
@@ -741,7 +744,7 @@ Thor predictions.
      block. The generic body came from upstream `origin/master`, so the rolled
      `checksum_loop` came with it. The cost is more accumulate work per byte and
      it is not measured. Nothing has booted with this change.
-     See `CLAUDE.md`, section "Open pull requests and Whatcookie, sixth pass".
+     See this file, section "Open pull requests and Whatcookie, sixth pass".
      Full account in `docs/arm64/jit-emitted-code.md`.
   2. `FCGT` inline-asm `bsl` selection: present and byte-identical to upstream
      inside `#if defined(ARCH_ARM64)`. The surrounding function still uses this
@@ -3249,8 +3252,8 @@ the user. It adds to ASD-STE100. It does not replace it.
 
 **Merged here on 2026-08-23.** This was `CLAUDE.md`. The two files split the
 operating contract from the hardware knowledge, and a reader had to know which
-half held the answer. `CLAUDE.md` is now a pointer to this file, so there is one
-map and it cannot disagree with itself.
+half held the answer. `CLAUDE.md` was then a pointer to this file, until it was
+deleted on 2026-09-22, so there is one map and it cannot disagree with itself.
 
 Everything above is the operating contract. Everything below is what this
 project measured on the silicon.

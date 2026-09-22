@@ -508,7 +508,7 @@ Folklore or Eternal Sonata produces one.
 **Not ported: the `busy_wait` timer scaling.** Upstream scales its `busy_wait`
 arguments for the timer frequency. Every call site in this fork is already
 retuned for the real 19.2 MHz timer, and two fixes for one problem multiply.
-The last attempt dropped Thor to about 1 FPS. `CLAUDE.md` records it.
+The last attempt dropped Thor to about 1 FPS. `AGENTS.md` records it.
 
 **Kept: the two local changes in this function.** The config-gated
 `busy_wait(5000)` head start stays at `vm.cpp:682`. The

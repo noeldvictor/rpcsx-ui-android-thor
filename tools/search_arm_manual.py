@@ -1,6 +1,6 @@
 """Search the vendored hardware manuals and print the surrounding text.
 
-CLAUDE.md says to use the manuals and not to reason from memory about what the
+AGENTS.md says to use the manuals and not to reason from memory about what the
 chip does. They are also 17,145 pages for the Arm ARM alone, which is why they get
 quoted second-hand instead of read. This makes them greppable.
 

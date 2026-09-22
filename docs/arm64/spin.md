@@ -4,7 +4,7 @@ Measured: **16.9% of busy CPU time is spin, and 93% of that is the SPU
 `GETLLAR` wait.** This is how that was established, what was tried against it,
 and the one lever still untested.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 ## What the hot retry loops actually cost
 

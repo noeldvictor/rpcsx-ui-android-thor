@@ -5,7 +5,7 @@ lists seven of them in *"Abusing x86 instructions to optimize PS3 emulation"*
 (YouTube `40tyEVx_umY`, 985 s). This document answers one question for each:
 **what does our AArch64 path emit, and is that the best AArch64 answer?**
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md). The hardware rows
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md). The hardware rows
 come from the vendored per-core guides in [`docs/hardware/`](../hardware/). The
 emitted-code counts come from the post-fix `spu-native-v2` disassembly recorded
 in [`jit-emitted-code.md`](jit-emitted-code.md): **1,188 objects, 4,752
@@ -33,7 +33,7 @@ produced one large finding and two corrections, and they are below.
 
 ## The correction that matters: 1,664 of the 1,673 `udot` are not the video's optimization
 
-`CLAUDE.md` and `jit-emitted-code.md` both say the 1,661 `udot` (1,673 after the
+`AGENTS.md` and `jit-emitted-code.md` both say the 1,661 `udot` (1,673 after the
 checksum fix) prove the video's dot-product work is *taken*. The instruction is
 taken. The **operation is not the one the video describes**.
 
@@ -92,7 +92,7 @@ work. The two disagree on `TBL`/`TBX`, on `SHRN` and on `FMOV`.
 | `PMUL`/`PMULL`, 8x8 polynomial | 3 | 1 | `V0` | — | — | — |
 
 **Second correction: `TBX` does not beat `TBL` on the cluster that runs SPU
-code.** `CLAUDE.md` says *"`TBX` beats `TBL` on this core — four pipes against
+code.** `AGENTS.md` says *"`TBX` beats `TBL` on this core — four pipes against
 two, throughput 4 against 2"*. That is the X3 row, and it is inverted on A715
 and A710: `TBL` with 1 or 2 tables is latency 2 at throughput 2 on all `V`
 pipes, and 2-table `TBX` is latency 4 at throughput 1. The `SHUFB` path emits
@@ -396,7 +396,7 @@ through to the `extract(..., 3)` path it already has.
 
 1. **LLVM may already fold the extract back into a movemask.** Compile both
    spellings at `-mcpu=cortex-a78 +dotprod +i8mm` and read the assembly before
-   changing anything. This is verification level 2 in `CLAUDE.md`.
+   changing anything. This is verification level 2 in `AGENTS.md`.
 2. **The count is weighted by compiled bytes, not by execution.** 1,402 sites is
    what the JIT emitted, not what runs. The gameplay profile puts 47.88% of
    cycles in JIT code but cannot yet say which blocks. The `perf` map now exists,

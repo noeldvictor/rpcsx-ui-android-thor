@@ -63,7 +63,7 @@
 //
 // It does not touch thread counts, affinity or the recompilers. Those were tried
 // in this project before and are recorded as either null or a bad exchange; see
-// the SPU affinity retraction and the cache pacing note in CLAUDE.md. Frame rate
+// the SPU affinity retraction and the cache pacing note in AGENTS.md. Frame rate
 // is the one lever that reliably reduces work here without changing behaviour.
 //
 // ## Cost

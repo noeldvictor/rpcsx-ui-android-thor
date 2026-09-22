@@ -2020,7 +2020,7 @@ static FORCE_INLINE void __movsb(unsigned char* Dst, const unsigned char* Src, s
 // a search that finds nothing else would prove nothing.
 //
 // So a 16 KB SPU DMA does evict L1 and much of L2, which is what the
-// non-temporal item in CLAUDE.md feared, and nothing downstream prevents it.
+// non-temporal item in AGENTS.md feared, and nothing downstream prevents it.
 // `debug.rpcsx.thor.dma_nontemporal` addresses it and is off by default.
 //
 // The 1024 was an x86 constant transplanted. On x86 this threshold comes from

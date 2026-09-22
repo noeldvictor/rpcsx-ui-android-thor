@@ -70,7 +70,7 @@ object GameSettingsDatabase {
               #    and flipping it was overriding that decision on a CPU number.
               #
               # The -10.6% is still available per-session and is recorded in
-              # CLAUDE.md and README.md:
+              # AGENTS.md and README.md:
               #   adb shell setprop debug.rpcsx.thor.spu_accurate_reservations 0
               #
               # OLD COMMENT, kept because the measurement is still valid:

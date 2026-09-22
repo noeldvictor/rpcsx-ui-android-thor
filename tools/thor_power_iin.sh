@@ -19,7 +19,7 @@
 # NEGATIVE under load, which is meaningless here. usb/current_now is steady and
 # tracks: 178 mA idle against 253-291 mA with a title rendering.
 #
-# This also corrects an earlier note in CLAUDE.md that usb/current_now "is the
+# This also corrects an earlier note in AGENTS.md that usb/current_now "is the
 # negotiated limit and sits frozen". It is not frozen on this device.
 #
 # Sanity: idle measured 8.939 V x 178 mA = 1.59 W, against the 1.60 W idle this

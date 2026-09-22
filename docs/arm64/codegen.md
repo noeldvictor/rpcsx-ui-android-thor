@@ -4,7 +4,7 @@ How the AArch64 backend is actually used here: what the per-core optimization
 guides say, which lowerings were rewritten, and the x86 habits that produced
 the defects worth hunting.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 The hardware reference these decisions rest on — instruction latency,
 throughput and pipe assignment from the vendored optimization guides — is in
@@ -633,7 +633,7 @@ one this project keeps skipping:
    downgrade is load-bearing and this ends here.
 2. **Does the correct scheduling model measurably help?** A/B with
    `tools/thor_property_ab.ps1` on Eternal Sonata. Per the checklist in
-   `CLAUDE.md`, "the model is wrong" is a fact about the compiler, not a
+   `AGENTS.md`, "the model is wrong" is a fact about the compiler, not a
    prediction about this code — nine such predictions have been refuted, and the
    scheduling model may matter less than it sounds for code dominated by loads,
    stores and branches, which the instruction histogram shows it is.
@@ -933,7 +933,7 @@ produced — both arms at ~5.3 cores busy — and it measured **BCAX in SHUFB wo
 5.6%**. So a SHA-3 three-input op in a hot lowering is demonstrably worth real
 percentage points here, unlike every pipe-table argument that preceded it.
 
-**It still is not ready to run**, by the checklist in `CLAUDE.md`:
+**It still is not ready to run**, by the checklist in `AGENTS.md`:
 
 * Mechanism: clear — `EOR3` folds `a ^ b ^ c` into one instruction.
 * **Predicted magnitude: unknown**, and that is disqualifying. It depends

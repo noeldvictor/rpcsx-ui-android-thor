@@ -36,7 +36,7 @@ the instruction total before reading any count is what caught it.
 | `eor3`, `urhadd`, `sqadd`, `uqadd` | **0** | |
 
 **`udot` at 1,661 settles a claim this repo has been making from the flag.**
-CLAUDE.md said the SDOT/UDOT work was "already here", citing call sites, the
+AGENTS.md said the SDOT/UDOT work was "already here", citing call sites, the
 `HWCAP_ASIMDDP` gate and a log line reading `dotprod=true`. All of that proves the
 path is *enabled*. This proves it is *taken*.
 
@@ -62,7 +62,7 @@ and only the emitted code can tell the two apart.
 The first pass disassembled the **40 largest objects** on the reasoning that they
 hold most of the code. In that sample `sdot` and `udot` were **zero**, and the
 draft conclusion was that the video's optimization never actually fires — a
-direct contradiction of CLAUDE.md, and wrong. Corpus-wide, `udot` is 1,661.
+direct contradiction of AGENTS.md, and wrong. Corpus-wide, `udot` is 1,661.
 
 Size is not importance. The dot-product paths live in many small objects, not the
 few big ones. **Sample the whole corpus or state that the sample is biased**;
@@ -130,7 +130,7 @@ disassembly is accurate, the instruction is the right one *for the operation
 written*, and the audit that produced this section asked "is this the cheapest
 encoding" and never "is this operation the correct one". That is the same failure
 this repo has now recorded five times in
-[`CLAUDE.md`](../../CLAUDE.md): the measurement was correct and the inference was
+[`AGENTS.md`](../../AGENTS.md): the measurement was correct and the inference was
 not. `uaba` should now be **zero** in a freshly disassembled cache — the object
 cache key covers the optimized IR, so the old objects invalidate themselves, and
 that count is the cheapest confirmation the change reached the device.

@@ -86,7 +86,7 @@ easy to miss and often decides the answer:
 
 An instruction that saves an operation but lands on `V0` can still lose to a
 two-instruction sequence that spreads across `V`. See the BCAX entry in
-`CLAUDE.md`, which is exactly that case.
+`AGENTS.md`, which is exactly that case.
 
 Extracting text: `pypdf` works, a naive stream scrape does not, because the body
 uses font subsetting and only the cover page survives.
@@ -273,7 +273,7 @@ has 11,530.
 An earlier revision of this README argued against vendoring it, on the grounds
 that it specifies semantics and encodings and contains no timing data. That
 reasoning is still correct and still worth heeding — **it remains the wrong
-reference for any question about speed**, and `CLAUDE.md` records an error
+reference for any question about speed**, and `AGENTS.md` records an error
 already made by reasoning from it without checking the part (the ESR syndrome
 fields). It is here because it was asked for and because it is the source the
 upstream ARM64 work was done from, not because that caveat has been withdrawn.

@@ -3,7 +3,7 @@
 Two different quantities live in `/sys/class/thermal`, and comparing a limit
 against the wrong one manufactured alarm twice here.
 
-Part of the notes indexed from [`CLAUDE.md`](../../CLAUDE.md).
+Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
 ## The cold-start gate permits silicon below 70 C
 
@@ -159,7 +159,7 @@ measurement taken from different sensors cannot be compared**, and taking a
 `max` over a heterogeneous sensor set silently does exactly that.
 
 This is the same failure as the thermal wall recorded in the traps in
-[`CLAUDE.md`](../../CLAUDE.md), in a
+[`AGENTS.md`](../../AGENTS.md), in a
 new costume. That one was sampling aliasing; this one is sensor mismatch. Both
 produced a confident number that meant nothing. Use the project's own
 `silicon_temperature_c` from `tools/thor_input_macro.ps1`, or the package sensor

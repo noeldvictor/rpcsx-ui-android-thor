@@ -96,5 +96,5 @@ Keep these properties if you write another harness:
 
 - The app is stopped, the device is near idle temperature, and
   `getprop | grep debug.rpcsx.thor` shows nothing set.
-- Raw numbers and ranges go to `CLAUDE.md` through `thor-experiment-ledger`. A
+- Raw numbers and ranges go to `AGENTS.md` through `thor-experiment-ledger`. A
   negative result that is written down is worth as much as a win.

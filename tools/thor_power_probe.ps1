@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 #
 # 1. It reads *cumulative* counters, so a measurement of any length costs
 #    exactly two adb round trips. The FPS harness spawns a shell per sample and
-#    walks ~50 thermal_zone entries each time, which CLAUDE.md records as being
+#    walks ~50 thermal_zone entries each time, which AGENTS.md records as being
 #    hot enough to trip the thermal guard on its own. A probe whose cost does
 #    not scale with the window can measure a five-minute run for the price of a
 #    five-second one.

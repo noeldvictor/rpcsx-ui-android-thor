@@ -9,7 +9,7 @@
 #   tools/thor_game_workup.sh --repeats 3 --profile BLUS30161 "/storage/.../es.iso"
 #
 # It refuses rather than guesses. Every refusal below is a failure this repo
-# has already paid for at least once; see docs/arm64/ and CLAUDE.md.
+# has already paid for at least once; see docs/arm64/ and AGENTS.md.
 #
 # It NEVER writes a shipped profile. It prints what it would suggest.
 set -u

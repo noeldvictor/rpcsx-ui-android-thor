@@ -6340,7 +6340,7 @@ extern void ppu_precompile(std::vector<std::string>& dir_queue, std::vector<ppu_
 	const u64 ppu_compile_budget = ppu_compile_memory_budget(3);
 	concurent_memory_limit memory_limit(ppu_compile_budget);
 	// .error(), not .always(): always() does not reach logcat on this device, which
-	// is why this line has never appeared in a capture. See CLAUDE.md.
+	// is why this line has never appeared in a capture. See AGENTS.md.
 	ppu_log.error("PPU precompile memory budget: %u MB (total %u MB)",
 		static_cast<u32>(ppu_compile_budget >> 20),
 		static_cast<u32>(utils::get_total_memory() >> 20));

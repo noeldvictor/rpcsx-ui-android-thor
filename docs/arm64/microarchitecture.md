@@ -8,7 +8,7 @@ them.
 This is the hardware's side. What this fork does with it — which lowerings were
 chosen, and which x86 habits produced defects — is in
 [`codegen.md`](codegen.md). Part of the notes indexed from
-[`CLAUDE.md`](../../CLAUDE.md).
+[`AGENTS.md`](../../AGENTS.md).
 
 **Read the pipe column.** It decides borderline cases and is the easiest to skip:
 

@@ -39,7 +39,7 @@
 // change a deadlocked SPU burned a core, which is ugly and visible. After it, the
 // same deadlock is a quiet sleeping thread. So the park has to leave a record.
 //
-// **The record is written on entry, not on completion.** CLAUDE.md states the
+// **The record is written on entry, not on completion.** AGENTS.md states the
 // problem exactly: "Every counter in this fork is incremented on completion, so
 // none of them can see a hang." Three instruments were armed against the Eternal
 // Sonata deadlock and all three logged nothing, which looks the same as code that
@@ -84,7 +84,7 @@ inline spu_selfloop_park_t g_spu_selfloop_park{};
 // The reach is why this took so long to see. On Folklore's title screen the counter
 // reads entries=0 - the loop is never entered - so an A/B there measures nothing,
 // which is exactly what happened when it was first tried. On Eternal Sonata it reads
-// ~49,000 entries per window at **pc=0x00cc4**, the state-poll loop CLAUDE.md already
+// ~49,000 entries per window at **pc=0x00cc4**, the state-poll loop AGENTS.md already
 // identified as the hot one. A lever with no reach and a lever with no effect look
 // identical; the counter is what separates them.
 //
