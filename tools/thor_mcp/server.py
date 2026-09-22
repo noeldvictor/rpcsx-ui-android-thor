@@ -230,19 +230,26 @@ def t_state(a):
     if not reachable():
         return {"error": "device unreachable; an empty answer here is NOT a dead emulator"}
     ensure_forward()
-    paused = hold(a, default=a.get("pause", True))
-    return {
+    p = pid()
+    result = {
         "reachable": True,
         "serial": SERIAL,
-        "paused": paused,
-        "pid": pid() or None,
+        "pid": p or None,
         "cpuJunctionC": temp_c(),
         "fixedSiliconC": fixed_silicon_c(),
         "battery": sh("cat /sys/class/power_supply/battery/capacity").strip(),
-        "status": api("/status"),
-        "device": api("/device"),
-        "diag": api("/diag"),
     }
+    if not p:
+        # With no process the control API cannot answer. Its error text says
+        # to run adb forward, which is the wrong fix here.
+        result["paused"] = False
+        result["emulator"] = f"not running: pidof {PKG} is empty"
+        return result
+    result["paused"] = hold(a, default=a.get("pause", True))
+    result["status"] = api("/status")
+    result["device"] = api("/device")
+    result["diag"] = api("/diag")
+    return result
 
 
 def t_cooldown(a):
@@ -1483,17 +1490,17 @@ def t_stop(_):
 
 
 TOOLS = [
-    ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state.", {"type": "object", "properties": {}}, t_state),
+    ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state. pause=false for a live reading that does not pause.", {"type": "object", "properties": {"pause": {"type": "boolean", "description": "Default true. false reads the state without a pause."}}}, t_state),
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
     ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF. sameProcess (default false) boots into the running process after thor_exit_game, with no force-stop: the path a user takes after Exit Game.", {"type": "object", "properties": {"sameProcess": {"type": "boolean"}, "titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
     ("thor_wait_ready", "Wait until the title renders. Poll fixed silicon every two seconds and stop at the hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
-    ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}, "required": ["buttons"]}, t_press),
+    ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "rePause": {"type": "boolean", "description": "Default true. false leaves the emulator running after the press."}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
-    ("thor_slice", "Run a paused guest for 0.1 to 15 seconds by default. An explicit maxDurationS can extend an exact handoff window to 300 seconds. Monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_slice),
+    ("thor_slice", "Run a paused guest for 0.1 to 15 seconds by default. An explicit maxDurationS can extend an exact handoff window to 300 seconds. Monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "pauseTimeoutS": {"type": "number", "description": "Wait for the pause after the slice, 1 to 30 s. Default 8."}, "startupPauseTimeoutS": {"type": "number", "description": "The same wait during a startup handoff, up to 300 s. Default 120."}, "includeState": {"type": "boolean", "description": "Default true. false leaves /device and /diag out of the answer."}}}, t_slice),
     ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool to or below the runtime resume target between slices. Return within the host and active-time limits, and keep log-boundary checks and hard stops in one controller. An explicit maxDurationS can extend an exact handoff window to 300 seconds.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "maxActiveS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "stopMatches": {"type": "array", "items": {"type": "string"}}, "armMatch": {"type": "string"}, "postArmSlices": {"type": "integer"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
     ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays at or below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
-    ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}}}, t_screenshot),
+    ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}, "pause": {"type": "boolean", "description": "Default true. false captures without a pause."}}}, t_screenshot),
     ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),

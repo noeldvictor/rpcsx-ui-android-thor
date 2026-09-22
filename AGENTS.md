@@ -9093,6 +9093,11 @@ Rules:
 - Read `serial` in the `thor_state` answer before you believe "unreachable".
 - If a device action needs a new loop, add it to `server.py` as a tool, with
   its refusals. Then use the tool.
+- Declare every argument that a tool reads in its `inputSchema`. An MCP client
+  sends only the declared arguments. On 2026-09-22 `thor_state` read `pause`
+  without a declaration, so the client dropped `"pause": false` and the tool
+  paused the emulator. `call.py` sends raw JSON, so it hid the defect. Run
+  `python tools/test_thor_mcp_schema.py` after each change to `server.py`.
 
 ## What the server does not do yet
 
