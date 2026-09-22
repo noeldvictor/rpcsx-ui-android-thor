@@ -236,7 +236,25 @@ def t_boot(a):
         # Diagnose against a fresh compile. A cached SPU object replaces a
         # compile, so a fault could be an artifact of a stale object.
         sh("setprop debug.rpcsx.thor.spu_native_object_cache 0")
-    sh(f"am force-stop {PKG}; rm -f {FILES}/cache/RPCSX.log")
+    same_process = bool(a.get("sameProcess", False))
+    previous_pid = pid() or None
+    if same_process:
+        # Boot into the process that is already running, with the game list
+        # on top. This is the path a user takes after Exit Game, and the one
+        # that failed until 2026-09-21. A force-stop here would hide that.
+        if not previous_pid:
+            return {"refused": True, "reason": "sameProcess needs a running emulator process"}
+        if emulation_state() != EMU_STATE_STOPPED:
+            return {"refused": True, "reason": "sameProcess needs the core Stopped; call thor_exit_game first",
+                    "state": emulation_state()}
+        if resumed_activity() != "net.rpcsx.easy/net.rpcsx.MainActivity":
+            sh("input keyevent KEYCODE_BACK")
+            time.sleep(1.5)
+            if resumed_activity() != "net.rpcsx.easy/net.rpcsx.MainActivity":
+                return {"refused": True, "reason": "the game list is not on top",
+                        "activity": resumed_activity()}
+    else:
+        sh(f"am force-stop {PKG}; rm -f {FILES}/cache/RPCSX.log")
     # A Thor with its screen off cannot boot a title: a SurfaceView measured 0x0
     # never creates a surface and the renderer waits forever.
     sh("input keyevent KEYCODE_WAKEUP; svc power stayon true")
@@ -244,9 +262,69 @@ def t_boot(a):
        f"--es path '{iso}' --es titleId {title} --es thorDebugBootRequestId mcp "
        f"--ez thorRequireManagedProfile false --ez thorReplaceCustomProfile false")
     ensure_forward()
-    return {"booted": True, "titleId": title,
-            "freshCompile": a.get("freshCompile", True),
-            "startFixedSiliconC": t}
+    result = {"booted": True, "titleId": title,
+              "freshCompile": a.get("freshCompile", True),
+              "startFixedSiliconC": t}
+    if same_process:
+        time.sleep(2.0)
+        now = pid() or None
+        result.update({"sameProcess": True, "pid": previous_pid, "pidNow": now,
+                       "samePid": now == previous_pid})
+    return result
+
+
+def resumed_activity():
+    """The activity Android reports as resumed for this package, or None."""
+    raw = sh("dumpsys activity activities", timeout=30)
+    m = re.search(r"(?m)^\s*ResumedActivity:.*?(net\.rpcsx\.easy/net\.rpcsx\.\w+)", raw)
+    return m.group(1) if m else None
+
+
+def t_exit_game(a):
+    """Exit the running game the way the home menu's Exit Game does, and
+    report when the core reached Stopped and when the game activity closed.
+
+    This exists because the menu could only be reached blind: a PS press in
+    the pad data, ten DOWN presses with a screenshot between, then CROSS. And
+    a held process cannot stop, so the hold is released first. The
+    2026-09-21 self-join at exit was found by hand this way; this tool makes
+    the check one call."""
+    p = pid()
+    if not p:
+        return {"error": "no emulator process"}
+    if held_process_pid() == p:
+        continue_process_for_slice(p)
+    state = emulation_state()
+    if state == EMU_STATE_STOPPED:
+        return {"exited": True, "alreadyStopped": True, "pid": p,
+                "activity": resumed_activity()}
+    if is_paused():
+        api("/resume", "POST", timeout=1.0)
+    started = time.monotonic()
+    r = api("/exit", "POST", timeout=3.0)
+    if isinstance(r, dict) and r.get("error"):
+        return {"error": "the exit request was not acknowledged", "exit": r}
+    timeout_s = float(a.get("timeoutS", 30))
+    stopped_ms = None
+    while time.monotonic() - started < timeout_s:
+        if emulation_state() == EMU_STATE_STOPPED:
+            stopped_ms = int((time.monotonic() - started) * 1000)
+            break
+        time.sleep(0.2)
+    activity_closed_ms = None
+    while time.monotonic() - started < timeout_s + 10:
+        if resumed_activity() == "net.rpcsx.easy/net.rpcsx.MainActivity":
+            activity_closed_ms = int((time.monotonic() - started) * 1000)
+            break
+        time.sleep(0.5)
+    sleepy = api("/log?match=too%20sleepy&n=3")
+    return {"exited": stopped_ms is not None,
+            "stoppedAfterMs": stopped_ms,
+            "activityClosedAfterMs": activity_closed_ms,
+            "activity": resumed_activity(),
+            "pid": p, "pidNow": pid() or None,
+            "selfJoinLines": sleepy,
+            "exit": r}
 
 
 def t_wait_ready(a):
@@ -355,7 +433,14 @@ def t_press(a):
     process_hold = None
     re_paused = False
     hold_mode = None
-    if was_paused and a.get("rePause", True):
+    state_after = emulation_state()
+    if was_paused and a.get("rePause", True) and state_after in (EMU_STATE_STOPPED, 2):
+        # The press started a stop (Exit Game), or the core is already
+        # stopped. A pause is refused now, and the fallback below is a
+        # process SIGSTOP, which froze the core in the middle of its stop on
+        # 2026-09-21 and read like a hang. Leave it running.
+        hold_mode = "none: core is stopping or stopped"
+    elif was_paused and a.get("rePause", True):
         current = pid()
         if current == p and held_process_pid() == p:
             re_paused = True
@@ -1354,7 +1439,7 @@ def t_stop(_):
 TOOLS = [
     ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state.", {"type": "object", "properties": {}}, t_state),
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
-    ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF.", {"type": "object", "properties": {"titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
+    ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF. sameProcess (default false) boots into the running process after thor_exit_game, with no force-stop: the path a user takes after Exit Game.", {"type": "object", "properties": {"sameProcess": {"type": "boolean"}, "titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
     ("thor_wait_ready", "Wait until the title renders. Poll fixed silicon every two seconds and stop at the hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
     ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
@@ -1367,6 +1452,7 @@ TOOLS = [
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),
     ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
+    ("thor_exit_game", "Exit the running game the way the home menu Exit Game does, releasing any process hold first. Reports when the core reached Stopped, when the game activity closed, and any self-join log lines. Follow with thor_boot sameProcess=true to test the next game in the same process.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}}}, t_exit_game),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
 ]
 HANDLERS = {name: fn for name, _, _, fn in TOOLS}

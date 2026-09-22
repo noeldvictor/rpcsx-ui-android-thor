@@ -236,6 +236,16 @@ object ThorControlServer {
             "/resume" -> { runCatching { rpcsx.resume() }; """{"ok":true,"paused":${runCatching { rpcsx.isPaused() }.getOrDefault(false)}}""" }
             "/kill" -> { runCatching { rpcsx.kill() }; """{"ok":true}""" }
 
+            // The home menu's Exit Game, as one call. The menu item does
+            // Emu.Kill() too; the game activity finishes when the core reaches
+            // Stopped, because RPCSXActivity watches for that from boot. Poll
+            // /status until state is 0 (Stopped) to know the exit is complete.
+            "/exit" -> {
+                val stateBefore = runCatching { rpcsx.getState() }.getOrDefault(-1)
+                runCatching { rpcsx.kill() }
+                """{"ok":true,"stateBefore":$stateBefore,"note":"poll /status until state is 0"}"""
+            }
+
             "/setting" -> {
                 val cfgPath = q["path"] ?: return """{"error":"path= is required"}"""
                 if (method == "POST") {

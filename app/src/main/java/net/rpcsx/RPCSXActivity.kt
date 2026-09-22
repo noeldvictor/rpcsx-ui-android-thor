@@ -172,6 +172,11 @@ class RPCSXActivity : Activity() {
                 finish()
             } else {
                 Log.w("RPCSX Boot", "boot ok: '$gamePath'")
+                // Watch for the stop from here, not only from the OSD key path.
+                // The native home menu can be opened by the PS button in the pad
+                // data, and the harness exits games that way. Before this, that
+                // path left the activity up on a stopped core (2026-09-21).
+                watchForNativeStopAndFinish("boot")
             }
         }
     }
@@ -207,6 +212,7 @@ class RPCSXActivity : Activity() {
         unregisterUsbEventListener()
         bootThread?.interrupt()
         bootThread?.join()
+        stopWatcherThread?.interrupt()
     }
 
     private fun applyScreenControlsVisibility(showControls: Boolean) {
@@ -385,7 +391,10 @@ class RPCSXActivity : Activity() {
         }
 
         stopWatcherThread = thread(name = "RPCSX-FinishAfterStop") {
-            repeat(600) {
+            // Unbounded on purpose. It is armed at boot now, so it must outlive
+            // any 60 second window. It ends on Stopped or when onDestroy
+            // interrupts it. The cost is two cheap JNI reads every 100 ms.
+            while (true) {
                 if (Thread.interrupted()) {
                     return@thread
                 }
@@ -435,10 +444,6 @@ class RPCSXActivity : Activity() {
                 } catch (_: InterruptedException) {
                     return@thread
                 }
-            }
-
-            if (finishAfterStopRequested) {
-                Log.w("RPCSX State", "Timed out waiting for emulator stop after $reason")
             }
         }
     }

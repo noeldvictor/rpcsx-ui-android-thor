@@ -126,6 +126,26 @@ Obey these rules for it:
 
 ## Current PS3 State
 
+- 2026-09-21, app lifecycle: exit-then-relaunch is fixed at the cause and
+  confirmed on the device twice. The Android `call_from_main_thread` ran each
+  core callback on the calling thread and destroyed it there; the final
+  callback of `Emulator::Kill` owns the last reference to the "Emulation Join
+  Thread" and runs on it, so `~named_thread` joined the thread it was on and
+  the core stayed in `Stopping` after every exit (log: `Thread [Emulation Join
+  Thread] is too sleepy`, doubling for 33 s). Now only the callback's
+  destruction moves to the main-thread processor (`rpcsx-android.cpp`,
+  `.call_from_main_thread`). After the fix the process holds no emulator
+  thread after an exit. `RPCSXActivity` arms its finish-after-stop watcher at
+  boot, not only from the OSD key, and the game list asks the core for its
+  state and logs each refusal as `RPCSX Launch`. Harness: `thor_exit_game`
+  and `thor_boot sameProcess=true` are the one-call form of this test;
+  `thor_press` no longer SIGSTOPs a core that is stopping (that froze the
+  first device run mid-stop and read like a hang). The same session showed
+  the Odin Sphere first-boot abort is Scudo's 256 MB per-size-class region
+  (1,022 live 256 KB blocks), not system memory; `llvm::allocate_buffer` is
+  overridden in `util/JITLLVM.cpp` to use `mmap` at or above 64 KB, built
+  and not yet run on the device. `docs/arm64/ppu-compile-oom.md` has the
+  numbers.
 - Exact installed APK `59D5658E...91BD02` ran once under the pinned serial and
   strict cool gate in `20260720-145444-thor-input-custom`. Preflight was
   `33.9 -> 33.9 -> 33.9 C`, silicon peaked at `50.6 C`, post-stop was `40.5 C`,
