@@ -37,6 +37,26 @@ The owner decided on 2026-09-22: a `thor_arm` A/B arm stops at 95 C CPU
 junction. Every other tool keeps the 72 C fixed-silicon stop. An arm starts only
 below 70 C fixed silicon and 55 C junction.
 
+### Where the boot heat comes from
+
+The caches are warm, and the boot still uses all eight cores. From the same
+day's logs:
+
+- PPU: `Reusing 225 validated warm-cache objects`. Nothing compiles.
+- SPU: 8 `SPU Worker` threads, one per host thread, re-analyse 1,747 SPU
+  functions only to find each cached object. The `LLVM JIT` thread loads the
+  objects. This runs from about 7.6 s to 15 s after the boot starts.
+- The worker count is `get_max_threads()` in
+  `SPUCommonRecompiler.cpp`. A per-title limit exists only for BLUS30161.
+- A savestate load repeats the whole SPU cache load. After the reload at
+  18.3 s, 877 more loads ran on 8 workers, from 25 s to 35 s. So a boot
+  followed by a load pays for two 8-core bursts.
+
+`debug.rpcsx.thor.spu_cache_workers=N` (since 2026-09-22, 0 or unset keeps the
+default) caps the workers for any title. The same work then runs over more
+time. The A/B of 8 against 4 workers is not measured yet: the Thor was in use
+by another emulator.
+
 Restored Transformers combat passes 95 C junction too. The third control arm
 that day reached 96 C in its first sample window (fixed silicon peak 82.3 C) and
 stopped. Rounds K to S ran to the app's abort at 97 C (`thermal_abort_c 97`).

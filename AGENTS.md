@@ -9171,6 +9171,30 @@ THOR_CALL_TIMEOUT=1500 THOR_CALL_ARGS='{"name":"control","props":{},"runDir":"de
 THOR_CALL_ARGS='{"runDir":"debug-captures/ab1"}' python tools/thor_mcp/call.py thor_ab_table
 ```
 
+### Arm options for heat work, and the shared-device check
+
+- `stopAfter`: `firstFrame` or `gate` ends the arm after that phase. Use it to
+  measure a boot or a load without the heat of a combat window.
+- `phasePeaks` in each result gives the peak junction and fixed-silicon
+  temperature of each phase. `trace` gives `[s, junction, silicon, otherCores]`
+  every 5 s.
+- `log.spuCache` gives the SPU cache load: module loads, worker threads, and
+  the first and last load time.
+- `thor_ab_table` takes `metric`, a dotted path in the result, for example
+  `phasePeaks.the boot.fixedSiliconC` or `readyS`. The default is `fps.mean`.
+- `bootSavestate` boots the savestate file itself. It refuses a disc-image
+  title. Measured 2026-09-22: `Disc directory not found. Savestate cannot be
+  loaded.` The core needs the image mounted by a boot first.
+
+**The Thor is shared, and the arm checks for it.** On 2026-09-22 an adb client
+outside this server started a Xenia game on the Thor during an arm
+(`am start ... jp.xenia.emulator ... from uid 2000` at 16:31:03). The junction
+went from 42 C to 95 C with no RPCSX work. Nothing in the arm's own numbers
+showed it. Now `otherCores` is device-wide busy CPU minus RPCSX CPU. If it is
+above 1.0 core in any sample, the arm is not valid, and the problem names the
+peak. With RPCSX stopped and Xenia running, the check read 2.70 other cores.
+Before an arm, make sure no other emulator runs.
+
 ## What the server does not do yet
 
 The logs name the device work that has no tool. These are the next tools to

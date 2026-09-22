@@ -891,6 +891,40 @@ static u32 spu_cache_worker_limit() noexcept
 	return result;
 }
 
+// Cap the SPU cache workers for any title. 0 or unset keeps the default,
+// which is one worker per host thread.
+//
+// Measured on 2026-09-22, BLUS30357, warm caches: 8 workers re-analyse 1,747
+// SPU functions only to find their cached objects. All eight cores run for
+// about 10 s, and fixed silicon went from 45.8 C to 81.5 C during that boot.
+// A savestate load repeats the same burst. Fewer workers do the same work
+// over more time. This property lets an A/B measure what that costs in boot
+// time and saves in peak temperature.
+static u32 spu_cache_worker_cap() noexcept
+{
+#ifdef ANDROID
+	char property_value[PROP_VALUE_MAX]{};
+	const int property_length = __system_property_get("debug.rpcsx.thor.spu_cache_workers", property_value);
+
+	if (property_length <= 0)
+	{
+		return 0;
+	}
+
+	u32 result = 0;
+	const auto parse = std::from_chars(property_value, property_value + property_length, result);
+
+	if (parse.ec != std::errc{} || parse.ptr != property_value + property_length || result > 16)
+	{
+		return 0;
+	}
+
+	return result;
+#else
+	return 0;
+#endif
+}
+
 // Move 4 args for calling native function from a GHC calling convention function
 #if defined(ARCH_X64)
 static u8* move_args_ghc_to_native(u8* raw)
@@ -1791,6 +1825,12 @@ void spu_cache::initialize(bool build_existing_cache)
 		if (cache_worker_limit && preload_limit && compile_budget_ms && !func_list.empty())
 		{
 			worker_count = std::min<u32>(cache_worker_limit, ::narrow<u32>(add_count));
+		}
+
+		if (const u32 cap = spu_cache_worker_cap(); cap && worker_count > cap)
+		{
+			spu_log.always()("Thor SPU cache workers capped: %u -> %u (debug.rpcsx.thor.spu_cache_workers).", worker_count, cap);
+			worker_count = cap;
 		}
 	}
 

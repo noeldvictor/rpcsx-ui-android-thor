@@ -276,6 +276,33 @@ def pid():
     return sh("pidof " + PKG).strip()
 
 
+def cpu_busy_and_rpcsx():
+    """Device busy jiffies and RPCSX process jiffies, from one adb call.
+
+    Their difference is the CPU that OTHER processes use. On 2026-09-22 an adb
+    client outside this server started a Xenia game on the Thor during an arm.
+    The junction went from 42 C to 95 C with no RPCSX work, and nothing in the
+    arm's own numbers showed it.
+    """
+    raw = sh(f"head -1 /proc/stat; p=$(pidof {PKG}); [ -n \"$p\" ] && cat /proc/$p/stat")
+    lines = raw.splitlines()
+    if not lines or not lines[0].startswith("cpu "):
+        return None, None
+    try:
+        f = [int(x) for x in lines[0].split()[1:]]
+        busy = sum(f) - f[3] - (f[4] if len(f) > 4 else 0)
+    except ValueError:
+        return None, None
+    rp = 0
+    if len(lines) > 1:
+        fields = lines[1].rsplit(")", 1)[-1].split()
+        try:
+            rp = int(fields[11]) + int(fields[12])
+        except (IndexError, ValueError):
+            rp = 0
+    return busy, rp
+
+
 def proc_jiffies(p):
     line = sh(f"cat /proc/{p}/stat").split()
     if len(line) < 15:
@@ -1621,6 +1648,10 @@ PROP_NAME_RE = re.compile(r"debug\.rpcsx\.thor\.[A-Za-z0-9_.]+")
 PROP_VALUE_RE = re.compile(r"[A-Za-z0-9_.:,+-]*")
 
 
+class _ArmDone(Exception):
+    """End an arm early on purpose, after the phase that stopAfter names."""
+
+
 class _ArmStop(Exception):
     """End an arm early. The fields say why. The arm is then not valid."""
 
@@ -1706,9 +1737,21 @@ def _summarize_log(path, match=None):
     levers = [line.split("Thor:", 1)[1].strip()[:160] for line in lines
               if "Thor:" in line and any(k in line for k in ("forced", "set to", "ignoring", "applied"))]
     frames = [line[line.index("Frames:"):][:300] for line in lines if "Frames:" in line]
+
+    def log_s(line):
+        m = re.search(r" (\d+):(\d\d):(\d\d\.\d+) ", line)
+        return round(int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)), 1) if m else None
+
+    spu_loads = [t for t in (log_s(line) for line in lines if "Loaded module: __spu" in line) if t is not None]
+    workers = {m.group(1) for m in (re.search(r"\{SPU Worker (\d+)\}", line) for line in lines) if m}
+    capped = [line.split("} ", 1)[-1][:120] for line in lines if "SPU cache workers capped" in line]
     out = {"path": path, "lines": len(lines), "fatalCount": len(fatal), "fatal": fatal[:6],
            "guardCount": len(guard), "guard": guard[-2:],
-           "levers": levers[:12], "framesLines": len(frames), "lastFrames": frames[-3:]}
+           "levers": levers[:12], "framesLines": len(frames), "lastFrames": frames[-3:],
+           "spuCache": {"moduleLoads": len(spu_loads), "workers": len(workers),
+                        "firstLoadS": spu_loads[0] if spu_loads else None,
+                        "lastLoadS": spu_loads[-1] if spu_loads else None,
+                        "capped": capped[:2]}}
     if match:
         rx = re.compile(match)
         hits = [line[-200:] for line in lines if rx.search(line)]
@@ -1740,6 +1783,17 @@ def t_arm(a):
         if not PROP_VALUE_RE.fullmatch(v):
             return {"refused": True, "reason": f"value {v!r} for {k} has characters a shell would change"}
     use_state = bool(a.get("savestate", True))
+    # Boot the savestate file itself. A boot followed by a load runs the SPU
+    # cache load twice: 870 and 877 module loads on 8 workers (2026-09-22).
+    boot_state = use_state and bool(a.get("bootSavestate", False))
+    if boot_state and str(iso).lower().endswith(".iso"):
+        # Measured 2026-09-22: "Disc directory not found. Savestate cannot be
+        # loaded." A disc-image title needs the image mounted by a boot first.
+        return {"refused": True, "reason": "bootSavestate cannot load a disc-image title: "
+                "the core needs the image mounted first. Use the default boot and load."}
+    stop_after = a.get("stopAfter")
+    if stop_after not in (None, "firstFrame", "gate"):
+        return {"refused": True, "reason": "stopAfter must be firstFrame or gate"}
     play_s = _clamp(float(a.get("playS", 60)), 10.0, 300.0)
     samples = int(_clamp(int(a.get("samples", 3)), 1, 10))
     gate_cores = float(a.get("gateCores", 4.5))
@@ -1767,6 +1821,10 @@ def t_arm(a):
     out = {"arm": name, "props": props, "titleId": title, "tag": tag,
            "runDir": run_dir, "valid": False}
     peak = {"junction": -1, "silicon": -1.0}
+    phase_peaks = {}
+    trace = []
+    foreign = []
+    last_cpu = {"t": None, "busy": None, "rp": None}
     booted = False
 
     def budget(phase):
@@ -1777,6 +1835,24 @@ def t_arm(a):
         j, s = temp_c(), fixed_silicon_c()
         peak["junction"] = max(peak["junction"], j)
         peak["silicon"] = max(peak["silicon"], s)
+        # Peaks per phase say WHERE the heat comes from: the boot, the load,
+        # or the measured scene.
+        pp = phase_peaks.setdefault(phase, {"junctionC": -1, "fixedSiliconC": -1.0})
+        pp["junctionC"] = max(pp["junctionC"], j)
+        pp["fixedSiliconC"] = max(pp["fixedSiliconC"], s)
+        t = round(time.time() - started, 1)
+        if not trace or t - trace[-1][0] >= 5:
+            # Cores used by processes other than RPCSX since the last sample.
+            now = time.time()
+            busy, rp = cpu_busy_and_rpcsx()
+            other = None
+            if busy is not None and last_cpu["busy"] is not None:
+                d_rp = rp - last_cpu["rp"] if rp >= last_cpu["rp"] else rp
+                other = round((busy - last_cpu["busy"] - d_rp) / 100.0 / (now - last_cpu["t"]), 2)
+                if other > 1.0:
+                    foreign.append([t, other])
+            last_cpu.update(t=now, busy=busy, rp=rp)
+            trace.append([t, j, s, other])
         if j < 0:
             raise _ArmStop("the CPU-junction sensors are unavailable", thermalStop=True)
         if j >= junction_limit:
@@ -1848,8 +1924,11 @@ def t_arm(a):
         budget("the boot")
         sh(f"rm -f {FILES}/cache/RPCSX.log; logcat -c; input keyevent KEYCODE_WAKEUP; "
            "svc power stayon true")
+        boot_path = (f"{FILES}/config/savestates/{title}/{title}_1_0.SAVESTAT.zst"
+                     if boot_state else iso)
+        out["bootPath"] = boot_path
         sh(f"am start -a net.rpcsx.THOR_DEBUG_BOOT -n {PKG}/net.rpcsx.MainActivity "
-           f"--es path '{iso}' --es titleId {title} --es thorDebugBootRequestId mcp-arm "
+           f"--es path '{boot_path}' --es titleId {title} --es thorDebugBootRequestId mcp-arm "
            f"--ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true")
         booted = True
         ensure_forward()
@@ -1864,8 +1943,10 @@ def t_arm(a):
             if time.time() - boot_t > ready_timeout:
                 raise _ArmStop(f"no frame in {ready_timeout} s")
         out["firstFrameS"] = round(time.time() - boot_t, 1)
+        if stop_after == "firstFrame":
+            raise _ArmDone()
 
-        if use_state:
+        if use_state and not boot_state:
             # One request at a time. The load call can block while the reload
             # runs, and a second request during a load is refused with "no
             # compatible savestate" (2026-09-22). So a lost answer is checked
@@ -1910,11 +1991,14 @@ def t_arm(a):
                                f"{cores}, gate {gate_cores}", scene=scene)
         out.update(gateS=round(time.time() - gate_t, 1), gateCoresBusy=cores,
                    drawsLastFrame=scene.get("drawsLastFrame"))
+        out["readyS"] = round(time.time() - boot_t, 1)
 
         shot = os.path.join(run_dir, f"scene_{tag}.png")
         with open(shot, "wb") as f:
             f.write(adb(["exec-out", "screencap", "-p"], binary=True, timeout=60))
         out["shot"] = dict(path=shot, **_score_shot(shot))
+        if stop_after == "gate":
+            raise _ArmDone()
 
         windows = []
         for i in range(samples):
@@ -1955,6 +2039,8 @@ def t_arm(a):
                 out["windows"] = windows
                 raise _ArmStop("the process ended during a sample window")
         out["windows"] = windows
+    except _ArmDone:
+        out["stoppedAfter"] = stop_after
     except _ArmStop as e:
         out.update(e.fields)
     except Exception as e:  # the stop below must still run
@@ -1975,6 +2061,9 @@ def t_arm(a):
         out["propsLeft"] = _nonempty_thor_properties()
         out["peakJunctionC"] = peak["junction"]
         out["peakFixedSiliconC"] = peak["silicon"]
+        out["phasePeaks"] = phase_peaks
+        out["trace"] = trace
+        out["foreignCpu"] = foreign
         out["endFixedSiliconC"] = fixed_silicon_c()
         out["hostS"] = round(time.time() - started, 1)
 
@@ -1984,8 +2073,12 @@ def t_arm(a):
     problems = []
     if "reason" in out:
         problems.append(out["reason"])
-    if len(good) != samples:
+    if not stop_after and len(good) != samples:
         problems.append(f"{len(good)} of {samples} windows are valid")
+    if foreign:
+        worst = max(foreign, key=lambda x: x[1])
+        problems.append(f"other processes used up to {worst[1]} cores (at {worst[0]} s), "
+                        "so the heat and the frames are not this arm's alone")
     if (out.get("log") or {}).get("fatalCount"):
         problems.append("the log has fatal lines")
     if (out.get("shot") or {}).get("verdict") not in (None, "DRAWN"):
@@ -2000,11 +2093,22 @@ def t_arm(a):
     return out
 
 
+def _metric(row, path):
+    """Read a dotted path such as fps.mean or phasePeaks.the boot.fixedSiliconC."""
+    value = row
+    for key in path.split("."):
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value
+
+
 def t_ab_table(a):
     """Build the A/B table for a run directory from its results.jsonl."""
     if not a.get("runDir"):
         return {"refused": True, "reason": "runDir is required"}
     run_dir = os.path.join(REPO_ROOT, a["runDir"])
+    metric = a.get("metric") or "fps.mean"
     try:
         with open(os.path.join(run_dir, "results.jsonl"), encoding="utf-8") as f:
             rows = [json.loads(line) for line in f if line.strip()]
@@ -2015,8 +2119,9 @@ def t_ab_table(a):
         if r["arm"] not in arms:
             order.append(r["arm"])
             arms[r["arm"]] = {"fps": [], "cores": [], "invalid": []}
-        if r.get("valid") and r.get("fps"):
-            arms[r["arm"]]["fps"].append(r["fps"]["mean"])
+        value = _metric(r, metric)
+        if r.get("valid") and isinstance(value, (int, float)):
+            arms[r["arm"]]["fps"].append(value)
             arms[r["arm"]]["cores"].append((r.get("cores") or {}).get("mean"))
         else:
             arms[r["arm"]]["invalid"].append({"tag": r.get("tag"), "problems": r.get("problems")})
@@ -2039,7 +2144,7 @@ def t_ab_table(a):
             else:
                 row["verdict"] = "shown: the ranges do not overlap"
         table.append(row)
-    return {"runDir": run_dir, "control": control, "table": table,
+    return {"runDir": run_dir, "control": control, "metric": metric, "table": table,
             "note": "a restored savestate varies about +/-5 percent in one configuration; "
                     "a smaller difference is not a result"}
 
@@ -2069,6 +2174,8 @@ TOOLS = [
         "isoPath": {"type": "string", "description": "Device path of the disc image. Known for BLUS30357."},
         "savestate": {"type": "boolean", "description": "Default true: push and load the newest vault savestate."},
         "savestateFile": {"type": "string", "description": "A vault file name, instead of the newest."},
+        "bootSavestate": {"type": "boolean", "description": "Boot the savestate file itself, not the disc image and then a load. One SPU cache load instead of two."},
+        "stopAfter": {"type": "string", "enum": ["firstFrame", "gate"], "description": "End the arm after this phase, for a boot or load measurement without combat heat."},
         "playS": {"type": "number", "description": "Measured seconds, 10 to 300. Default 60."},
         "samples": {"type": "integer", "description": "Windows in playS, 1 to 10. Default 3."},
         "gateCores": {"type": "number", "description": "Scene gate on coresBusy. Default 4.5 (restored combat)."},
@@ -2084,7 +2191,8 @@ TOOLS = [
         "logMatch": {"type": "string", "description": "A regular expression to count in the log, for example a lever's counter line."}}}, t_arm),
     ("thor_ab_table", "Build the A/B table from runDir/results.jsonl: per arm the FPS and cores over its valid runs, the change against the control, and a verdict. Overlapping ranges, or n=1, is 'not shown'.", {"type": "object", "properties": {
         "runDir": {"type": "string"},
-        "control": {"type": "string", "description": "Control arm name. Default: the first arm run."}}, "required": ["runDir"]}, t_ab_table),
+        "control": {"type": "string", "description": "Control arm name. Default: the first arm run."},
+        "metric": {"type": "string", "description": "Dotted path in each result. Default fps.mean. Examples: readyS, phasePeaks.the boot.fixedSiliconC, log.spuCache.lastLoadS."}}, "required": ["runDir"]}, t_ab_table),
 ]
 HANDLERS = {name: fn for name, _, _, fn in TOOLS}
 
