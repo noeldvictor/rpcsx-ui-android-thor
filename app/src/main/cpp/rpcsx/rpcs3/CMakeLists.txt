@@ -146,6 +146,7 @@ add_library(rpcs3 STATIC
     Crypto/unzip.cpp
     Crypto/utils.cpp
 
+    Loader/CHD.cpp
     Loader/disc.cpp
     Loader/ELF.cpp
     Loader/mself.cpp
@@ -189,6 +190,7 @@ set_source_files_properties("util/yaml.cpp" PROPERTIES
 target_link_libraries(rpcs3 PUBLIC
     rpcs3_emu
     rpcs3_core
+    3rdparty::chdr
     3rdparty::discordRPC
     3rdparty::hidapi
     3rdparty::libusb

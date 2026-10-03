@@ -50,6 +50,7 @@ struct RPCSXApi {
   bool (*setFastForwardEnabled)(bool enabled);
   bool (*toggleFastForward)();
   std::string (*getTitleId)();
+  std::string (*discImageInfo)(std::string_view path, std::string_view iconPath);
   std::string (*sceneInfo)();
   std::string (*deviceInfo)();
   std::string (*diagInfo)();
@@ -130,6 +131,7 @@ struct RPCSXLibrary : RPCSXApi {
     result.setFastForwardEnabled = reinterpret_cast<decltype(setFastForwardEnabled)>(dlsym(handle, "_rpcsx_setFastForwardEnabled"));
     result.toggleFastForward = reinterpret_cast<decltype(toggleFastForward)>(dlsym(handle, "_rpcsx_toggleFastForward"));
     result.getTitleId = reinterpret_cast<decltype(getTitleId)>(dlsym(handle, "_rpcsx_getTitleId"));
+    result.discImageInfo = reinterpret_cast<decltype(discImageInfo)>(dlsym(handle, "_rpcsx_discImageInfo"));
     result.sceneInfo = reinterpret_cast<decltype(sceneInfo)>(dlsym(handle, "_rpcsx_sceneInfo"));
     result.deviceInfo = reinterpret_cast<decltype(deviceInfo)>(dlsym(handle, "_rpcsx_deviceInfo"));
     result.diagInfo = reinterpret_cast<decltype(diagInfo)>(dlsym(handle, "_rpcsx_diagInfo"));
@@ -379,6 +381,18 @@ Java_net_rpcsx_RPCSX_toggleFastForward(JNIEnv *, jobject) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_net_rpcsx_RPCSX_getTitleId(JNIEnv *env, jobject) {
   return wrap(env, rpcsxLib.getTitleId());
+}
+
+// Title id, title and icon of a disc image (ISO or CHD) as JSON; "{}" when
+// the core is older than this call or the image does not read.
+extern "C" JNIEXPORT jstring JNICALL
+Java_net_rpcsx_RPCSX_discImageInfo(JNIEnv *env, jobject, jstring path,
+                                   jstring iconPath) {
+  if (rpcsxLib.discImageInfo == nullptr) {
+    return wrap(env, std::string("{}"));
+  }
+
+  return wrap(env, rpcsxLib.discImageInfo(unwrap(env, path), unwrap(env, iconPath)));
 }
 
 extern "C" JNIEXPORT jstring JNICALL

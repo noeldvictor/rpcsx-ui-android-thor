@@ -40,7 +40,9 @@ object FileUtil {
     private const val copyBufferSize = 64 * 1024
 
     private val nativeInstallerSafeExtensions = setOf("pkg", "edat")
-    private val isoExtensions = setOf("iso")
+    // .chd: a CHD disc image (chdman createdvd/createcd of an ISO). The core reads it through
+    // rpcs3/Loader/CHD.cpp, and Ps3IsoMetadataReader asks the core for its metadata.
+    private val isoExtensions = setOf("iso", "chd")
     private val externalIsoMetadataRefreshActive = AtomicBoolean(false)
 
     fun installPackages(context: Context, rootFolderUri: Uri) {

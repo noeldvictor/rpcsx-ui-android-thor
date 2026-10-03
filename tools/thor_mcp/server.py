@@ -204,6 +204,13 @@ def adb(args, timeout=300, binary=False):
     return out.stdout if binary else out.stdout.decode("utf-8", "replace").replace("\r", "")
 
 
+def shq(text):
+    """Quote text for the device shell. A plain '...' broke on a path with an apostrophe
+    ("Dragon's Crown (USA).iso", 2026-10-03): am start never ran, and the arm read it as a
+    process that ended during the boot."""
+    return "'" + str(text).replace("'", "'\\''") + "'"
+
+
 def reachable():
     """An unreachable device answers empty exactly like a dead process, so this
     is checked separately before any liveness claim."""
@@ -413,7 +420,7 @@ def t_boot(a):
     # never creates a surface and the renderer waits forever.
     sh("input keyevent KEYCODE_WAKEUP; svc power stayon true")
     sh(f"am start -a net.rpcsx.THOR_DEBUG_BOOT -n {PKG}/net.rpcsx.MainActivity "
-       f"--es path '{iso}' --es titleId {title} --es thorDebugBootRequestId mcp "
+       f"--es path {shq(iso)} --es titleId {title} --es thorDebugBootRequestId mcp "
        f"--ez thorRequireManagedProfile false --ez thorReplaceCustomProfile false")
     ensure_forward()
     result = {"booted": True, "titleId": title,
@@ -1924,12 +1931,15 @@ def t_arm(a):
         budget("the boot")
         sh(f"rm -f {FILES}/cache/RPCSX.log; logcat -c; input keyevent KEYCODE_WAKEUP; "
            "svc power stayon true")
+        # A title with no managed profile is refused when the profile is required
+        # (managed-profile-not-applied, BLUS30767 on 2026-10-03).
+        managed = "true" if a.get("managedProfile", True) else "false"
         boot_path = (f"{FILES}/config/savestates/{title}/{title}_1_0.SAVESTAT.zst"
                      if boot_state else iso)
         out["bootPath"] = boot_path
         sh(f"am start -a net.rpcsx.THOR_DEBUG_BOOT -n {PKG}/net.rpcsx.MainActivity "
-           f"--es path '{boot_path}' --es titleId {title} --es thorDebugBootRequestId mcp-arm "
-           f"--ez thorRequireManagedProfile true --ez thorReplaceCustomProfile true")
+           f"--es path {shq(boot_path)} --es titleId {title} --es thorDebugBootRequestId mcp-arm "
+           f"--ez thorRequireManagedProfile {managed} --ez thorReplaceCustomProfile {managed}")
         booted = True
         ensure_forward()
         boot_t = time.time()
@@ -2174,6 +2184,7 @@ TOOLS = [
         "isoPath": {"type": "string", "description": "Device path of the disc image. Known for BLUS30357."},
         "savestate": {"type": "boolean", "description": "Default true: push and load the newest vault savestate."},
         "savestateFile": {"type": "string", "description": "A vault file name, instead of the newest."},
+        "managedProfile": {"type": "boolean", "description": "Default true: boot with the title's managed profile, as the A/B rounds do. false for a title that has none, which is otherwise refused."},
         "bootSavestate": {"type": "boolean", "description": "Boot the savestate file itself, not the disc image and then a load. One SPU cache load instead of two."},
         "stopAfter": {"type": "string", "enum": ["firstFrame", "gate"], "description": "End the arm after this phase, for a boot or load measurement without combat heat."},
         "playS": {"type": "number", "description": "Measured seconds, 10 to 300. Default 60."},

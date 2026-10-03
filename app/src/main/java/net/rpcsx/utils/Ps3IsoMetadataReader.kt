@@ -3,6 +3,8 @@ package net.rpcsx.utils
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import net.rpcsx.RPCSX
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -27,6 +29,10 @@ object Ps3IsoMetadataReader {
     private const val maxDirectoryBytes = 16L * 1024L * 1024L
 
     fun read(context: Context, uri: Uri, isoPath: String, fallbackName: String): Ps3IsoMetadata {
+        if (isChdPath(isoPath)) {
+            return readChd(context, isoPath, fallbackName)
+        }
+
         return runCatching {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
                 FileInputStream(descriptor.fileDescriptor).channel.use { channel ->
@@ -39,12 +45,44 @@ object Ps3IsoMetadataReader {
     }
 
     fun readPath(context: Context, isoPath: String, fallbackName: String): Ps3IsoMetadata {
+        if (isChdPath(isoPath)) {
+            return readChd(context, isoPath, fallbackName)
+        }
+
         return runCatching {
             FileInputStream(isoPath).channel.use { channel ->
                 readFromChannel(context, channel, isoPath, fallbackName)
             }
         }.onFailure {
             Log.w("Ps3IsoMetadata", "Unable to read ISO metadata from $isoPath", it)
+        }.getOrNull() ?: Ps3IsoMetadata()
+    }
+
+    private fun isChdPath(path: String): Boolean =
+        path.substringAfterLast('.', "").lowercase(Locale.US) == "chd"
+
+    // A CHD is compressed, so this reader cannot walk its ISO9660 tree. The core opens it
+    // (rpcs3/Loader/CHD.cpp) and reads PARAM.SFO and ICON0.PNG through its ISO device. The core
+    // reads by path, so this needs a path the app can open directly.
+    private fun readChd(context: Context, chdPath: String, fallbackName: String): Ps3IsoMetadata {
+        return runCatching {
+            val iconDir = File(context.getExternalFilesDir(null), "cache/iso-icons")
+            if (!iconDir.exists()) {
+                iconDir.mkdirs()
+            }
+
+            val iconFile = File(iconDir, "chd_${stableHash(chdPath)}.png")
+            val info = JSONObject(RPCSX.instance.discImageInfo(chdPath, iconFile.absolutePath))
+            val titleId = info.optString("titleId").takeIf { it.isNotBlank() }
+                ?: GameIdentity.titleIdsFromText(fallbackName).firstOrNull()
+
+            Ps3IsoMetadata(
+                titleId = titleId,
+                title = info.optString("title").takeIf { it.isNotBlank() },
+                iconPath = info.optString("icon").takeIf { it.isNotBlank() }
+            )
+        }.onFailure {
+            Log.w("Ps3IsoMetadata", "Unable to read CHD metadata from $chdPath", it)
         }.getOrNull() ?: Ps3IsoMetadata()
     }
 

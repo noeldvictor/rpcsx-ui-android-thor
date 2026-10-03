@@ -102,6 +102,7 @@ class RPCSX {
     external fun loginUser(userId: String)
     external fun getUser(): String
     external fun getTitleId(): String
+    external fun discImageInfo(path: String, iconPath: String): String
     external fun sceneInfo(): String
     external fun deviceInfo(): String
     external fun diagInfo(): String

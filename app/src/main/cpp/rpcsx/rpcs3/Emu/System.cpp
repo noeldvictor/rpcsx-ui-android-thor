@@ -46,6 +46,7 @@
 #include "Loader/TAR.h"
 #include "Loader/ELF.h"
 #include "Loader/disc.h"
+#include "Loader/CHD.h"
 
 #include "rpcs3_version.h"
 
@@ -223,6 +224,13 @@ static FileType getFileType(const fs::file& file)
 	}
 
 	if (iso_dev::open(std::make_unique<file_view_block_dev>(file)))
+	{
+		return FileType::Iso;
+	}
+
+	// A CHD disc image. The header is checked here; the image is opened where it is mounted
+	// (chd::wrap_if_chd), because opening one decodes its whole hunk map.
+	if (chd::is_chd_file(file))
 	{
 		return FileType::Iso;
 	}
@@ -1023,7 +1031,18 @@ game_boot_result Emulator::BootGame(std::string path, const std::string& title_i
 		fs::file file(path);
 		if (getFileType(file) == FileType::Iso)
 		{
-			shared_ptr<fs::device_base> iso_device = stx::make_shared<iso_dev>(*ensure(iso_dev::open(std::make_unique<file_block_dev>(std::move(file)))));
+			// A CHD is read through a file over its decompressed image (Loader/CHD.h). A CHD
+			// that does not open is a boot error, not an assertion.
+			file = chd::wrap_if_chd(std::move(file), path);
+			std::optional<iso_dev> iso = file ? iso_dev::open(std::make_unique<file_block_dev>(std::move(file))) : std::nullopt;
+
+			if (!iso)
+			{
+				sys_log.error("'%s' is not a readable disc image.", path);
+				return restore_on_no_boot(game_boot_result::invalid_file_or_folder);
+			}
+
+			shared_ptr<fs::device_base> iso_device = stx::make_shared<iso_dev>(std::move(*iso));
 
 			auto mount_path = iso_device->fs_prefix + "/";
 			sys_log.notice("Mounting iso: '%s' -> '%s'", path, mount_path);

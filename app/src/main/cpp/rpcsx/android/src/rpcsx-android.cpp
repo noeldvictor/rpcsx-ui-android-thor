@@ -39,6 +39,8 @@
 #include "Input/hid_pad_handler.h"
 #include "Input/pad_thread.h"
 #include "Input/virtual_pad_handler.h"
+#include "Loader/CHD.h"
+#include <unistd.h>
 #include "Loader/PSF.h"
 #include "Loader/PUP.h"
 #include "Loader/TAR.h"
@@ -678,6 +680,12 @@ static FileType getFileType(const fs::file &file) {
   }
 
   if (iso_dev::open(std::make_unique<file_view_block_dev>(file))) {
+    return FileType::Iso;
+  }
+
+  // A CHD disc image (Loader/CHD.h). Only the header is checked here; the
+  // image is opened where it is read (chd::wrap_if_chd).
+  if (chd::is_chd_file(file)) {
     return FileType::Iso;
   }
 
@@ -1786,8 +1794,12 @@ public:
     if (fs::is_file(path)) {
       fs::file source{path};
       if (getFileType(source) == FileType::Iso) {
-        auto openedIso = iso_dev::open(
-            std::make_unique<file_block_dev>(std::move(source)));
+        // A CHD reads through a file over its decompressed image.
+        source = chd::wrap_if_chd(std::move(source), path);
+        auto openedIso =
+            source ? iso_dev::open(
+                         std::make_unique<file_block_dev>(std::move(source)))
+                   : std::nullopt;
         if (!openedIso) {
           progress.failure("The selected cache-preparation ISO is invalid.");
           return false;
@@ -3407,7 +3419,24 @@ static bool copyFileStreamed(const fs::file &source,
 }
 
 static bool installIso(JNIEnv *env, fs::file &&file, jlong progressId) {
-  auto optIso = iso_dev::open(std::make_unique<file_view_block_dev>(file));
+  // A CHD reads through a file over its decompressed image (Loader/CHD.h).
+  // The caller owns `file`'s descriptor and releases it without closing it,
+  // and the image closes the file it holds. So the image reads a duplicate
+  // descriptor, and `file` stays as the caller gave it.
+  fs::file chdFile;
+  fs::file *source = &file;
+
+  if (chd::is_chd_file(file)) {
+    const int fd = ::dup(static_cast<int>(file.get_handle()));
+    chdFile = fd >= 0 ? chd::wrap_if_chd(fs::file::from_native_handle(fd),
+                                         "selected disc image")
+                      : fs::file{};
+    source = &chdFile;
+  }
+
+  auto optIso =
+      *source ? iso_dev::open(std::make_unique<file_view_block_dev>(*source))
+              : std::nullopt;
   Progress progress(env, progressId);
 
   if (!optIso) {
@@ -3599,6 +3628,55 @@ extern "C" bool _rpcsx_install(JNIEnv *env, int fd, long progressId) {
   }
 
   return true;
+}
+
+// Title id, title and icon of a disc image (ISO or CHD), read through iso_dev.
+// The Kotlin library reads an .iso's metadata itself; a .chd is compressed, so
+// it asks here. Writes ICON0.PNG to iconPath when iconPath is not empty.
+// Returns a JSON object; "{}" when the image does not read.
+extern "C" std::string _rpcsx_discImageInfo(std::string_view path,
+                                            std::string_view iconPath) {
+  const std::string imagePath(path);
+  fs::file file(imagePath);
+
+  if (!file) {
+    return "{}";
+  }
+
+  file = chd::wrap_if_chd(std::move(file), imagePath);
+  auto iso =
+      file ? iso_dev::open(std::make_unique<file_block_dev>(std::move(file)))
+           : std::nullopt;
+
+  if (!iso) {
+    return "{}";
+  }
+
+  nlohmann::json result = nlohmann::json::object();
+
+  if (auto sfoRaw = iso->open("PS3_GAME/PARAM.SFO", fs::read)) {
+    fs::file sfoFile;
+    sfoFile.reset(std::move(sfoRaw));
+    const auto sfo = psf::load_object(sfoFile, "disc://PS3_GAME/PARAM.SFO");
+    result["titleId"] = std::string(psf::get_string(sfo, "TITLE_ID"));
+    result["title"] = std::string(psf::get_string(sfo, "TITLE"));
+  }
+
+  if (!iconPath.empty()) {
+    if (auto iconRaw = iso->open("PS3_GAME/ICON0.PNG", fs::read)) {
+      fs::file iconFile;
+      iconFile.reset(std::move(iconRaw));
+      const auto bytes = iconFile.to_vector<u8>();
+
+      if (!bytes.empty() &&
+          fs::write_file(std::string(iconPath),
+                         fs::open_mode::create + fs::open_mode::trunc, bytes)) {
+        result["icon"] = std::string(iconPath);
+      }
+    }
+  }
+
+  return result.dump();
 }
 
 extern "C" bool _rpcsx_installKey(JNIEnv *env, int fd, long progressId,
