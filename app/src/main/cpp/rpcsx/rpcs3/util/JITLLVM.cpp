@@ -536,12 +536,37 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 	MemoryManager1(std::function<u64(const std::string&)> symbols_cement = {}) noexcept
 		: m_symbols_cement(std::move(symbols_cement))
 	{
+	}
+
+	// From ARMSX3 430fff5e7. Reserve on first use, not on construction.
+	//
+	// Each instance reserves 768 MiB of address space, and the destructor keeps the
+	// reservation (see below). Each SPU thread builds a recompiler, so it builds one of these
+	// whether or not it ever compiles. A SPURS title that cycles through thread groups uses the
+	// space a few hundred times over. A 64-bit Android process has 512 GiB of address space,
+	// against 128 TiB on desktop. ARMSX3 measured Assassin's Creed IV running out of ADDRESS
+	// SPACE: commits failed with ENOMEM while the device had 6 GB free.
+	void reserve_once()
+	{
+		if (m_code_mems)
+		{
+			return;
+		}
+
 		auto ptr = reinterpret_cast<u8*>(utils::memory_reserve(c_max_size * 3));
 		m_code_mems = ptr;
 		// ptr += c_max_size;
 		// m_data_ro_mems = ptr;
 		ptr += c_max_size;
 		m_data_rw_mems = ptr;
+
+		// Every 64 instances, so a long session shows how close it is to the limit.
+		static atomic_t<u64> s_reserved_count{0};
+
+		if (const u64 n = ++s_reserved_count; n % 64 == 0)
+		{
+			jit_log.notice("JIT: %u instances hold %u GiB of reserved address space", n, n * c_max_size * 3 / (1024 * 1024 * 1024));
+		}
 	}
 
 	MemoryManager1(const MemoryManager1&) = delete;
@@ -550,6 +575,12 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 
 	~MemoryManager1() override
 	{
+		if (!m_code_mems)
+		{
+			// Never compiled anything, so nothing was reserved.
+			return;
+		}
+
 		// Hack: don't release to prevent reuse of address space, see jit_announce
 		// constexpr auto how_much = [](u64 pos) { return rx::alignUp(pos, pos < c_page_size ? c_page_size / 4 : c_page_size); };
 		// utils::memory_decommit(m_code_mems, how_much(code_ptr));
@@ -580,8 +611,11 @@ struct MemoryManager1 : llvm::RTDyldMemoryManager
 		return {addr, llvm::JITSymbolFlags::Exported};
 	}
 
-	u8* allocate(u64& alloc_pos, void* block, uptr size, u64 align, utils::protection prot)
+	u8* allocate(u64& alloc_pos, void*& block, uptr size, u64 align, utils::protection prot)
 	{
+		// block refers to the member this instance allocates from, so the reservation made
+		// here is the address the caller passed.
+		reserve_once();
 		align = align ? align : 16;
 
 		const u64 sizea = rx::alignUp(size, align);

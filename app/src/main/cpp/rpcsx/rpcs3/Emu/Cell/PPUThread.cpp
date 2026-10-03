@@ -7519,7 +7519,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			sha1_finish(&ctx, output);
 
 			// Settings: should be populated by settings which affect codegen (TODO)
-			enum class ppu_settings : u32
+			// u64 since 2026-10-03: arm64_codegen_v2 was the 33rd value. The wider type changes
+			// every object name once, which the codegen bump forces anyway.
+			enum class ppu_settings : u64
 			{
 				platform_bit,
 				accurate_dfma,
@@ -7569,8 +7571,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				// with hashes already on disk from an earlier build.
 				arm64_codegen_v1,
 				thor_transformers_counter_probe_v1,
+				// 2026-10-03: ARMSX3 1001e26be, 59f06562d, 363a11f01 and 6f4bf7a22 change
+				// PPU code generation (single store, fnmadd/fnmsub signs, OE overflow).
+				arm64_codegen_v2,
 
-				bitset_last = thor_transformers_counter_probe_v1,
+				bitset_last = arm64_codegen_v2,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -7581,7 +7586,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 #if defined(ARCH_ARM64)
 			// See arm64_codegen_v1: without this the PPU object cache cannot tell an
 			// ARM64 codegen change from no change at all.
-			settings += ppu_settings::arm64_codegen_v1;
+			settings += ppu_settings::arm64_codegen_v2;
 #endif
 			if (g_cfg.core.use_accurate_dfma)
 				settings += ppu_settings::accurate_dfma;

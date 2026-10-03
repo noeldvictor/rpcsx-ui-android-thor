@@ -178,6 +178,9 @@ public:
 	// Get fpr
 	llvm::Value* GetFpr(u32 r, u32 bits = 64, bool as_int = false);
 
+	// Sign of an exact zero from fnmadd/fnmsub (see the definition)
+	llvm::Value* FixNegatedFmaZero(llvm::Value* result, llvm::Value* a, llvm::Value* b, llvm::Value* c, bool subtract);
+
 	// Set fpr
 	void SetFpr(u32 r, llvm::Value* val);
 
@@ -289,6 +292,9 @@ public:
 
 	// Set XER.OV bit, and update XER.SO bit (|=)
 	void SetOverflow(llvm::Value*);
+
+	// Signed overflow of an add (or ~RA + RB subtract) that produced result
+	llvm::Value* AddOverflow(llvm::Value* x, llvm::Value* y, llvm::Value* result);
 
 	// Check condition for trap instructions
 	llvm::Value* CheckTrapCondition(u32 to, llvm::Value* left, llvm::Value* right);

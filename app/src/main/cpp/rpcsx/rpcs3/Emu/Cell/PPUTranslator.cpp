@@ -3061,10 +3061,10 @@ void PPUTranslator::SUBFC(ppu_opcode_t op)
 	const auto result = m_ir->CreateSub(b, a);
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateICmpULE(result, b));
+	if (op.oe)
+		SetOverflow(AddOverflow(m_ir->CreateNot(a), b, result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::ADDC(ppu_opcode_t op)
@@ -3074,15 +3074,11 @@ void PPUTranslator::ADDC(ppu_opcode_t op)
 	const auto result = m_ir->CreateAdd(a, b);
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateICmpULT(result, b));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, b, result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
 
-	if (op.oe)
-	{
-		// const auto s = m_ir->CreateCall(get_intrinsic<u64>(llvm::Intrinsic::sadd_with_overflow), {a, b});
-		// SetOverflow(m_ir->CreateExtractValue(s, {1}));
-		SetOverflow(m_ir->CreateICmpSLT(m_ir->CreateAnd(m_ir->CreateXor(a, m_ir->CreateNot(b)), m_ir->CreateXor(a, result)), m_ir->getInt64(0)));
-	}
 }
 
 void PPUTranslator::MULHDU(ppu_opcode_t op)
@@ -3240,15 +3236,11 @@ void PPUTranslator::SUBF(ppu_opcode_t op)
 	const auto b = GetGpr(op.rb);
 	const auto result = m_ir->CreateSub(b, a);
 	SetGpr(op.rd, result);
+	if (op.oe)
+		SetOverflow(AddOverflow(m_ir->CreateNot(a), b, result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
 
-	if (op.oe)
-	{
-		// const auto s = m_ir->CreateCall(get_intrinsic<u64>(llvm::Intrinsic::ssub_with_overflow), {b, m_ir->CreateNot(a)});
-		// SetOverflow(m_ir->CreateExtractValue(s, {1}));
-		SetOverflow(m_ir->CreateICmpSLT(m_ir->CreateAnd(m_ir->CreateXor(a, b), m_ir->CreateXor(m_ir->CreateNot(a), result)), m_ir->getInt64(0)));
-	}
 }
 
 void PPUTranslator::LDUX(ppu_opcode_t op)
@@ -3353,10 +3345,10 @@ void PPUTranslator::NEG(ppu_opcode_t op)
 	const auto reg = GetGpr(op.ra);
 	const auto result = m_ir->CreateNeg(reg);
 	SetGpr(op.rd, result);
-	if (op.rc)
-		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
 	if (op.oe)
 		SetOverflow(m_ir->CreateICmpEQ(result, m_ir->getInt64(1ull << 63)));
+	if (op.rc)
+		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
 }
 
 void PPUTranslator::LBZUX(ppu_opcode_t op)
@@ -3389,10 +3381,10 @@ void PPUTranslator::SUBFE(ppu_opcode_t op)
 	const auto r2 = m_ir->CreateAdd(r1, ZExt(c, GetType<u64>()));
 	SetGpr(op.rd, r2);
 	SetCarry(m_ir->CreateOr(m_ir->CreateICmpULT(r1, a), m_ir->CreateICmpULT(r2, r1)));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, b, r2));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, r2, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::ADDE(ppu_opcode_t op)
@@ -3404,10 +3396,10 @@ void PPUTranslator::ADDE(ppu_opcode_t op)
 	const auto r2 = m_ir->CreateAdd(r1, ZExt(c, GetType<u64>()));
 	SetGpr(op.rd, r2);
 	SetCarry(m_ir->CreateOr(m_ir->CreateICmpULT(r1, a), m_ir->CreateICmpULT(r2, r1)));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, b, r2));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, r2, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::MTOCRF(ppu_opcode_t op)
@@ -3568,10 +3560,10 @@ void PPUTranslator::ADDZE(ppu_opcode_t op)
 	const auto result = m_ir->CreateAdd(a, ZExt(c, GetType<u64>()));
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateICmpULT(result, a));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, m_ir->getInt64(0), result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::SUBFZE(ppu_opcode_t op)
@@ -3581,10 +3573,10 @@ void PPUTranslator::SUBFZE(ppu_opcode_t op)
 	const auto result = m_ir->CreateAdd(a, ZExt(c, GetType<u64>()));
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateICmpULT(result, a));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, m_ir->getInt64(0), result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::STDCX(ppu_opcode_t op)
@@ -3612,10 +3604,10 @@ void PPUTranslator::SUBFME(ppu_opcode_t op)
 	const auto result = m_ir->CreateSub(a, ZExt(m_ir->CreateNot(c), GetType<u64>()));
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateOr(c, IsNotZero(a)));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, m_ir->getInt64(-1), result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::MULLD(ppu_opcode_t op)
@@ -3624,10 +3616,14 @@ void PPUTranslator::MULLD(ppu_opcode_t op)
 	const auto b = GetGpr(op.rb);
 	const auto result = m_ir->CreateMul(a, b);
 	SetGpr(op.rd, result);
+	if (op.oe)
+	{
+		const auto i128 = m_ir->getIntNTy(128);
+		const auto wide = m_ir->CreateMul(m_ir->CreateSExt(a, i128), m_ir->CreateSExt(b, i128));
+		SetOverflow(m_ir->CreateICmpNE(wide, m_ir->CreateSExt(result, i128)));
+	}
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::ADDME(ppu_opcode_t op)
@@ -3637,10 +3633,10 @@ void PPUTranslator::ADDME(ppu_opcode_t op)
 	const auto result = m_ir->CreateSub(a, ZExt(m_ir->CreateNot(c), GetType<u64>()));
 	SetGpr(op.rd, result);
 	SetCarry(m_ir->CreateOr(c, IsNotZero(a)));
+	if (op.oe)
+		SetOverflow(AddOverflow(a, m_ir->getInt64(-1), result));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::MULLW(ppu_opcode_t op)
@@ -3649,10 +3645,10 @@ void PPUTranslator::MULLW(ppu_opcode_t op)
 	const auto b = SExt(GetGpr(op.rb, 32));
 	const auto result = m_ir->CreateMul(a, b);
 	SetGpr(op.rd, result);
+	if (op.oe)
+		SetOverflow(m_ir->CreateICmpNE(result, SExt(Trunc(result, GetType<s32>()), GetType<s64>())));
 	if (op.rc)
 		SetCrFieldSignedCmp(0, result, m_ir->getInt64(0));
-	if (op.oe)
-		UNK(op);
 }
 
 void PPUTranslator::DCBTST(ppu_opcode_t)
@@ -3851,10 +3847,10 @@ void PPUTranslator::DIVDU(ppu_opcode_t op)
 	const auto o = IsZero(b);
 	const auto result = m_ir->CreateUDiv(a, m_ir->CreateSelect(o, m_ir->getInt64(-1), b));
 	SetGpr(op.rd, m_ir->CreateSelect(o, m_ir->getInt64(0), result));
-	if (op.rc)
-		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 	if (op.oe)
 		SetOverflow(o);
+	if (op.rc)
+		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 }
 
 void PPUTranslator::DIVWU(ppu_opcode_t op)
@@ -3864,10 +3860,10 @@ void PPUTranslator::DIVWU(ppu_opcode_t op)
 	const auto o = IsZero(b);
 	const auto result = m_ir->CreateUDiv(a, m_ir->CreateSelect(o, m_ir->getInt32(0xffffffff), b));
 	SetGpr(op.rd, m_ir->CreateSelect(o, m_ir->getInt32(0), result));
-	if (op.rc)
-		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 	if (op.oe)
 		SetOverflow(o);
+	if (op.rc)
+		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 }
 
 void PPUTranslator::MTSPR(ppu_opcode_t op)
@@ -3917,10 +3913,10 @@ void PPUTranslator::DIVD(ppu_opcode_t op)
 	const auto o = m_ir->CreateOr(IsZero(b), m_ir->CreateAnd(m_ir->CreateICmpEQ(a, m_ir->getInt64(1ull << 63)), IsOnes(b)));
 	const auto result = m_ir->CreateSDiv(a, m_ir->CreateSelect(o, m_ir->getInt64(1ull << 63), b));
 	SetGpr(op.rd, m_ir->CreateSelect(o, m_ir->getInt64(0), result));
-	if (op.rc)
-		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 	if (op.oe)
 		SetOverflow(o);
+	if (op.rc)
+		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 }
 
 void PPUTranslator::DIVW(ppu_opcode_t op)
@@ -3930,10 +3926,10 @@ void PPUTranslator::DIVW(ppu_opcode_t op)
 	const auto o = m_ir->CreateOr(IsZero(b), m_ir->CreateAnd(m_ir->CreateICmpEQ(a, m_ir->getInt32(s32{smin})), IsOnes(b)));
 	const auto result = m_ir->CreateSDiv(a, m_ir->CreateSelect(o, m_ir->getInt32(s32{smin}), b));
 	SetGpr(op.rd, m_ir->CreateSelect(o, m_ir->getInt32(0), result));
-	if (op.rc)
-		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 	if (op.oe)
 		SetOverflow(o);
+	if (op.rc)
+		SetCrFieldSignedCmp(0, GetGpr(op.rd), m_ir->getInt64(0));
 }
 
 void PPUTranslator::LVLX(ppu_opcode_t op)
@@ -4922,6 +4918,60 @@ void PPUTranslator::FMULS(ppu_opcode_t op)
 	SetFPRF(result, op.rc != 0);
 }
 
+// From ARMSX3 59f06562d. Negate a multiply-add result without letting LLVM fold the negate
+// into the FMA. CreateFNeg lets LLVM apply -(a*c + d) == (-a)*c + (-d). That identity is exact
+// for finite values and wrong for signed zeros and for the sign of a NaN. Flipping the sign bit
+// through an integer bitcast cannot be reassociated, and it keeps a NaN payload. PowerPC does
+// not negate a NaN here, so a NaN passes through. FNEG and FNABS keep CreateFNeg: they are
+// sign instructions and do flip a NaN's sign.
+// Measured by ARMSX3 against real PS3 output (ps3autotests cpu/ppu_float_arithmetic):
+// result mismatches 324 -> 12.
+template <typename Builder>
+static llvm::Value* ppu_negate_result(Builder* ir, llvm::Value* v)
+{
+	const auto i = ir->CreateBitCast(v, llvm::Type::getInt64Ty(ir->getContext()));
+	const auto flipped = ir->CreateBitCast(
+		ir->CreateXor(i, ir->getInt64(0x8000000000000000ULL)), v->getType());
+	return ir->CreateSelect(ir->CreateFCmpUNO(v, v), v, flipped);
+}
+
+// From ARMSX3 363a11f01. fnmadd and fnmsub zeros. LLVM still folds the negate above into the
+// fused multiply-add, and the fused (-b) - a*c gives +0.0 where the hardware's -(a*c + b) gives
+// -0.0 (for one case a = +0, c = -0, b = +0). Only results that are exactly zero differ, so any
+// other result, NaNs included, keeps the fused answer. A zero gets its sign from the operands:
+//   a or c is zero: the product is a signed zero. The sum is -0.0 only when the product and the
+//   addend are both -0.0, and the result is the negation of that.
+//   otherwise the addend cancelled the product: the sum is +0.0 and the result is -0.0.
+// A sum can also round to zero without being zero, but only when |b| is under 2^-969. Those
+// keep the fused sign, which is right for them. The work sits behind an unlikely branch, so a
+// nonzero result pays for one compare. ARMSX3 measured ppu_float_arithmetic 12 -> 0 mismatches.
+llvm::Value* PPUTranslator::FixNegatedFmaZero(llvm::Value* result, llvm::Value* a, llvm::Value* b, llvm::Value* c, bool subtract)
+{
+	const auto zero = ConstantFP::get(GetType<f64>(), 0.0);
+	const auto entry = m_ir->GetInsertBlock();
+	const auto fix = BasicBlock::Create(m_context, "__fnm_zero", m_function);
+	const auto next = BasicBlock::Create(m_context, "__fnm_next", m_function);
+	m_ir->CreateCondBr(m_ir->CreateFCmpOEQ(result, zero), fix, next, m_md_unlikely);
+
+	m_ir->SetInsertPoint(fix);
+	const auto bits = [&](Value* v) { return m_ir->CreateBitCast(v, GetType<u64>()); };
+	const auto product_zero = m_ir->CreateOr(m_ir->CreateFCmpOEQ(a, zero), m_ir->CreateFCmpOEQ(c, zero));
+	const auto product_neg = m_ir->CreateICmpSLT(m_ir->CreateXor(bits(a), bits(c)), m_ir->getInt64(0));
+	const auto addend_neg = subtract ? m_ir->CreateICmpSGE(bits(b), m_ir->getInt64(0)) : m_ir->CreateICmpSLT(bits(b), m_ir->getInt64(0));
+	const auto cancelled = m_ir->CreateICmpUGE(m_ir->CreateAnd(bits(b), m_ir->getInt64(0x7fffffffffffffffull)), m_ir->getInt64(0x0360000000000000ull));
+	const auto zeros_negative = m_ir->CreateAnd(product_zero, m_ir->CreateAnd(product_neg, addend_neg));
+	const auto signed_zero = m_ir->CreateSelect(zeros_negative, zero, ConstantFP::get(GetType<f64>(), -0.0));
+	const auto fixed = m_ir->CreateSelect(m_ir->CreateOr(product_zero, cancelled), signed_zero, result);
+	const auto fix_end = m_ir->GetInsertBlock();
+	m_ir->CreateBr(next);
+
+	m_ir->SetInsertPoint(next);
+	const auto merged = m_ir->CreatePHI(GetType<f64>(), 2);
+	merged->addIncoming(result, entry);
+	merged->addIncoming(fixed, fix_end);
+	return merged;
+}
+
 void PPUTranslator::FMADDS(ppu_opcode_t op)
 {
 	const auto a = GetFpr(op.fra);
@@ -4959,7 +5009,7 @@ void PPUTranslator::FMSUBS(ppu_opcode_t op)
 	llvm::Value* result;
 	if (g_cfg.core.use_accurate_dfma)
 	{
-		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, m_ir->CreateFNeg(b)});
+		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, ppu_negate_result(m_ir, b)});
 	}
 	else
 	{
@@ -4987,14 +5037,14 @@ void PPUTranslator::FNMSUBS(ppu_opcode_t op)
 	llvm::Value* result;
 	if (g_cfg.core.use_accurate_dfma)
 	{
-		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, m_ir->CreateFNeg(b)});
+		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, ppu_negate_result(m_ir, b)});
 	}
 	else
 	{
 		result = m_ir->CreateFSub(m_ir->CreateFMul(a, c), b);
 	}
 
-	SetFpr(op.frd, m_ir->CreateFPTrunc(m_ir->CreateFNeg(result), GetType<f32>()));
+	SetFpr(op.frd, m_ir->CreateFPTrunc(FixNegatedFmaZero(ppu_negate_result(m_ir, result), a, b, c, true), GetType<f32>()));
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fmadds_get_fr", a, b, c)); // TODO ???
 	// SetFPSCR_FI(Call(GetType<bool>(), m_pure_attr, "__fmadds_get_fi", a, b, c));
@@ -5022,7 +5072,7 @@ void PPUTranslator::FNMADDS(ppu_opcode_t op)
 		result = m_ir->CreateFAdd(m_ir->CreateFMul(a, c), b);
 	}
 
-	SetFpr(op.frd, m_ir->CreateFPTrunc(m_ir->CreateFNeg(result), GetType<f32>()));
+	SetFpr(op.frd, m_ir->CreateFPTrunc(FixNegatedFmaZero(ppu_negate_result(m_ir, result), a, b, c, false), GetType<f32>()));
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fmadds_get_fr", a, b, c)); // TODO ???
 	// SetFPSCR_FI(Call(GetType<bool>(), m_pure_attr, "__fmadds_get_fi", a, b, c));
@@ -5298,7 +5348,7 @@ void PPUTranslator::FMSUB(ppu_opcode_t op)
 	llvm::Value* result;
 	if (g_cfg.core.use_accurate_dfma)
 	{
-		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, m_ir->CreateFNeg(b)});
+		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, ppu_negate_result(m_ir, b)});
 	}
 	else
 	{
@@ -5354,14 +5404,14 @@ void PPUTranslator::FNMSUB(ppu_opcode_t op)
 	llvm::Value* result;
 	if (g_cfg.core.use_accurate_dfma)
 	{
-		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, m_ir->CreateFNeg(b)});
+		result = m_ir->CreateCall(get_intrinsic<f64>(llvm::Intrinsic::fma), {a, c, ppu_negate_result(m_ir, b)});
 	}
 	else
 	{
 		result = m_ir->CreateFSub(m_ir->CreateFMul(a, c), b);
 	}
 
-	SetFpr(op.frd, m_ir->CreateFNeg(result));
+	SetFpr(op.frd, FixNegatedFmaZero(ppu_negate_result(m_ir, result), a, b, c, true));
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fmadd_get_fr", a, b, c)); // TODO ???
 	// SetFPSCR_FI(Call(GetType<bool>(), m_pure_attr, "__fmadd_get_fi", a, b, c));
@@ -5389,7 +5439,7 @@ void PPUTranslator::FNMADD(ppu_opcode_t op)
 		result = m_ir->CreateFAdd(m_ir->CreateFMul(a, c), b);
 	}
 
-	SetFpr(op.frd, m_ir->CreateFNeg(result));
+	SetFpr(op.frd, FixNegatedFmaZero(ppu_negate_result(m_ir, result), a, b, c, false));
 
 	// SetFPSCR_FR(Call(GetType<bool>(), m_pure_attr, "__fmadd_get_fr", a, b, c)); // TODO ???
 	// SetFPSCR_FI(Call(GetType<bool>(), m_pure_attr, "__fmadd_get_fi", a, b, c));
@@ -5526,7 +5576,25 @@ Value* PPUTranslator::GetFpr(u32 r, u32 bits, bool as_int)
 	}
 	else if (!as_int && bits == 32)
 	{
-		return m_ir->CreateFPTrunc(value, GetType<f32>());
+		// TRUNCATE the mantissa, do not round it.
+		//
+		// Only the four store-single forms reach here (stfs, stfsu, stfsx, stfsux), and PowerPC
+		// defines their conversion as a bit extraction: sign, exponent, and the top 23 mantissa
+		// bits. Rounding to single belongs to the arithmetic instructions, fadds and friends, not
+		// to a store. CreateFPTrunc rounds to nearest even, so a value whose discarded bits sit
+		// above half came out one ULP high.
+		//
+		// ps3autotests cpu/ppu_float_store, storing 0x3F80123456789ABC: the discarded 29 bits are
+		// 0x16789ABC against a half of 0x10000000, so nearest-even rounds up to 3C0091A3 while a
+		// real PS3 answers 3C0091A2. Fourteen lines, every one this.
+		//
+		// Masking the low 29 bits off first leaves the narrowing nothing to round, which is exact
+		// for normalised values and leaves the special cases to FPTrunc as before: zero and
+		// infinity have no mantissa bits to lose, and a NaN keeps its quiet bit at 51 so it stays
+		// a NaN. Doing it as an integer AND also means LLVM cannot fold the rounding back in.
+		const auto bits64 = m_ir->CreateBitCast(value, GetType<u64>());
+		const auto truncated = m_ir->CreateAnd(bits64, m_ir->getInt64(~0x1fffffffull));
+		return m_ir->CreateFPTrunc(m_ir->CreateBitCast(truncated, GetType<f64>()), GetType<f32>());
 	}
 	else
 	{
@@ -5739,6 +5807,14 @@ void PPUTranslator::SetFPSCRBit(u32 n, Value* value, bool /*update_fx*/)
 Value* PPUTranslator::GetCarry()
 {
 	return RegLoad(m_ca);
+}
+
+// From ARMSX3 6f4bf7a22. Signed overflow of x + y (+ carry) that produced result. This is
+// the test the interpreter makes: both addends have the same sign and the result does not.
+// For the subtract forms x is ~RA.
+Value* PPUTranslator::AddOverflow(Value* x, Value* y, Value* result)
+{
+	return m_ir->CreateICmpSLT(m_ir->CreateAnd(m_ir->CreateNot(m_ir->CreateXor(x, y)), m_ir->CreateXor(x, result)), m_ir->getInt64(0));
 }
 
 void PPUTranslator::SetCarry(Value* bit)
