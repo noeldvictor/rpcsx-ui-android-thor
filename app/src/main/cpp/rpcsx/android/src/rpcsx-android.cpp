@@ -1058,6 +1058,31 @@ static void sendVshBootable(JNIEnv *env, jlong progressId) {
       }}});
 }
 
+// From ARMSX3 7c12b4a51. The title id inside a content id: XXYYYY-TITLEID00_00-LABEL,
+// so the nine characters after the first dash. Empty for anything that is not shaped
+// like one.
+static std::string_view contentIdTitle(std::string_view id) {
+  return id.size() == 36 && id[6] == '-' && id[19] == '-' ? id.substr(7, 9)
+                                                         : std::string_view{};
+}
+
+// A trial that is not a C00 trial. Its EBOOT is free and carries the trial's own
+// content id. PARAM.SFO carries the full game's licence id. Example, Bomberman ULTRA:
+// EBOOT UP0555-NPUB30051_00-BMANTRIALGAME001, PARAM.SFO
+// UP0555-NPUB30051_00-BMANLICENSEGAME1. The game unlocks itself through
+// sceNpDrmVerifyUpgradeLicense on the PARAM.SFO id, which the core answers from
+// exdata/<that id>.edat (rpcs3::utils::verify_c00_unlock_edat).
+static bool isLicenceIdTrial(std::string_view ebootId, bool ebootIsFree,
+                             std::string_view sfoId) {
+  return ebootIsFree && ebootId != sfoId && !contentIdTitle(sfoId).empty() &&
+         contentIdTitle(sfoId) == contentIdTitle(ebootId);
+}
+
+static std::string npdContentId(const NPD_HEADER &npd) {
+  return std::string(npd.content_id,
+                     strnlen(npd.content_id, sizeof(npd.content_id)));
+}
+
 static bool tryUnlockGame(const psf::registry &psf) {
   auto contentId = psf::get_string(psf, "CONTENT_ID");
 
@@ -1210,11 +1235,25 @@ fetchGameInfo(const psf::registry &psf,
     auto ebootPath = locateEbootPath(path);
 
     bool isLocked = false;
+    std::string ebootContentId;
+    bool ebootIsFree = false;
 
     if (!ebootPath.empty()) {
       if (fs::file eboot{ebootPath};
           eboot && eboot.size() >= 4 && eboot.read<u32>() == "SCE\0"_u32) {
-        isLocked = !decrypt_self(eboot);
+        // The NPD header comes back even when the licence is missing, so a
+        // locked game still names the content id it wants (ARMSX3 7c12b4a51).
+        SelfAdditionalInfo selfInfo;
+        isLocked = !decrypt_self(eboot, nullptr, &selfInfo);
+
+        for (auto &supplemental : selfInfo.supplemental_hdr) {
+          if (supplemental.type == 3) {
+            const auto &npd = supplemental.PS3_npdrm_header.npd;
+            ebootContentId = npdContentId(npd);
+            ebootIsFree = npd.license == 3; // unself.cpp: 3 is a free licence
+            break;
+          }
+        }
       }
     }
 
@@ -1245,6 +1284,15 @@ fetchGameInfo(const psf::registry &psf,
           name = psf::get_string(c00Sfo, "TITLE", name);
         }
       }
+    } else if (const std::string sfoId{psf::get_string(psf, "CONTENT_ID")};
+               isLicenceIdTrial(ebootContentId, ebootIsFree, sfoId) &&
+               !rpcs3::utils::verify_c00_unlock_edat(sfoId, true)) {
+      // From ARMSX3 7c12b4a51. Only the C00 kind was flagged, so this kind
+      // showed as an ordinary game. "Unlocked" means what the core checks at
+      // run time: the upgrade EDAT is in exdata.
+      flags |= kGameFlagTrial;
+      rpcsx_android.warning("game %s is a trial: EBOOT %s, full game %s", path,
+                            ebootContentId, sfoId);
     }
   }
 
@@ -3183,11 +3231,22 @@ static bool installEdat(JNIEnv *env, fs::file &&file, jlong progressId,
 
     auto psf = psf::load_object(sfoPath);
     auto contentId = psf::get_string(psf, "CONTENT_ID");
+    const std::string edatId(
+        npdHeader.content_id,
+        strnlen(npdHeader.content_id, sizeof(npdHeader.content_id)));
 
-    if (contentId != npdHeader.content_id) {
-      progress.failure(fmt::format("File cannot be used for this game. EDAT "
-                                   "content ID missmatch %s vs %s",
-                                   contentId, npdHeader.content_id));
+    // From ARMSX3 1a9c4137e. Compare the TITLE, not the whole content id. A
+    // trial's full-game unlock key is an EDAT under its own content id, so it
+    // never equals the game's content id, and the exact check refused every
+    // unlock key. A content id is XXYYYY-TITLEID00_00-LABEL: the nine
+    // characters after the first dash are the title id. A key for another
+    // game is still refused.
+    if (contentId != edatId &&
+        (contentIdTitle(contentId).empty() ||
+         contentIdTitle(contentId) != contentIdTitle(edatId))) {
+      progress.failure(fmt::format(
+          "This key is for a different game (%s), not this one (%s).", edatId,
+          contentId));
       return false;
     }
   }
@@ -3250,9 +3309,28 @@ static bool installRap(JNIEnv *env, fs::file &&file, jlong progressId,
     return false;
   }
 
+  // From ARMSX3 7c12b4a51. A trial's EBOOT carries the trial's own content
+  // id. The licence that unlocks the full game is the PARAM.SFO id. A .rap
+  // named after the EBOOT id was filed where nothing looks for it, and the
+  // install still reported success.
+  const std::string ebootId = npdContentId(*npd);
+  const auto sfo = psf::load_object(locateParamSfoPath(rootPath));
+  const std::string sfoId{psf::get_string(sfo, "CONTENT_ID")};
+  const bool isTrial = isLicenceIdTrial(ebootId, npd->license == 3, sfoId);
+
   const auto licenseFile =
       fmt::format("%shome/%s/exdata/%s.rap", rpcs3::utils::get_hdd0_dir(),
-                  Emu.GetUsr(), npd->content_id);
+                  Emu.GetUsr(), isTrial ? sfoId : ebootId);
+
+  // From ARMSX3 1a9c4137e. Keep the key the game already has. The check below
+  // can only run with the new key in place, because decrypt_self finds the
+  // .rap by content id. A failure used to delete the file, so a wrong key
+  // overwrote the game's working .rap and then removed both.
+  std::vector<std::uint8_t> previous;
+
+  if (fs::file old{licenseFile}) {
+    previous = old.to_vector<std::uint8_t>();
+  }
 
   if (!fs::write_file(licenseFile, fs::open_mode::create + fs::open_mode::trunc,
                       bytes)) {
@@ -3260,9 +3338,20 @@ static bool installRap(JNIEnv *env, fs::file &&file, jlong progressId,
     return false;
   }
 
-  if (!decrypt_self(fs::file(ebootPath))) {
-    progress.failure("Provided key is invalid for selected game");
-    fs::remove_file(licenseFile);
+  // A trial's EBOOT is free, so it decrypts with or without this key and
+  // says nothing about it. Nothing here can check a full-game licence.
+  if (!isTrial && !decrypt_self(fs::file(ebootPath))) {
+    if (!previous.empty() &&
+        fs::write_file(licenseFile,
+                       fs::open_mode::create + fs::open_mode::trunc,
+                       previous)) {
+      progress.failure("This key does not unlock this game. The game's "
+                       "existing key was kept.");
+    } else {
+      fs::remove_file(licenseFile);
+      progress.failure("Provided key is invalid for selected game");
+    }
+
     return false;
   }
 
