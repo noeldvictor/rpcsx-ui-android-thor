@@ -421,9 +421,10 @@ clock.now = 0.0
 prepare_paused_guest()
 use_temperatures([42.0, 73.0])
 result = SERVER.t_slice({"seconds": 1.0})
-assert result["thermalStop"] is True, "The hot slice did not stop."
-assert result["triggerJunctionC"] == 73.0, "The hot slice lost its trigger temperature."
-assert result["stop"]["quiet"] is True, "The hot slice did not use the verified stop path."
+# Since 2026-10-03 a hot slice ends early and pauses; it does not stop the emulator.
+assert result.get("thermalStop") is None, "The hot slice stopped the emulator."
+assert result["completed"] is True and result["paused"] is True, "The hot slice did not pause."
+assert result["thermalPauseAtC"] == 73.0, "The hot slice lost its trigger temperature."
 
 clock.now = 0.0
 prepare_paused_guest()
@@ -884,6 +885,10 @@ clock.now = 0.0
 prepare_paused_guest()
 use_temperatures([73.0])
 result = SERVER.t_press({"buttons": "START"})
-assert result["thermalStop"] is True, "The guarded press did not stop at the hard limit."
+# Since 2026-10-03 a hot press is refused and the guest stays paused; it is not stopped.
+assert result.get("thermalStop") is None, "The guarded press stopped the emulator."
+assert result["refused"] is True and result["junctionC"] == 73.0, (
+    "The guarded press did not refuse a start above the hard limit."
+)
 
 print("Thor MCP guarded slice logic passed.")

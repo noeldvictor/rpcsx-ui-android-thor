@@ -132,6 +132,12 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   sets the constants back to 70/70/72, because it checks the logic, not the numbers.
   A session's `thor_*` tools keep the server code they started with; use
   `tools/thor_mcp/call.py` for new code until the session restarts.
+  **A hot tool pauses; it does not stop the emulator.** At 93 C a slice ends early
+  and pauses, a press ends its settle time and pauses, `thor_wait_ready` pauses,
+  cools to 80 C and goes on, and `thor_sample` pauses and returns a void sample. A
+  press that starts at or above 95 C is refused and the game stays paused. The
+  emulator is stopped only when the sensors cannot be read or a pause fails. Before
+  this, a slice at 95 C force-stopped the first boot of Tales of Symphonia.
 - **Disc recipes: the language rule (owner, 2026-10-03).** A recipe removes language data
   that the owner does not use, to make the image smaller. Keep Japanese voices and English
   text. When a game has no Japanese voices, keep the English voices. English comes before
