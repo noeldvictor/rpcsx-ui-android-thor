@@ -43,6 +43,18 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
 - State what changed, what was verified, and what remains.
 - Do not use hype, filler, or long historical summaries.
 
+## Subagents and token use
+
+- Do the work yourself, in the main session. Do not start subagents by
+  default.
+- Use at most ONE subagent at a time, and only for a large read-only search
+  whose files you would otherwise read in full. Never run subagents in
+  parallel.
+- Never give porting, editing or review of a code change to a subagent.
+- Why: on 2026-10-03 six subagents were started in parallel for one upstream
+  port pass. They used tokens too fast, and the owner stopped them before
+  they produced anything.
+
 ## Git
 
 - Work on `master` only for this repo.
