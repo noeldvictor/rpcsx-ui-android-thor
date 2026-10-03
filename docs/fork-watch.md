@@ -351,3 +351,27 @@ change already in the tenth pass: pull request 19500, `a65980547`, reuse of
 discarded render targets. The 37 percent figure in Wccftech is the Gran Turismo
 5 light-scene number, 107 to 147 FPS, from the pull request testers. It is
 ported and on by default since 2026-09-17. It is still unmeasured on the Thor.
+
+### 2026-10-03 — RPCS3 master pass
+
+Fetched `origin/master` to `1814fefb9`: 163 commits past `d08d568d5`, about 90
+in core paths. `RPCSX/rpcsx` master is still `e8ae148`. Ported by hand where
+the patch did not apply, in commits `b716499a2`, `c761c3885` and `0b1abaff2`.
+The ARMSX3 half of the pass is in `docs/arm64/armsx3-comparison.md`.
+
+| Change | Verdict |
+| --- | --- |
+| `3efbf060a` + `3b3c7f4f0` /app_home reflection, and its recursion fix | **Ported.** New `lv2_mp_flag::reflection`. The 20 read-only checks of `3efbf060a` are not needed: our `lv2_fs_mount_info::read_only` already includes the mount flag. An empty boot directory is also guarded. |
+| `fb4a09215`, `71d1a4527`, `2c961d061`, `d9a59820b`, `a1c6b1231`, `cf6c06eb6`, `dcbc44a39`, `93eefd382`, `5753d99db`, `8307c54cd`, `be69c054e`, `d98d37870`, `38c6b90d7`, `431b16935` | **Ported.** Endless loop, leaks, out-of-bounds, null and error-value fixes. Both cellSearch video copies are fixed; upstream still has the second one. |
+| `dfc0542a9` savedata syncs only its own filesystem | **Ported.** A global `sync()` flushed every filesystem on the device at each save. |
+| `08b226b8f`, `babeda0ed`, `c3f3529b9`, `a7e274234`, `fd818e701`, `b1f51cfaa`, `96bb9740b`, `db90035c4`, `5df3970a7`, `373d0ea7f`, `f1574d706`, `2ccdb73a3`, `18f18b305` | **Ported.** RSX and Vulkan correctness: zcull query index, method ID, color mask, index range, unresolve barrier, Z-buffer size, table name, hash size, query pool references, bounds checks, point draws. |
+| `54ab16913` present clear barrier | Already equivalent. |
+| FIFO GET series `982337435`, `a3dc7e6af`, `acb249f05`, `0e0cdc7c2`, `a7cbd4674`, `cdc04e0d5`, and kd-11 `b7f6f4e80` | **Deferred.** Upstream is still changing it: a debug commit followed, and `b7f6f4e80` reverted the Atomic FIFO self-kill three days later. Transformers runs this fork's tuned Atomic FIFO path. Port when upstream settles, then test Transformers on the device. |
+| `484974dd9` sys_rsx event queue drain | Deferred with the FIFO series. It changes RSX timing. |
+| `1331e307c`, `44f229ed6`, `9294046f4`, `03e86aade`, `5741d891b`, `13eaa2b03` | **Speed queue.** Each can move frame rate. Port one at a time with a device A/B. |
+| `7f5f8c4a7` all threads for boot shader compile | Rejected. The boot already loads all 8 cores and heats the Thor (`docs/arm64/thermal.md`). |
+| `2d293d8e5` + revert `6fc79f7cc` | Rejected. No net change. |
+| `81cbf7ba3` | Rejected. Online networking only; its `sendmsg` change touches lv2 sleep code that differs here. |
+| `b69f20740` | Not applicable. Our `serialization.hpp` has no `MaxBits` variant. |
+| `b87a56979` 512 depth slices | Rejected. Conflicts, and no tracked title needs it. |
+| UI, input (PS Move, cellGem, USIO), CI, Qt, SDL, FAudio, VMA updates | Not applicable to this Android app. |

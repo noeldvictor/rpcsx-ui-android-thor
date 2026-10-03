@@ -560,3 +560,55 @@ Queued: the three graphics-pipe conversion commits (`a2e025365`, `669ad8ce2`,
 fixes and for taking Arkham City from more than 10,000 compute dispatches a
 frame to 1. Before any port, read this fork's `rp_end(... compute ...)` counter
 per frame on the tracked titles. Near zero means the series has no reach here.
+
+## Eleventh pass, 2026-10-03, against `92b931b9f` (release 1.0.6.1)
+
+280 commits past `23e119c0c`, 141 in core paths. Every ported commit was read
+against this tree first. Commits `7deed9754`, `d7efe0b7a`, `11c7946e6`,
+`e66a8d0a4`, `c761c3885`.
+
+Taken:
+- PPU ARM64 float and integer correctness, measured by ARMSX3 against real PS3
+  output: `1001e26be` (stfs truncates), `59f06562d` (negate cannot fold into the
+  FMA), `363a11f01` (sign of an exact zero), `6f4bf7a22` (OE forms set OV and SO
+  before CR0; nine of them were UNK). Our own key `arm64_codegen_v2`;
+  `ppu_settings` is `u64` now.
+- `70dbdc86d` (compile unbounded blocks whole) and `430fff5e7` (reserve JIT
+  address space on first use; an Android process has 512 GiB).
+- SPU memory order on AArch64: `7abf45dc6` and `be3f419de` (`rdata_fence()`).
+  This fork already fenced the GETLLAR copy and the MFC DMA read.
+- `85d074b78` InterleavedLoadCombine off on ARM64 (an AArch64-only LLVM pass
+  that looped for more than ten minutes on one EBOOT).
+- `6527231fa` restored savestate stacks are 4K pages (closing crashed).
+- `1a9c4137e` and `7c12b4a51` key install: a failed key no longer deletes the
+  working one; trial unlock keys install; the second kind of trial is tagged.
+- `f5e278675` renderer teardown with a thread that never ran.
+- Behind switches, default off, for a device A/B: `f8df9e3dd` and `637784076`
+  as `debug.rpcsx.thor.vm_writer_lock_ppu_yield` (the wait for PPU threads
+  yields after N spins), and `1f384274f` as `debug.rpcsx.thor.atomic16_casp`
+  (16-byte CAS and exchange through CASPAL). Our 16-byte load keeps its leading
+  barrier; ARMSX3's LSE2 load is acquire only.
+
+Rejected, with the reason:
+- `989144014`, `f3d5aef45`, `293e81706`: ARMSX3 backed them out in `ef9fa1189`.
+  They turn the SPURS kernels' polled reads into blocking waits, and they broke
+  Guitar Hero World Tour.
+- The Killzone 3 DMA guards and game guards (`41ddaf79b`, `4376ba844`,
+  `a875e771f`, `a64fe7006`, `cb4e61ff0`, `198402209`): they hide a guest error
+  and did not fix Killzone 3, by ARMSX3's own account. Upstream lacks them.
+- `a2b2fb049` + `047adeb3b` (SHUFB fold off and on again) and the
+  `ARMSX3_WATCH_*` instrumentation.
+- `200b38980`, `375bd495f`, `ddc3d69b2`: their writer_lock measurement and a PPU
+  priority boost.
+- `76dd99d95`: Accurate SPU Reservations off only, a mode this fork does not
+  ship.
+
+Already here or covered: `2fbcf381f` (NaN to 0x80000000), `4898ab532`,
+`be39b3b9f`/`317dc4291` (LSE2 is a compile-time feature of this armv8.4-a
+build), `d0df12f8f` (this fork has its own compile memory budget).
+
+Deferred: `f12bb50bd` (SPU interrupts on the recompiler, about 170 lines for
+four sports games), the ARMSX3 copies of the RPCS3 FIFO series, CHD
+(`7f5e98815`, `be0559ab6`, `4138e7607`, `661fe10c8`) as its own step, and frame
+generation (LSFG: 36 files, an external `lsfg-vk-android` module, and more GPU
+heat).
