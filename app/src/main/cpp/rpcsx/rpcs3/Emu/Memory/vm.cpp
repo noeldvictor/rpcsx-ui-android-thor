@@ -830,8 +830,21 @@ namespace vm
 			{
 				if (auto ptr = +*lock)
 				{
+					// See thor::vm_writer_lock::ppu_yield_spins (ARMSX3 f8df9e3dd). 0 keeps the
+					// plain spin.
+					const u32 yield_after = thor::vm_writer_lock::ppu_yield_spins();
+					u32 spins = 0;
+
 					while (!(ptr->state & cpu_flag::wait))
 					{
+						if (yield_after && ++spins >= yield_after) [[unlikely]]
+						{
+							// The PPU being waited on may be queued behind this core.
+							std::this_thread::yield();
+							to_prepare_memory = true;
+							continue;
+						}
+
 						if (to_prepare_memory)
 						{
 							rx::prefetch_write(vm::get_super_ptr(addr));
@@ -2054,6 +2067,15 @@ namespace vm
 			if ((flags & page_size_64k) == page_size_64k)
 			{
 				pflags |= page_size_64k;
+			}
+			else if ((flags & page_size_4k) == page_size_4k)
+			{
+				// From ARMSX3 6527231fa. The stack block is 4K, and this passed no size for
+				// it, which try_alloc reads as 1M. Each restored stack was mapped with
+				// page_1m_size between guard pages, and the next unmap (closing the game)
+				// threw "Memory inconsistency found!" and ended the process. Only a
+				// restored savestate reaches this; alloc() passes the block's own flags.
+				pflags |= page_size_4k;
 			}
 			else if (!(flags & (page_size_mask & ~page_size_1m)))
 			{

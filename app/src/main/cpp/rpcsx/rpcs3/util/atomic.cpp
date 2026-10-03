@@ -1388,3 +1388,11 @@ namespace atomic_wait
 		}
 	}
 } // namespace atomic_wait
+
+#if defined(ARCH_ARM64)
+namespace utils
+{
+	// See atomic.hpp. Set from debug.rpcsx.thor.atomic16_casp at startup (rpcsx-android.cpp).
+	bool g_atomic16_casp = false;
+} // namespace utils
+#endif

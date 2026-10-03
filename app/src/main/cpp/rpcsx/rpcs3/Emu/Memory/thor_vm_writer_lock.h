@@ -112,4 +112,22 @@ namespace thor::vm_writer_lock
 
 	// Length of one busy_wait between checks.
 	inline u32 cycles() noexcept { return g_cycles; }
+
+	// The wait for each PPU thread to reach a safe point, after the writer has the lock.
+	//
+	// That loop spins on pause with no limit. From ARMSX3 f8df9e3dd and 637784076: on Web of
+	// Shadows the waited-on PPU spent 77% of the long waits runnable but queued for a CPU, 20%
+	// running and 3% asleep. The cores it queued behind were SPU threads, the spinning waiter
+	// among them. ARMSX3 yields the core after 4096 spins, so the queued PPU can run.
+	//
+	// This fork measured vm::writer_lock at 23% of SPU0 and vm::passive_lock at 19-20% of the
+	// render and main threads on Transformers (docs/arm64/transformers-30fps.md). The yield is a
+	// heat and frame-rate candidate, and ARMSX3's device is not the Thor, so it is off until a
+	// device A/B shows it helps here.
+	//
+	//   debug.rpcsx.thor.vm_writer_lock_ppu_yield = N   spins before the wait yields each check
+	//                                                   (0 or unset: spin as before; ARMSX3 4096)
+	inline const u32 g_ppu_yield_spins = read_u32_property("debug.rpcsx.thor.vm_writer_lock_ppu_yield", 0);
+
+	inline u32 ppu_yield_spins() noexcept { return g_ppu_yield_spins; }
 } // namespace thor::vm_writer_lock

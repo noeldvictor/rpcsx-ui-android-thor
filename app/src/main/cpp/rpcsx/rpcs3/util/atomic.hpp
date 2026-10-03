@@ -898,6 +898,19 @@ struct atomic_storage<T, 8> : atomic_storage<T, 0>
 #endif
 };
 
+#if defined(ARCH_ARM64)
+namespace utils
+{
+	// From ARMSX3 1f384274f. When true, a 16-byte compare-exchange and exchange use CASPAL
+	// (LSE) instead of an LDAXP/STLXP loop. Under contention an exclusive pair that another
+	// core breaks retries again and again; RPCS3 issue #19611 measured 40% of rsx::thread in
+	// GTA IV on that retry branch. These atomics sit under the SPU reservations and the
+	// suspend-all bits. Set once at startup from debug.rpcsx.thor.atomic16_casp, default off,
+	// for a device A/B. Both forms are atomic, so operations before it is set are correct.
+	extern bool g_atomic16_casp;
+} // namespace utils
+#endif
+
 template <typename T>
 struct atomic_storage<T, 16> : atomic_storage<T, 0>
 {
@@ -1091,6 +1104,20 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 
 	static inline bool compare_exchange(T& dest, T& comp, T exch)
 	{
+		if (utils::g_atomic16_casp)
+		{
+			// One CASPAL where the loop below retries (ARMSX3 1f384274f).
+			u128 expected = std::bit_cast<u128>(comp);
+
+			if (__atomic_compare_exchange_n(reinterpret_cast<u128*>(&dest), &expected, std::bit_cast<u128>(exch), false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+			{
+				return true;
+			}
+
+			comp = std::bit_cast<T>(expected);
+			return false;
+		}
+
 		bool result;
 		u64 cmp[2];
 		std::memcpy(cmp, &comp, 16);
@@ -1121,6 +1148,13 @@ struct atomic_storage<T, 16> : atomic_storage<T, 0>
 
 	static inline T exchange(T& dest, T value)
 	{
+		if (utils::g_atomic16_casp)
+		{
+			// A CASPAL loop that repeats only when another core changed the value between
+			// its read and the swap (ARMSX3 1f384274f).
+			return std::bit_cast<T>(__atomic_exchange_n(reinterpret_cast<u128*>(&dest), std::bit_cast<u128>(value), __ATOMIC_SEQ_CST));
+		}
+
 		u32 tmp;
 		u64 src[2];
 		u64 data[2];

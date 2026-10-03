@@ -2431,6 +2431,13 @@ extern "C" bool _rpcsx_initialize(std::string_view rootDir,
 
   g_initialized = true;
 
+  // 16-byte compare-exchange and exchange through CASPAL (ARMSX3 1f384274f), default off
+  // for a device A/B. Set before any emulator thread starts. See utils::g_atomic16_casp.
+  utils::g_atomic16_casp =
+      android_property_enabled("debug.rpcsx.thor.atomic16_casp", false);
+  rpcsx_android.notice("Thor 16-byte atomics: %s",
+                       utils::g_atomic16_casp ? "CASPAL" : "LDAXP/STLXP loop");
+
   // Ask for precise timers, the way every other RPCS3 frontend does.
   //
   // Ported from ARMSX3 67c2763b9 (2026-08-29). rpcs3.cpp sets this in main()
