@@ -118,6 +118,20 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   `adb install -r`. Without the property the APK is not debuggable: `run-as` fails, so the
   thor tools cannot read the app's files, and the app ignores the dev core and runs the
   bundled core. This happened once on 2026-10-03 and was reinstalled at once.
+- **Thermal limits of the tools are CPU junction (owner decision, 2026-10-03).**
+  The `thor` MCP tools used to start below 70 C and stop at 72 C fixed silicon
+  (cpuss, gpuss, DDR, XO). That was a tool rule, not a hardware limit. This
+  Snapdragon reads about 90 C junction under ordinary load and throttles itself near
+  95 to 105 C. The Tales of Symphonia Chronicles launcher alone took fixed silicon to
+  73.9 C, and 240 s paused brought it only to 66 C, so a button press could not be
+  sent. Now `server.py` has one set of limits, on the hottest `cpu*` zone: start or
+  resume below 85 C (`START_C`), a cool wait ends at 80 C (`RESUME_C`), a warning at
+  93 C (`WARN_C`), a hard stop at 95 C (`HARD_C`). The parameter names `maxStartC`
+  and `maxSiliconC` stay, for old callers, but they now set junction limits. Fixed
+  silicon is still reported, for information. `tools/test_thor_mcp_guard_logic.py`
+  sets the constants back to 70/70/72, because it checks the logic, not the numbers.
+  A session's `thor_*` tools keep the server code they started with; use
+  `tools/thor_mcp/call.py` for new code until the session restarts.
 - **Disc recipes: the language rule (owner, 2026-10-03).** A recipe removes language data
   that the owner does not use, to make the image smaller. Keep Japanese voices and English
   text. When a game has no Japanese voices, keep the English voices. English comes before
@@ -9235,8 +9249,9 @@ tested place. For each arm it does these steps:
 1. Stop the app, and clear every `debug.rpcsx.thor.*` property.
 2. Push the newest vault savestate while the app is stopped. Compare the
    byte counts.
-3. Cool below `maxStartC` (fixed silicon, 70 C) and below
-   `maxStartJunctionC` (CPU junction, 55 C, as the round script used).
+3. Cool below `maxStartJunctionC` (CPU junction, 55 C, as the round script
+   used). `maxStartC` adds a fixed-silicon gate; it has no default since
+   2026-10-03.
 4. Set the arm's properties, and read each one back.
 5. Boot with the managed profile. The levers are properties because the
    profile rewrites the config at boot.
@@ -9249,12 +9264,13 @@ tested place. For each arm it does these steps:
     guard's `ENGAGED` lines, which do not.
 11. Stop, and clear the properties.
 
-The temperatures are read each second while the guest runs. **The arm stops at
-95 C CPU junction (`maxJunctionC`), not at 72 C fixed silicon.** The owner chose
-this on 2026-09-22. The first arm stopped during the boot: fixed silicon went
-from 45.8 C to 81.5 C in seconds. So no Transformers arm can reach combat under
-the 72 C stop. Every other tool keeps the 72 C fixed-silicon stop.
-`maxSiliconC` adds a fixed-silicon stop to one arm.
+The temperatures are read each second while the guest runs. **The arm pauses at
+93 C CPU junction and stops at 95 C (`maxJunctionC`), not at 72 C fixed
+silicon.** The owner chose this on 2026-09-22. The first arm stopped during the
+boot: fixed silicon went from 45.8 C to 81.5 C in seconds. So no Transformers
+arm can reach combat under the 72 C stop. Since 2026-10-03 every other tool also
+uses CPU-junction limits (see "Thermal limits of the tools are CPU junction" at
+the top of this file). `maxSiliconC` adds a fixed-silicon stop to one arm.
 
 **A Transformers combat arm does not finish under 95 C.** On 2026-09-22 the
 third control arm loaded the savestate, passed the scene gate (6.28 cores, 1,476

@@ -362,6 +362,27 @@ def t_state(a):
     return result
 
 
+# THERMAL LIMITS OF THE TOOLS: CPU junction (cpu-* zones). Owner decision, 2026-10-03.
+#
+# The tools used to start below 70 C and stop at 72 C fixed silicon (cpuss, gpuss,
+# DDR, XO). That was a tool rule, not a hardware limit: this Snapdragon reads about
+# 90 C junction under ordinary load and throttles itself near 95 to 105 C. The Tales
+# of Symphonia Chronicles launcher alone took fixed silicon to 73.9 C, and 240 s
+# paused brought it only to 66 C, so a button press could not be sent. The tools now
+# use the same junction limits as the app (85 C) and thor_arm (93 and 95 C). Fixed
+# silicon is still read and reported, for information.
+START_C = 85.0   # start or resume a guest below this: the in-app governor target
+RESUME_C = 80.0  # a cool wait ends here
+WARN_C = 93.0    # thor_arm pauses here; the reply warns here
+HARD_C = 95.0    # hard stop
+
+
+def limit_c():
+    """The temperature the tool limits compare against: the hottest CPU junction.
+    -1 when the sensors cannot be read."""
+    return float(temp_c())
+
+
 def t_cooldown(a):
     """Force-stop FIRST, then cool. The reverse order once held this device at
     95 C waiting for a temperature its own emulator made impossible."""
@@ -381,13 +402,13 @@ def t_cooldown(a):
 
 
 def t_boot(a):
-    t = fixed_silicon_c()
-    ceiling = float(a.get("maxStartC", 70))
+    t = limit_c()
+    ceiling = float(a.get("maxStartC", START_C))
     if t < 0:
-        return {"refused": True, "fixedSiliconC": t,
-                "reason": "the fixed-silicon sensor domain is unavailable"}
+        return {"refused": True, "junctionC": t,
+                "reason": "the CPU-junction sensors are unavailable"}
     if t >= ceiling:
-        return {"refused": True, "fixedSiliconC": t,
+        return {"refused": True, "junctionC": t,
                 "reason": f"device is {t} C, at or above the {ceiling} C start ceiling. "
                           "Booting now measures the throttle and cooks the device. "
                           "Call thor_cooldown first."}
@@ -425,7 +446,7 @@ def t_boot(a):
     ensure_forward()
     result = {"booted": True, "titleId": title,
               "freshCompile": a.get("freshCompile", True),
-              "startFixedSiliconC": t}
+              "startJunctionC": t}
     if same_process:
         time.sleep(2.0)
         now = pid() or None
@@ -494,29 +515,29 @@ def t_wait_ready(a):
     can take ten minutes."""
     limit = int(a.get("timeoutS", 300))
     want = float(a.get("minFps", 10))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
     waited, last = 0, {}
     while waited < limit:
         interval = min(2, limit - waited)
         time.sleep(interval)
         waited += interval
 
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
             return {"ready": False, "waitedS": waited,
-                    "thermalStop": True, "triggerFixedSiliconC": silicon,
+                    "thermalStop": True, "triggerJunctionC": silicon,
                     "maxSiliconC": hard_limit,
-                    "reason": ("the fixed-silicon sensor domain became unavailable"
+                    "reason": ("the CPU-junction sensors became unavailable"
                                if silicon < 0 else
-                               f"fixed silicon reached the {hard_limit} C hard limit"),
+                               f"the CPU junction reached the {hard_limit} C hard limit"),
                     "stop": stop}
 
         dev = api("/device")
         last = dev
         if isinstance(dev, dict) and float(dev.get("device", {}).get("fps", 0) or 0) >= want:
             return {"ready": True, "waitedS": waited, "device": dev,
-                    "fixedSiliconC": silicon}
+                    "junctionC": silicon}
         if not pid():
             return {"ready": False, "waitedS": waited, "error": "process gone",
                     "log": api("/log?match=Fatal&n=10")}
@@ -534,16 +555,16 @@ def t_press(a):
     p = pid()
     process_held = bool(p) and held_process_pid() == p
     was_paused = process_held or is_paused()
-    start_ceiling = float(a.get("maxStartC", 70))
-    hard_limit = float(a.get("maxSiliconC", 72))
-    start_silicon = fixed_silicon_c()
+    start_ceiling = float(a.get("maxStartC", START_C))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
+    start_silicon = limit_c()
     if start_silicon < 0 or start_silicon >= hard_limit:
         stop = t_stop({})
-        return {"thermalStop": True, "triggerFixedSiliconC": start_silicon,
+        return {"thermalStop": True, "triggerJunctionC": start_silicon,
                 "maxSiliconC": hard_limit, "stop": stop}
     if was_paused and start_silicon >= start_ceiling:
-        return {"refused": True, "fixedSiliconC": start_silicon,
-                "reason": f"fixed silicon is not below {start_ceiling} C"}
+        return {"refused": True, "junctionC": start_silicon,
+                "reason": f"the CPU junction is not below {start_ceiling} C"}
 
     display = prepare_display_for_guest(p)
     if not display.get("ready"):
@@ -586,12 +607,12 @@ def t_press(a):
             break
         interval = min(0.25, settle - elapsed)
         time.sleep(interval)
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         max_silicon = max(max_silicon, silicon)
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
             return {"press": r, "wasPaused": was_paused,
-                    "thermalStop": True, "triggerFixedSiliconC": silicon,
+                    "thermalStop": True, "triggerJunctionC": silicon,
                     "maxSiliconC": hard_limit, "stop": stop}
     pause = None
     process_hold = None
@@ -627,7 +648,7 @@ def t_press(a):
             "resume": resume, "pause": pause, "processHold": process_hold,
             "rePaused": re_paused, "holdMode": hold_mode,
             "display": display,
-            "maxFixedSiliconC": max_silicon}
+            "maxJunctionC": max_silicon}
 
 
 def emulation_state():
@@ -801,20 +822,20 @@ def t_slice(a):
         15.0, min(float(a.get("maxDurationS", 15.0)), 300.0))
     duration = max(
         0.1, min(float(a.get("seconds", 1.5)), duration_limit))
-    start_ceiling = float(a.get("maxStartC", 70))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    start_ceiling = float(a.get("maxStartC", START_C))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
     pause_timeout = max(1.0, min(float(a.get("pauseTimeoutS", 8.0)), 30.0))
     startup_pause_timeout = max(
         pause_timeout,
         min(float(a.get("startupPauseTimeoutS", 120.0)), 300.0),
     )
     startup_handoff = process_held or initial_state == EMU_STATE_READY
-    start_silicon = fixed_silicon_c()
+    start_silicon = limit_c()
     if start_silicon < 0 or start_silicon >= start_ceiling:
-        return {"refused": True, "fixedSiliconC": start_silicon,
-                "reason": ("the fixed-silicon sensor domain is unavailable"
+        return {"refused": True, "junctionC": start_silicon,
+                "reason": ("the CPU-junction sensors are unavailable"
                            if start_silicon < 0 else
-                           f"fixed silicon is not below {start_ceiling} C")}
+                           f"the CPU junction is not below {start_ceiling} C")}
 
     display = prepare_display_for_guest(p)
     if not display.get("ready"):
@@ -882,14 +903,14 @@ def t_slice(a):
             break
         interval = min(0.25, duration - elapsed)
         time.sleep(interval)
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         max_silicon = max(max_silicon, silicon)
         elapsed = time.monotonic() - started
         if silicon < 0 or silicon >= hard_limit:
             deadline_timer.cancel()
             stop = t_stop({})
             return {"thermalStop": True, "elapsedS": round(elapsed, 3),
-                    "triggerFixedSiliconC": silicon,
+                    "triggerJunctionC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume, "stop": stop}
 
         # The independent device guard can stop the process at 68 C before
@@ -913,9 +934,9 @@ def t_slice(a):
                 "activeElapsedS": round(held_at, 3),
                 "pauseRequestedAtS": None,
                 "pauseSettledAtS": round(held_at, 3),
-                "startFixedSiliconC": start_silicon,
-                "endFixedSiliconC": silicon,
-                "maxFixedSiliconC": max_silicon,
+                "startJunctionC": start_silicon,
+                "endJunctionC": silicon,
+                "maxJunctionC": max_silicon,
                 "resume": resume, "display": display,
                 "processHold": process_hold,
                 "externalProcessHold": True,
@@ -963,9 +984,9 @@ def t_slice(a):
                 "pauseRequestedAtS": round(float(
                     deadline_pause.get("requestedAtS", elapsed)), 3),
                 "pauseSettledAtS": round(settled, 3),
-                "startFixedSiliconC": start_silicon,
-                "endFixedSiliconC": silicon,
-                "maxFixedSiliconC": max_silicon,
+                "startJunctionC": start_silicon,
+                "endJunctionC": silicon,
+                "maxJunctionC": max_silicon,
                 "resume": resume,
                 "pause": deadline_pause.get("result", pause),
                 "display": display,
@@ -984,7 +1005,7 @@ def t_slice(a):
     if not pid():
         return {"error": "process gone during the bounded slice",
                 "elapsedS": round(elapsed, 3),
-                "maxFixedSiliconC": max_silicon, "pause": pause}
+                "maxJunctionC": max_silicon, "pause": pause}
 
     held_result = completed_deadline_hold()
     if held_result:
@@ -1001,14 +1022,14 @@ def t_slice(a):
         held_result = completed_deadline_hold()
         if held_result:
             return held_result
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         max_silicon = max(max_silicon, silicon)
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
             active_elapsed = time.monotonic() - started
             return {"thermalStop": True,
                     "elapsedS": round(active_elapsed, 3),
-                    "triggerFixedSiliconC": silicon,
+                    "triggerJunctionC": silicon,
                     "maxSiliconC": hard_limit, "resume": resume,
                     "pause": pause, "stop": stop,
                     "initialState": initial_state,
@@ -1043,9 +1064,9 @@ def t_slice(a):
                 "elapsedS": round(active_elapsed, 3),
                 "pauseRequestedAtS": round(
                     float(deadline_pause.get("requestedAtS", elapsed)), 3),
-                "startFixedSiliconC": start_silicon,
-                "endFixedSiliconC": silicon,
-                "maxFixedSiliconC": max_silicon,
+                "startJunctionC": start_silicon,
+                "endJunctionC": silicon,
+                "maxJunctionC": max_silicon,
                 "resume": resume, "pause": pause, "stop": stop,
                 "initialState": initial_state,
                 "finalState": final_state,
@@ -1060,9 +1081,9 @@ def t_slice(a):
               "pauseRequestedAtS": round(
                   float(deadline_pause.get("requestedAtS", elapsed)), 3),
               "pauseSettledAtS": round(active_elapsed, 3),
-              "startFixedSiliconC": start_silicon,
-              "endFixedSiliconC": silicon,
-              "maxFixedSiliconC": max_silicon,
+              "startJunctionC": start_silicon,
+              "endJunctionC": silicon,
+              "maxJunctionC": max_silicon,
               "resume": resume, "pause": pause,
               "display": display,
               "paused": paused,
@@ -1077,7 +1098,7 @@ def t_slice(a):
 
 
 def t_wait_cool_paused(a):
-    """Keep a paused guest still until fixed silicon reaches the resume target."""
+    """Keep a paused guest still until the CPU junction reaches the resume target."""
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
@@ -1086,8 +1107,8 @@ def t_wait_cool_paused(a):
         return {"refused": True,
                 "reason": "the emulator must stay paused while it cools"}
 
-    target = float(a.get("targetC", 70))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    target = float(a.get("targetC", RESUME_C))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
     limit = int(a.get("timeoutS", 120))
     stable_samples = max(1, min(int(a.get("stableSamples", 1)), 5))
     sample_interval = max(
@@ -1096,11 +1117,11 @@ def t_wait_cool_paused(a):
     stable_count = 0
 
     while True:
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
             return {"cooled": False, "thermalStop": True,
-                    "triggerFixedSiliconC": silicon,
+                    "triggerJunctionC": silicon,
                     "maxSiliconC": hard_limit, "stop": stop}
 
         stable_count = stable_count + 1 if silicon <= target else 0
@@ -1114,8 +1135,8 @@ def t_wait_cool_paused(a):
         waited += interval
 
     return {"cooled": stable_count >= stable_samples, "targetC": target,
-            "fixedSiliconC": silicon,
-            "cooledAtFixedSiliconC": silicon, "waitedS": waited,
+            "junctionC": silicon,
+            "cooledAtJunctionC": silicon, "waitedS": waited,
             "stableSamples": stable_count,
             "requiredStableSamples": stable_samples,
             "sampleIntervalS": sample_interval,
@@ -1167,13 +1188,13 @@ def t_slice_loop(a):
     max_host_s = max(30.0, min(float(a.get("maxHostS", 420)), 600.0))
     max_active_s = max(
         0.0, min(float(a.get("maxActiveS", 0.0)), 300.0))
-    start_ceiling = float(a.get("maxStartC", 70))
-    resume_target = float(a.get("resumeTargetC", start_ceiling))
+    start_ceiling = float(a.get("maxStartC", START_C))
+    resume_target = float(a.get("resumeTargetC", RESUME_C))
     resume_stable_samples = max(
         1, min(int(a.get("resumeStableSamples", 1)), 5))
     resume_sample_interval = max(
         0.25, min(float(a.get("resumeSampleIntervalS", 2.0)), 5.0))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
     cool_timeout = max(2, min(int(a.get("coolTimeoutS", 120)), 300))
     marker_every = max(1, min(int(a.get("markerEvery", 1)), 16))
     stop_match = str(a.get(
@@ -1289,7 +1310,7 @@ def t_slice_loop(a):
             fields["initialProcessHold"] = initial_process_hold
         fields["completedSlices"] = len(records)
         fields["slices"] = records
-        fields["maxFixedSiliconC"] = max_silicon
+        fields["maxJunctionC"] = max_silicon
         fields["activeElapsedS"] = round(active_elapsed, 3)
         fields["hostElapsedS"] = round(time.monotonic() - loop_started, 3)
         fields["maxHostS"] = max_host_s
@@ -1329,8 +1350,8 @@ def t_slice_loop(a):
             "sampleIntervalS": resume_sample_interval,
         })
         cool_silicon = cool.get(
-            "cooledAtFixedSiliconC",
-            cool.get("triggerFixedSiliconC", cool.get("fixedSiliconC", -1)))
+            "cooledAtJunctionC",
+            cool.get("triggerJunctionC", cool.get("junctionC", -1)))
         if isinstance(cool_silicon, (int, float)):
             max_silicon = max(max_silicon, float(cool_silicon))
 
@@ -1360,8 +1381,8 @@ def t_slice_loop(a):
                 float(cool_timeout), max(8.0, remaining_host_s - 1.0)),
             "includeState": False,
         })
-        part_max = part.get("maxFixedSiliconC",
-                            part.get("triggerFixedSiliconC", -1))
+        part_max = part.get("maxJunctionC",
+                            part.get("triggerJunctionC", -1))
         if isinstance(part_max, (int, float)):
             max_silicon = max(max_silicon, float(part_max))
         part_active = part.get("activeElapsedS", part.get("elapsedS", 0.0))
@@ -1370,7 +1391,7 @@ def t_slice_loop(a):
         record = {
             "index": index,
             "coolTargetC": cool_target,
-            "cooledAtFixedSiliconC": cool_silicon,
+            "cooledAtJunctionC": cool_silicon,
             "waitedS": cool.get("waitedS"),
             "coolStableSamples": cool.get("stableSamples"),
             "coolRequiredStableSamples": cool.get("requiredStableSamples"),
@@ -1381,9 +1402,9 @@ def t_slice_loop(a):
             "pauseSettledAtS": part.get("pauseSettledAtS"),
             "activeElapsedS": part.get("activeElapsedS"),
             "hostElapsedS": part.get("hostElapsedS"),
-            "startFixedSiliconC": part.get("startFixedSiliconC"),
-            "endFixedSiliconC": part.get("endFixedSiliconC"),
-            "maxFixedSiliconC": part.get("maxFixedSiliconC"),
+            "startJunctionC": part.get("startJunctionC"),
+            "endJunctionC": part.get("endJunctionC"),
+            "maxJunctionC": part.get("maxJunctionC"),
             "initialState": part.get("initialState"),
             "finalState": part.get("finalState"),
             "startupHandoff": part.get("startupHandoff"),
@@ -1476,7 +1497,7 @@ def t_screenshot(a):
 def t_sample(a):
     """Measure, and REFUSE when the window is not measurable."""
     secs = int(a.get("seconds", 40))
-    hard_limit = float(a.get("maxSiliconC", 72))
+    hard_limit = float(a.get("maxSiliconC", HARD_C))
     p = pid()
     if not p:
         return {"error": "emulator is not running"}
@@ -1500,14 +1521,14 @@ def t_sample(a):
         interval = min(2, secs - elapsed)
         time.sleep(interval)
         elapsed += interval
-        silicon = fixed_silicon_c()
+        silicon = limit_c()
         if silicon < 0 or silicon >= hard_limit:
             stop = t_stop({})
             return {"void": True, "thermalStop": True,
-                    "triggerFixedSiliconC": silicon, "maxSiliconC": hard_limit,
-                    "reason": ("the fixed-silicon sensor domain became unavailable"
+                    "triggerJunctionC": silicon, "maxSiliconC": hard_limit,
+                    "reason": ("the CPU-junction sensors became unavailable"
                                if silicon < 0 else
-                               f"fixed silicon reached the {hard_limit} C hard limit"),
+                               f"the CPU junction reached the {hard_limit} C hard limit"),
                     "stop": stop}
     c1 = proc_jiffies(p)
     th1 = api(f"/threads?match={a.get('threadMatch', '')}")
@@ -1807,7 +1828,10 @@ def t_arm(a):
     gate_cores = float(a.get("gateCores", 4.5))
     ready_timeout = _clamp(int(a.get("readyTimeoutS", 420)), 30, 900)
     gate_timeout = _clamp(int(a.get("gateTimeoutS", 150)), 15, 600)
-    start_ceiling = float(a.get("maxStartC", 70))
+    # Equal junction starts keep arms comparable. The fixed-silicon start gate
+    # is optional since 2026-10-03 (see START_C).
+    start_ceiling = a.get("maxStartC")
+    start_ceiling = float(start_ceiling) if start_ceiling is not None else None
     start_junction = float(a.get("maxStartJunctionC", 55))
     # The owner chose a junction limit for arms on 2026-09-22. A Transformers
     # boot took fixed silicon from 45.8 C to 81.5 C in seconds, so no arm can
@@ -1950,7 +1974,8 @@ def t_arm(a):
 
         def too_warm():
             s, j = fixed_silicon_c(), temp_c()
-            return (s < 0 or s >= start_ceiling or j < 0 or j >= start_junction), s, j
+            silicon_warm = start_ceiling is not None and (s < 0 or s >= start_ceiling)
+            return (silicon_warm or j < 0 or j >= start_junction), s, j
 
         waited = 0
         warm, s, j = too_warm()
@@ -1959,8 +1984,9 @@ def t_arm(a):
             waited += 5
             warm, s, j = too_warm()
         if warm:
-            raise _ArmStop(f"not below {start_ceiling} C fixed silicon and {start_junction} C "
-                           f"junction after {cool_timeout} s", fixedSiliconC=s, junctionC=j)
+            raise _ArmStop(f"not below {start_junction} C junction"
+                           + (f" and {start_ceiling} C fixed silicon" if start_ceiling is not None else "")
+                           + f" after {cool_timeout} s", fixedSiliconC=s, junctionC=j)
         # Equal starts keep the arms comparable. The round script started below
         # 55 C junction.
         out.update(startFixedSiliconC=s, startJunctionC=j, cooledS=waited,
@@ -2215,22 +2241,22 @@ def t_ab_table(a):
 TOOLS = [
     ("thor_state", "PAUSES BY DEFAULT, then reports device and emulator state at once: reachability, pid, temperature, battery, status, telemetry, compile progress, config in effect, SPURS state. pause=false for a live reading that does not pause.", {"type": "object", "properties": {"pause": {"type": "boolean", "description": "Default true. false reads the state without a pause."}}}, t_state),
     ("thor_cooldown", "Force-stop the emulator, then wait for the CPU junction to fall below targetC. Stops first on purpose: cooling while the emulator runs never finishes.", {"type": "object", "properties": {"targetC": {"type": "integer"}, "timeoutS": {"type": "integer"}}}, t_cooldown),
-    ("thor_boot", "Boot a title below the fixed-silicon start ceiling. freshCompile (default true) turns the SPU object cache OFF. sameProcess (default false) boots into the running process after thor_exit_game, with no force-stop: the path a user takes after Exit Game.", {"type": "object", "properties": {"sameProcess": {"type": "boolean"}, "titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
-    ("thor_wait_ready", "Wait until the title renders. Poll fixed silicon every two seconds and stop at the hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
-    ("thor_press", "Press pad buttons. If paused, require a below-ceiling start, resume, monitor fixed silicon, and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "rePause": {"type": "boolean", "description": "Default true. false leaves the emulator running after the press."}}, "required": ["buttons"]}, t_press),
+    ("thor_boot", "Boot a title below the CPU-junction start ceiling (85 C). freshCompile (default true) turns the SPU object cache OFF. sameProcess (default false) boots into the running process after thor_exit_game, with no force-stop: the path a user takes after Exit Game.", {"type": "object", "properties": {"sameProcess": {"type": "boolean"}, "titleId": {"type": "string"}, "isoPath": {"type": "string"}, "freshCompile": {"type": "boolean"}, "maxStartC": {"type": "number"}}, "required": ["titleId", "isoPath"]}, t_boot),
+    ("thor_wait_ready", "Wait until the title renders. Poll the CPU junction every two seconds and stop at the 95 C hard limit.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}, "minFps": {"type": "number"}, "maxSiliconC": {"type": "number"}}}, t_wait_ready),
+    ("thor_press", "Press pad buttons. If paused, require a start below 85 C CPU junction, resume, monitor the junction (stop at 95 C), and re-pause.", {"type": "object", "properties": {"buttons": {"type": "string"}, "ms": {"type": "integer"}, "settleS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "rePause": {"type": "boolean", "description": "Default true. false leaves the emulator running after the press."}}, "required": ["buttons"]}, t_press),
     ("thor_pause", "Pause emulation, so a screenshot and a decision do not race the scene. Pause, look, decide, resume, press.", {"type": "object", "properties": {}}, t_pause),
     ("thor_resume", "Resume emulation after thor_pause.", {"type": "object", "properties": {}}, t_resume),
-    ("thor_slice", "Run a paused guest for 0.1 to 15 seconds by default. An explicit maxDurationS can extend an exact handoff window to 300 seconds. Monitor fixed silicon every 0.25 seconds, and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "pauseTimeoutS": {"type": "number", "description": "Wait for the pause after the slice, 1 to 30 s. Default 8."}, "startupPauseTimeoutS": {"type": "number", "description": "The same wait during a startup handoff, up to 300 s. Default 120."}, "includeState": {"type": "boolean", "description": "Default true. false leaves /device and /diag out of the answer."}}}, t_slice),
+    ("thor_slice", "Run a paused guest for 0.1 to 15 seconds by default. An explicit maxDurationS can extend an exact handoff window to 300 seconds. Monitor the CPU junction every 0.25 seconds (stop at 95 C), and pause again.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxStartC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "pauseTimeoutS": {"type": "number", "description": "Wait for the pause after the slice, 1 to 30 s. Default 8."}, "startupPauseTimeoutS": {"type": "number", "description": "The same wait during a startup handoff, up to 300 s. Default 120."}, "includeState": {"type": "boolean", "description": "Default true. false leaves /device and /diag out of the answer."}}}, t_slice),
     ("thor_slice_loop", "Run the first slice below the cold-start ceiling, then cool to or below the runtime resume target between slices. Return within the host and active-time limits, and keep log-boundary checks and hard stops in one controller. An explicit maxDurationS can extend an exact handoff window to 300 seconds.", {"type": "object", "properties": {"seconds": {"type": "number"}, "maxDurationS": {"type": "number"}, "maxSlices": {"type": "integer"}, "maxHostS": {"type": "number"}, "maxActiveS": {"type": "number"}, "coolTimeoutS": {"type": "integer"}, "maxStartC": {"type": "number"}, "resumeTargetC": {"type": "number"}, "resumeStableSamples": {"type": "integer"}, "resumeSampleIntervalS": {"type": "number"}, "maxSiliconC": {"type": "number"}, "stopMatch": {"type": "string"}, "stopMatches": {"type": "array", "items": {"type": "string"}}, "armMatch": {"type": "string"}, "postArmSlices": {"type": "integer"}, "markerEvery": {"type": "integer"}, "allowStarting": {"type": "boolean"}}}, t_slice_loop),
-    ("thor_wait_cool_paused", "Wait with the guest paused until fixed silicon stays at or below targetC for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
+    ("thor_wait_cool_paused", "Wait with the guest paused until the CPU junction stays at or below targetC (default 80 C) for the requested stable sample count. Stop if it reaches the hard limit.", {"type": "object", "properties": {"targetC": {"type": "number"}, "maxSiliconC": {"type": "number"}, "timeoutS": {"type": "integer"}, "stableSamples": {"type": "integer"}, "sampleIntervalS": {"type": "number"}}}, t_wait_cool_paused),
     ("thor_screenshot", "PAUSES BY DEFAULT, captures a PNG, and STAYS PAUSED so the picture is still true when you act. pause=false for a live capture.", {"type": "object", "properties": {"path": {"type": "string"}, "pause": {"type": "boolean", "description": "Default true. false captures without a pause."}}}, t_screenshot),
-    ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the fixed-silicon hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
+    ("thor_sample", "Measure process and per-thread CPU. Refuse invalid states and stop at the 95 C CPU-junction hard limit.", {"type": "object", "properties": {"seconds": {"type": "integer"}, "threadMatch": {"type": "string"}, "maxSiliconC": {"type": "number"}}}, t_sample),
     ("thor_log", "Tail the emulator log, filtered. Read this for a fatal error BEFORE believing any measurement.", {"type": "object", "properties": {"match": {"type": "string"}, "n": {"type": "integer"}}}, t_log),
     ("thor_setprop", "Set a debug property and read it back, so an arm cannot silently run unset.", {"type": "object", "properties": {"name": {"type": "string"}, "value": {"type": "string"}}, "required": ["name"]}, t_setprop),
     ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
     ("thor_exit_game", "Exit the running game the way the home menu Exit Game does, releasing any process hold first. Reports when the core reached Stopped, when the game activity closed, and any self-join log lines. Follow with thor_boot sameProcess=true to test the next game in the same process.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}}}, t_exit_game),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
-    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC fixed silicon and maxStartJunctionC junction, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. At pauseJunctionC (93 C) it stops the process until the junction is at resumeJunctionC (80 C), then continues; a window with a pause is void. It stops the arm at maxJunctionC (95 C) only when a pause fails, not at the 72 C fixed-silicon limit of the other tools. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
+    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartJunctionC junction (and maxStartC fixed silicon, if given), set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. At pauseJunctionC (93 C) it stops the process until the junction is at resumeJunctionC (80 C), then continues; a window with a pause is void. It stops the arm at maxJunctionC (95 C) only when a pause fails, not at the 72 C fixed-silicon limit of the other tools. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
         "name": {"type": "string", "description": "Arm name. Runs with the same name are grouped in the table."},
         "props": {"type": "object", "additionalProperties": {"type": "string"}, "description": "debug.rpcsx.thor.* property to value. Empty for a control arm."},
         "titleId": {"type": "string", "description": "Default BLUS30357."},
@@ -2245,7 +2271,7 @@ TOOLS = [
         "gateCores": {"type": "number", "description": "Scene gate on coresBusy. Default 4.5 (restored combat)."},
         "readyTimeoutS": {"type": "integer", "description": "Wait for the first frame. Default 420."},
         "gateTimeoutS": {"type": "integer", "description": "Wait for the scene gate. Default 150."},
-        "maxStartC": {"type": "number", "description": "Start ceiling, fixed silicon. Default 70."},
+        "maxStartC": {"type": "number", "description": "Optional start ceiling, fixed silicon. No default since 2026-10-03; the junction gate decides."},
         "maxStartJunctionC": {"type": "number", "description": "Start ceiling, CPU junction. Default 55, as the round script used."},
         "maxJunctionC": {"type": "number", "description": "Hard stop, CPU junction, when a thermal pause fails. Default 95 (chosen by the owner on 2026-09-22)."},
         "pauseJunctionC": {"type": "number", "description": "Stop the process (SIGSTOP) at this CPU junction and continue when it cools. Default 93; 0 turns the pause off (chosen by the owner on 2026-10-03)."},
@@ -2324,13 +2350,13 @@ def main():
                 silicon = fixed_silicon_c()
                 out["cpuJunctionC"] = junction
                 out["fixedSiliconC"] = silicon
-                if silicon < 0:
-                    out["THERMAL"] = "The fixed-silicon sensor domain is unavailable. Stop the run."
-                elif silicon >= 72:
-                    out["THERMAL"] = ("HARD LIMIT %.1f C fixed silicon. Stop the run and verify "
-                                      "with top, not pidof." % silicon)
-                elif silicon >= 70:
-                    out["THERMAL"] = "WARM %.1f C fixed silicon. Do not start another arm." % silicon
+                if junction < 0:
+                    out["THERMAL"] = "The CPU-junction sensors are unavailable. Stop the run."
+                elif junction >= HARD_C:
+                    out["THERMAL"] = ("HARD LIMIT %d C CPU junction. Stop the run and verify "
+                                      "with top, not pidof." % junction)
+                elif junction >= WARN_C:
+                    out["THERMAL"] = "HOT %d C CPU junction. Pause and cool before more work." % junction
             send({"jsonrpc": "2.0", "id": rid, "result": {
                 "content": [{"type": "text", "text": json.dumps(out, indent=2)}]}})
         elif rid is not None:

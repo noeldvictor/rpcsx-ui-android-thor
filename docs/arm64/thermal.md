@@ -5,6 +5,18 @@ against the wrong one manufactured alarm twice here.
 
 Part of the notes indexed from [`AGENTS.md`](../../AGENTS.md).
 
+## Since 2026-10-03 the `thor` MCP tools limit on CPU junction
+
+The owner chose this on 2026-10-03. The tools in `tools/thor_mcp/server.py` now
+compare the hottest `cpu*` zone with one set of limits: start or resume below
+85 C, a cool wait ends at 80 C, a warning at 93 C, a hard stop at 95 C. The
+70 C and 72 C fixed-silicon numbers in the sections below were a tool rule, not a
+hardware limit. This SoC reads about 90 C junction under ordinary load and
+throttles itself near 95 to 105 C. The Tales of Symphonia Chronicles
+(BLUS31172) launcher alone took fixed silicon to 73.9 C, and 240 s with the
+emulator paused brought it only to 66 C. The sections below remain as the record
+of the older gates; the standalone PowerShell scripts still use them.
+
 ## The cold-start gate permits silicon below 70 C
 
 The standalone `strict-cool-gate` uses one sample and an exclusive 70 C launch

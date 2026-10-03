@@ -13,6 +13,11 @@ SPEC = importlib.util.spec_from_file_location(
 SERVER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SERVER)
 
+# The state machine is tested with the limits it was written against. The
+# defaults are CPU junction since 2026-10-03 (START_C 85, RESUME_C 80,
+# HARD_C 95); this test checks the logic, not the numbers.
+SERVER.START_C, SERVER.RESUME_C, SERVER.HARD_C = 70.0, 70.0, 72.0
+
 
 class Clock:
     def __init__(self):
@@ -40,7 +45,7 @@ class Clock:
 
 def use_temperatures(values):
     temperatures = iter(values)
-    SERVER.fixed_silicon_c = lambda: next(temperatures)
+    SERVER.limit_c = lambda: next(temperatures)
 
 
 def prepare_paused_guest():
@@ -210,7 +215,7 @@ assert result["completed"] is True, "The safe slice did not complete."
 assert result["requestedS"] == 1.0, "The safe slice lost its requested time."
 assert result["pauseRequestedAtS"] == 1.0, "The deadline pause did not use the requested guest window."
 assert result["paused"] is True, "The safe slice did not end paused."
-assert result["maxFixedSiliconC"] == 60.0, "The safe slice lost its maximum temperature."
+assert result["maxJunctionC"] == 60.0, "The safe slice lost its maximum temperature."
 assert ("/resume", "POST") in calls and ("/pause", "POST") in calls, "The safe slice did not resume and pause."
 assert shell_commands == [
     "input keyevent KEYCODE_WAKEUP", "dumpsys activity activities",
@@ -263,7 +268,7 @@ def slow_temperature():
     return value
 
 
-SERVER.fixed_silicon_c = slow_temperature
+SERVER.limit_c = slow_temperature
 result = SERVER.t_slice({"seconds": 1.0, "includeState": False})
 assert result["completed"] is True, "The telemetry-blocked slice did not complete."
 assert result["elapsedS"] > 2.0, "The test did not model a slow telemetry read."
@@ -417,7 +422,7 @@ prepare_paused_guest()
 use_temperatures([42.0, 73.0])
 result = SERVER.t_slice({"seconds": 1.0})
 assert result["thermalStop"] is True, "The hot slice did not stop."
-assert result["triggerFixedSiliconC"] == 73.0, "The hot slice lost its trigger temperature."
+assert result["triggerJunctionC"] == 73.0, "The hot slice lost its trigger temperature."
 assert result["stop"]["quiet"] is True, "The hot slice did not use the verified stop path."
 
 clock.now = 0.0
@@ -425,8 +430,8 @@ prepare_paused_guest()
 use_temperatures([71.0, 69.0])
 result = SERVER.t_wait_cool_paused({"targetC": 70, "timeoutS": 10})
 assert result["cooled"] is True, "The paused cool wait did not cross below 70 C."
-assert result["fixedSiliconC"] == 69.0, "The paused cool wait reported the wrong temperature."
-assert result["cooledAtFixedSiliconC"] == 69.0, "The cool wait lost its decisive sample."
+assert result["junctionC"] == 69.0, "The paused cool wait reported the wrong temperature."
+assert result["cooledAtJunctionC"] == 69.0, "The cool wait lost its decisive sample."
 
 clock.now = 0.0
 prepare_paused_guest()
@@ -490,7 +495,7 @@ def hold_initial_startup_process(process_id):
 SERVER.stop_process_for_slice = hold_initial_startup_process
 SERVER.t_wait_cool_paused = lambda _: {
     "cooled": True,
-    "cooledAtFixedSiliconC": 45.0,
+    "cooledAtJunctionC": 45.0,
     "waitedS": 0,
     "paused": True,
 }
@@ -499,9 +504,9 @@ SERVER.t_slice = lambda arguments: {
     "requestedS": arguments["seconds"],
     "elapsedS": arguments["seconds"],
     "pauseRequestedAtS": arguments["seconds"],
-    "startFixedSiliconC": 45.0,
-    "endFixedSiliconC": 50.0,
-    "maxFixedSiliconC": 50.0,
+    "startJunctionC": 45.0,
+    "endJunctionC": 50.0,
+    "maxJunctionC": 50.0,
     "paused": True,
     "holdMode": "process",
 }
@@ -620,7 +625,7 @@ SERVER.t_wait_cool_paused = lambda arguments: (
     loop_cool_requests.append(arguments)
     or {
         "cooled": True,
-        "cooledAtFixedSiliconC": 69.9,
+        "cooledAtJunctionC": 69.9,
         "waitedS": 0,
         "paused": True,
     }
@@ -634,9 +639,9 @@ def loop_slice(arguments):
         "requestedS": arguments["seconds"],
         "elapsedS": arguments["seconds"],
         "pauseRequestedAtS": arguments["seconds"],
-        "startFixedSiliconC": 45.0,
-        "endFixedSiliconC": 50.0,
-        "maxFixedSiliconC": 52.0,
+        "startJunctionC": 45.0,
+        "endJunctionC": 50.0,
+        "maxJunctionC": 52.0,
         "paused": True,
     }
 
@@ -654,7 +659,7 @@ assert result["completedSlices"] == 2, "The slice loop ran past the marker."
 assert all(item["pauseRequestedAtS"] == 1.0 for item in result["slices"]), (
     "The slice loop lost the deadline-pause timing evidence."
 )
-assert result["maxFixedSiliconC"] == 69.9, "The slice loop lost its maximum temperature."
+assert result["maxJunctionC"] == 69.9, "The slice loop lost its maximum temperature."
 assert all(item["includeState"] is False for item in loop_slices), "The slice loop used full slice state."
 assert all(item["startupPauseTimeoutS"] <= 120 for item in loop_slices), (
     "The slice loop lost its bounded startup handoff."
@@ -803,7 +808,7 @@ prepare_paused_guest()
 SERVER._matching_log_lines = lambda match, count=1: []
 SERVER.t_wait_cool_paused = lambda _: {
     "cooled": True,
-    "cooledAtFixedSiliconC": 69.9,
+    "cooledAtJunctionC": 69.9,
     "waitedS": 0,
     "paused": True,
 }
@@ -816,9 +821,9 @@ def deadline_slice(arguments):
         "requestedS": arguments["seconds"],
         "elapsedS": arguments["seconds"],
         "pauseRequestedAtS": arguments["seconds"],
-        "startFixedSiliconC": 69.9,
-        "endFixedSiliconC": 69.9,
-        "maxFixedSiliconC": 69.9,
+        "startJunctionC": 69.9,
+        "endJunctionC": 69.9,
+        "maxJunctionC": 69.9,
         "paused": True,
     }
 
