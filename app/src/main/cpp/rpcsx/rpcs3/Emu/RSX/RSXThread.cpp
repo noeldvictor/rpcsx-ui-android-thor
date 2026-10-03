@@ -1922,7 +1922,8 @@ namespace rsx
 		{
 			if (layout.zeta_address == m_depth_surface_info.address &&
 				layout.depth_format == m_depth_surface_info.depth_format &&
-				sample_count == m_depth_surface_info.samples)
+				sample_count == m_depth_surface_info.samples &&
+				(!layout.zeta_address || (m_depth_surface_info.width == layout.width && m_depth_surface_info.height == layout.height)))
 			{
 				// Same target is reused
 				return;
@@ -1972,6 +1973,7 @@ namespace rsx
 
 		auto evaluate_color_buffer_state = [&]() -> bool
 		{
+			m_framebuffer_layout.color_write_enabled = {};
 			const auto mrt_buffers = rsx::utility::get_rtt_indexes(m_framebuffer_layout.target);
 			bool any_found = false;
 
@@ -3259,7 +3261,7 @@ namespace rsx
 
 							if (ea < (rsx::constants::local_mem_base >> 20))
 							{
-								cfg.offsetTable.eaAddress[ea] = null_entry;
+								cfg.offsetTable.ioAddress[ea] = null_entry;
 							}
 						}
 
