@@ -25,9 +25,18 @@
     {
       "id": "other-languages",
       "op": "blank",
-      "paths": ["PS3_GAME/USRDIR/*/ARCHIVE/R0[2-5]/TLFILE.TLDAT"],
+      "paths": [
+        "PS3_GAME/USRDIR/*/ARCHIVE/R0[2-5]/TLFILE.TLDAT"
+      ],
       "why": "ARCHIVE/R01 holds the base data and English. R02 to R05 are the four other languages of the disc (En,Fr,De,Es,It). The small FILEHEADER.TOFHDB files stay, in case the game reads all headers at boot."
     }
   ],
-  "tested": []
+  "tested": [
+    {
+      "date": "2026-10-03",
+      "device": "AYN Thor, CHD on the SD card",
+      "result": "Boots and plays. Tales of Symphonia with the default Voice Language (English): the scene voices are Japanese (speech detection on an audio dump), but the opening narration is English, because the game reads it from a file this recipe does not change. With Customize > Voice Language = Japanese, the narration is Japanese too, with English text. Dawn of the New World boots to its prologue with no error; its voices were not checked, because the audio dump stops at the switch from the launcher.",
+      "advice": "Set Voice Language to Japanese in Customize (title screen) for Japanese voices everywhere."
+    }
+  ]
 }

@@ -138,6 +138,18 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   press that starts at or above 95 C is refused and the game stays paused. The
   emulator is stopped only when the sensors cannot be read or a pause fails. Before
   this, a slice at 95 C force-stopped the first boot of Tales of Symphonia.
+  Two more cases from the same test: an emulator pause does not stop the compile
+  threads, and it cannot settle while a run-time PPU module compiles (Dawn of the
+  New World, `RATATOSK.SPRX`). So a slice whose pause does not settle now holds the
+  process (SIGSTOP), and `thor_wait_cool_paused` holds the process when a paused
+  game still reaches 93 C. Both used to force-stop the app.
+- **The core's audio dump can check voices by machine.** Put `Audio: / Dump to file:
+  true` in `config/custom_configs/config_<TITLEID>.yml`, play, exit the game with
+  `thor_exit_game` (a force-stop leaves the file open), pull
+  `files/cache/audio_<TITLEID>_*.wav`, and run faster-whisper language detection on
+  the speech (the `small` model is on the PC). The dump stops when a game restarts
+  its audio inside one process (the Tales of Symphonia Chronicles launcher does this).
+  Remove the config afterwards: it writes about 90 MB in 4 minutes.
 - **Disc recipes: the language rule (owner, 2026-10-03).** A recipe removes language data
   that the owner does not use, to make the image smaller. Keep Japanese voices and English
   text. When a game has no Japanese voices, keep the English voices. English comes before

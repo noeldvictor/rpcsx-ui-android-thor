@@ -1115,6 +1115,33 @@ def t_slice(a):
     if held_result:
         return held_result
 
+    if not paused and pid() == p:
+        # The emulator pause can wait for a PPU module compile at run time
+        # (Tales of Symphonia: Dawn of the New World, RATATOSK.SPRX, 2026-10-03),
+        # and a force-stop here lost the run. Hold the process instead, as
+        # thor_press does; stop only when that fails too.
+        process_hold = stop_process_for_slice(p)
+        if process_hold.get("ok"):
+            active_elapsed = time.monotonic() - started
+            return {"completed": True, "requestedS": duration,
+                    "elapsedS": round(active_elapsed, 3),
+                    "hostElapsedS": round(active_elapsed, 3),
+                    "activeElapsedS": round(active_elapsed, 3),
+                    "pauseRequestedAtS": round(
+                        float(deadline_pause.get("requestedAtS", elapsed)), 3),
+                    "pauseSettledAtS": round(active_elapsed, 3),
+                    "startJunctionC": start_silicon,
+                    "endJunctionC": silicon,
+                    "maxJunctionC": max_silicon,
+                    "resume": resume, "pause": pause, "display": display,
+                    "processHold": process_hold,
+                    "paused": True, "holdMode": "process",
+                    "pauseFallback": "the emulator pause did not settle in "
+                                     f"{hold_timeout} s; the process is held",
+                    "thermalPauseAtC": thermal_pause_c,
+                    "initialState": initial_state,
+                    "finalState": final_state,
+                    "startupHandoff": startup_handoff}
     if not paused:
         stop = t_stop({})
         active_elapsed = time.monotonic() - started
@@ -1178,9 +1205,19 @@ def t_wait_cool_paused(a):
     waited = 0.0
     stable_count = 0
 
+    escalated = False
     while True:
         silicon = limit_c()
-        if silicon < 0 or silicon >= hard_limit:
+        if 0 <= silicon and silicon >= min(WARN_C, hard_limit) and not process_held:
+            # An emulator pause does not stop the compile threads: a run-time PPU
+            # module compile took a paused Dawn of the New World to 95 C on
+            # 2026-10-03, and the stop here lost the run. Hold the process; that
+            # stops every thread, compile included.
+            hold = stop_process_for_slice(p)
+            if hold.get("ok"):
+                process_held = True
+                escalated = True
+        if silicon < 0 or (silicon >= hard_limit and not process_held) or silicon >= hard_limit + 3.0:
             stop = t_stop({})
             return {"cooled": False, "thermalStop": True,
                     "triggerJunctionC": silicon,
@@ -1203,7 +1240,8 @@ def t_wait_cool_paused(a):
             "requiredStableSamples": stable_samples,
             "sampleIntervalS": sample_interval,
             "paused": process_held or is_paused(),
-            "holdMode": "process" if process_held else "emulator"}
+            "holdMode": "process" if process_held else "emulator",
+            "escalatedToProcessHold": escalated}
 
 
 def _matching_log_lines(match, count=1):

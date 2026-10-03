@@ -426,9 +426,11 @@ test.
 | --- | --- | --- | --- |
 | Tales of Symphonia Chronicles (BLUS31172) | Japanese voices, English text; French, German, Spanish and Italian data removed | 8.90 GB | 7.64 GB |
 
-The Tales of Symphonia recipe is built and verified with `chdman`. On the Thor
-it boots to its first frame with no fatal error (2026-10-03). The voices are not
-checked by ear yet.
+The Tales of Symphonia recipe is built and verified with `chdman`. Tested on the
+Thor on 2026-10-03 with speech detection on an audio dump: with the default voice
+setting, the scene voices are Japanese, but the opening narration stays English.
+**Set Customize > Voice Language to Japanese** on the title screen: then the
+narration is Japanese too, with English text.
 
 The in-app **Trim** tool is different: it deletes language folders from an
 installed folder game. Use recipes for disc images.
