@@ -1,0 +1,40 @@
+{
+  "titleId": "BLUS31176",
+  "title": "Watch_Dogs (USA) (En,Fr,Es,Pt)",
+  "source": {
+    "dataSha1": "a5f9ae4ea8b856bb0f45ddbf53e019f807839d82",
+    "bytes": 14453506048
+  },
+  "outputName": "Watch_Dogs (USA) (En).chd",
+  "result": "English voices and English text. The disc has no Japanese voices. The French, Spanish and Brazilian Portuguese voice data is removed.",
+  "ops": [
+    {
+      "id": "other-voices",
+      "op": "blank",
+      "paths": [
+        "PS3_GAME/USRDIR/data_ps3/sound_brazilian.dat",
+        "PS3_GAME/USRDIR/data_ps3/sound_french.dat",
+        "PS3_GAME/USRDIR/data_ps3/sound_spanish.dat"
+      ],
+      "why": "Each language has one sound bank: sound_<language>.dat (about 1.65 GB) with its index sound_<language>.fat. The index files stay, so the game still finds every file; only the data of the unused languages becomes zeros."
+    },
+    {
+      "id": "other-city-languages",
+      "op": "blank",
+      "paths": [
+        "PS3_GAME/USRDIR/data_ps3/worlds/windy_city/windy_city_brazilian.dat",
+        "PS3_GAME/USRDIR/data_ps3/worlds/windy_city/windy_city_french.dat",
+        "PS3_GAME/USRDIR/data_ps3/worlds/windy_city/windy_city_spanish.dat"
+      ],
+      "why": "The city has one 19 MB localized bank per language, with the same layout as the sound banks."
+    }
+  ],
+  "tested": [
+    {
+      "date": "2026-10-03",
+      "device": "AYN Thor, CHD on the SD card",
+      "result": "Not play-tested. The CHD opens and the EBOOT decrypts, but the first boot dies in the cold PPU compile (Scudo: 'exhausted 256M for size class 262160', LLVM JIT thread), also with ppu_budget_mb=1536. The original image has the same compile, so test the recipe after that bug is fixed.",
+      "originalDeleted": false
+    }
+  ]
+}

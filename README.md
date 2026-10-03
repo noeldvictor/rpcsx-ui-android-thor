@@ -425,12 +425,16 @@ test.
 | Recipe | Result | CHD before | CHD after |
 | --- | --- | --- | --- |
 | Tales of Symphonia Chronicles (BLUS31172) | Japanese voices, English text; French, German, Spanish and Italian data removed | 8.90 GB | 7.64 GB |
+| Folklore (BCUS98147) | English voices (no Japanese on the disc); French, German, Italian and Spanish voices and movies removed | 10.77 GB | 8.96 GB |
+| Watch_Dogs (BLUS31176) | English voices (no Japanese on the disc); French, Spanish and Brazilian Portuguese voices removed | 13.57 GB | 8.89 GB |
 
 The Tales of Symphonia recipe is built and verified with `chdman`. Tested on the
 Thor on 2026-10-03 with speech detection on an audio dump: with the default voice
 setting, the scene voices are Japanese, but the opening narration stays English.
 **Set Customize > Voice Language to Japanese** on the title screen: then the
-narration is Japanese too, with English text.
+narration is Japanese too, with English text. The Folklore recipe passes the same
+test with English voices. The Watch_Dogs recipe is not play-tested yet: its first
+boot dies in the PPU compile, with or without the recipe (an open memory bug).
 
 The in-app **Trim** tool is different: it deletes language folders from an
 installed folder game. Use recipes for disc images.

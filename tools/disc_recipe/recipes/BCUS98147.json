@@ -1,0 +1,42 @@
+{
+  "titleId": "BCUS98147",
+  "title": "Folklore (USA) (En,Fr,De,Es,It)",
+  "source": {
+    "dataSha1": "4b710aa803223aafc0847b0554bc37b76e5f5f88",
+    "bytes": 15584690176
+  },
+  "outputName": "Folklore (USA) (En).chd",
+  "result": "English voices and English text. The disc has no Japanese voices. The French, German, Italian and Spanish voices and localized movies are removed.",
+  "ops": [
+    {
+      "id": "other-voices",
+      "op": "blank",
+      "paths": [
+        "PS3_GAME/USRDIR/bin/sound/stream/*_fr.sgb_",
+        "PS3_GAME/USRDIR/bin/sound/stream/*_ge.sgb_",
+        "PS3_GAME/USRDIR/bin/sound/stream/*_it.sgb_",
+        "PS3_GAME/USRDIR/bin/sound/stream/*_sp.sgb_"
+      ],
+      "why": "30 voice streams per language (cutscenes and story scenes, for example mov_902_fr.sgb_), about 410 MB per language. English uses the same names with no language suffix."
+    },
+    {
+      "id": "other-language-movie",
+      "op": "blank",
+      "paths": [
+        "PS3_GAME/USRDIR/bin/movie/movie_996_fr.m2v_",
+        "PS3_GAME/USRDIR/bin/movie/movie_996_ge.m2v_",
+        "PS3_GAME/USRDIR/bin/movie/movie_996_it.m2v_",
+        "PS3_GAME/USRDIR/bin/movie/movie_996_sp.m2v_"
+      ],
+      "why": "Movie 996 has one video per language (about 120 MB each). English uses movie_996.m2v_. The small subtitle files (movie_NNN_xx.dat2_) stay."
+    }
+  ],
+  "tested": [
+    {
+      "date": "2026-10-03",
+      "device": "AYN Thor, CHD on the SD card",
+      "result": "Passes. Boots to the title screen, New Game plays the opening movie, and the voices are English (speech detection on an audio dump). A file-open trace shows the game never opens the blanked files with English selected. One of three boots stalled in the logo movie (movie_995, not changed by the recipe): an intermittent decoder stall.",
+      "originalDeleted": true
+    }
+  ]
+}
