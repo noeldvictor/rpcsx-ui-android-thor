@@ -8,6 +8,7 @@
 #include "Emu/System.h"
 #include "Emu/cache_phase_pacing.h"
 #include "Emu/cache_utils.hpp"
+#include "Emu/thor_compile_governor.h"
 #include "Emu/RSX/Program/RSXVertexProgram.h"
 #include "Emu/RSX/Program/RSXFragmentProgram.h"
 #include "Overlays/Shaders/shader_loading_dialog.h"
@@ -481,6 +482,8 @@ namespace rsx
 					while (((pos = processed++) < stop_at) && !Emu.IsStopped())
 					{
 						unpacked_shader& entry = unpacked[pos];
+						// Thermal governor (Emu/thor_compile_governor.h): one slot per pipeline.
+						::thor::compile_governor::slot thor_compile_slot;
 						m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
 					}
 					processed--;
@@ -510,7 +513,11 @@ namespace rsx
 					}
 
 					unpacked_shader& entry = unpacked[pos];
-					m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
+					{
+						// Thermal governor (Emu/thor_compile_governor.h): one slot per pipeline.
+						::thor::compile_governor::slot thor_compile_slot;
+						m_storage.add_pipeline_entry(entry.vp, entry.fp, entry.props, std::forward<Args>(args)...);
+					}
 					processed++;
 				}
 				// Each worker claims one sentinel index after the final real entry.

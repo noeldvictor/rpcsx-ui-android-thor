@@ -8009,9 +8009,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 
 		if (thor::compile_governor::enabled())
 		{
-			ppu_log.notice("Thor compile governor: target %u C, peak %u C, lowest %u of %u jobs allowed, %u reductions",
+			ppu_log.notice("Thor compile governor: target %u C, peak %u C, lowest %u of %u jobs allowed, %u reductions, "
+				"%u pauses for %u ms, %u forced",
 				thor::compile_governor::g_target_c, +thor::compile_governor::g_peak_c, +thor::compile_governor::g_lowest_allowed,
-				thor::compile_governor::max_jobs(), +thor::compile_governor::g_reductions);
+				thor::compile_governor::max_jobs(), +thor::compile_governor::g_reductions, +thor::compile_governor::g_pauses,
+				static_cast<u32>(+thor::compile_governor::g_paused_ms), +thor::compile_governor::g_forced);
 		}
 
 		g_watchdog_hold_ctr--;

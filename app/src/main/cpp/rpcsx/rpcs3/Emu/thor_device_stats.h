@@ -116,7 +116,7 @@ namespace thor::device_stats
 			"inputPowerMw is charger input and is only valid while NOT charging\"}",
 			thermal_guard::hottest_celsius(),
 			thermal_guard::engaged() ? "true" : "false",
-			thermal_guard::engaged() ? thermal_guard::g_hot_fps : 0u,
+			thermal_guard::current_cap_fps(),
 			g_fps_milli.load() / 1000.0,
 			g_cores_milli.load() / 1000.0,
 			static_cast<unsigned long long>(g_frames.load()),

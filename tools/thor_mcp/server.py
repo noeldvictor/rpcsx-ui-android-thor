@@ -1650,7 +1650,8 @@ FATAL_RE = re.compile(r"fatal error|Dead FIFO|Access violation|SPU trap|thermal 
 # The in-app guard's ENGAGED line is counted apart. It caps FPS at 30 on
 # 2026-09-22, above restored combat at about 21 FPS, and each combat boot
 # engages it. The windows check whether the cap binds.
-GUARD_RE = re.compile(r"Thermal guard ENGAGED", re.I)
+# Since 2026-10-03 the guard steps its cap (60, 50, 40, 30) and logs each step.
+GUARD_RE = re.compile(r"Thermal guard ENGAGED|Thermal guard at \d+ C: frame cap", re.I)
 PROP_NAME_RE = re.compile(r"debug\.rpcsx\.thor\.[A-Za-z0-9_.]+")
 PROP_VALUE_RE = re.compile(r"[A-Za-z0-9_.:,+-]*")
 
@@ -1815,6 +1816,14 @@ def t_arm(a):
     # combat arm stops there. Rounds K to S ran to the app's abort at 97 C
     # (thermal_abort_c). The limit for combat arms is not decided.
     junction_limit = float(a.get("maxJunctionC", 95))
+    # The owner chose on 2026-10-03 that a hot arm pauses and goes on, so a run
+    # is not lost to heat. At pauseJunctionC the whole process is stopped
+    # (SIGSTOP works in every phase, also in the boot compile), and it
+    # continues at resumeJunctionC. maxJunctionC stays as the stop for a pause
+    # that fails. 0 turns the pause off.
+    pause_c = float(a.get("pauseJunctionC", 93))
+    resume_c = float(a.get("resumeJunctionC", 80))
+    pause_timeout = _clamp(int(a.get("thermalPauseTimeoutS", 300)), 30, 900)
     silicon_limit = a.get("maxSiliconC")
     silicon_limit = float(silicon_limit) if silicon_limit is not None else None
     cool_timeout = _clamp(int(a.get("coolTimeoutS", 480)), 0, 900)
@@ -1833,9 +1842,13 @@ def t_arm(a):
     foreign = []
     last_cpu = {"t": None, "busy": None, "rp": None}
     booted = False
+    pauses = []
+    out["thermalPauses"] = pauses
+    paused = {"s": 0.0}
 
     def budget(phase):
-        if time.time() - started > host_limit:
+        # Time spent in a thermal pause does not count against the host limit.
+        if time.time() - started - paused["s"] > host_limit:
             raise _ArmStop(f"the {host_limit:.0f} s host limit ended the arm before {phase}")
 
     def thermal(phase):
@@ -1862,12 +1875,45 @@ def t_arm(a):
             trace.append([t, j, s, other])
         if j < 0:
             raise _ArmStop("the CPU-junction sensors are unavailable", thermalStop=True)
+        if pause_c and j >= pause_c and booted and pid():
+            thermal_pause(phase, j)
+            return
         if j >= junction_limit:
             raise _ArmStop(f"CPU junction reached {j} C, at or above the {junction_limit} C "
                            f"limit, during {phase}", thermalStop=True, triggerJunctionC=j)
         if silicon_limit is not None and (s < 0 or s >= silicon_limit):
             raise _ArmStop(f"fixed silicon reached {s} C, at or above the {silicon_limit} C "
                            f"limit, during {phase}", thermalStop=True, triggerFixedSiliconC=s)
+
+    def thermal_pause(phase, j):
+        """Stop the process, wait until the junction is at resume_c, continue it."""
+        p = pid()
+        t_start = time.time()
+        held = stop_process_for_slice(p)
+        if not held.get("ok"):
+            out.setdefault("thermalPauseFailures", []).append(held)
+            if j >= junction_limit:
+                raise _ArmStop(f"CPU junction reached {j} C and the thermal pause failed, "
+                               f"during {phase}", thermalStop=True, triggerJunctionC=j)
+            return
+        now_j = j
+        try:
+            while True:
+                time.sleep(2)
+                now_j = temp_c()
+                if 0 <= now_j <= resume_c:
+                    break
+                if time.time() - t_start > pause_timeout:
+                    raise _ArmStop(f"the CPU junction stayed above {resume_c} C for "
+                                   f"{pause_timeout} s with the emulator stopped, during {phase}",
+                                   thermalStop=True, triggerJunctionC=now_j)
+        finally:
+            resumed = continue_process_for_slice(p)
+            took = time.time() - t_start
+            paused["s"] += took
+            pauses.append({"phase": phase, "atS": round(t_start - started, 1), "fromC": j,
+                           "toC": now_j, "pausedS": round(took, 1),
+                           "continued": bool(resumed.get("ok"))})
 
     def watch(seconds, phase):
         """Wait, and read the temperatures every second while the guest runs."""
@@ -1943,6 +1989,7 @@ def t_arm(a):
         booted = True
         ensure_forward()
         boot_t = time.time()
+        boot_paused = paused["s"]
         while True:
             budget("the first frame")
             watch(5, "the boot")
@@ -1950,9 +1997,11 @@ def t_arm(a):
                 raise _ArmStop("the process ended during the boot")
             if float(_device().get("fps") or 0) > 0:
                 break
-            if time.time() - boot_t > ready_timeout:
+            if time.time() - boot_t - (paused["s"] - boot_paused) > ready_timeout:
                 raise _ArmStop(f"no frame in {ready_timeout} s")
         out["firstFrameS"] = round(time.time() - boot_t, 1)
+        # The same time without the thermal pauses: the boot's own length.
+        out["firstFrameActiveS"] = round(time.time() - boot_t - (paused["s"] - boot_paused), 1)
         if stop_after == "firstFrame":
             raise _ArmDone()
 
@@ -1986,6 +2035,7 @@ def t_arm(a):
             out["load"] = loaded
 
         gate_t = time.time()
+        gate_paused = paused["s"]
         while True:
             budget("the scene gate")
             watch(5, "the scene gate")
@@ -1996,7 +2046,7 @@ def t_arm(a):
                 break
             if not pid():
                 raise _ArmStop("the process ended before the scene gate")
-            if time.time() - gate_t > gate_timeout:
+            if time.time() - gate_t - (paused["s"] - gate_paused) > gate_timeout:
                 raise _ArmStop(f"not in the measured scene after {gate_timeout} s: coresBusy "
                                f"{cores}, gate {gate_cores}", scene=scene)
         out.update(gateS=round(time.time() - gate_t, 1), gateCoresBusy=cores,
@@ -2014,6 +2064,7 @@ def t_arm(a):
         for i in range(samples):
             budget("a sample window")
             p = pid()
+            pauses_before = len(pauses)
             d0, j0, t0 = _device(), proc_jiffies(p) if p else None, time.time()
             watch(play_s / samples, "a sample window")
             d1, j1, t1 = _device(), proc_jiffies(p) if p else None, time.time()
@@ -2038,6 +2089,8 @@ def t_arm(a):
                 void.append(f"the thermal guard was engaged and FPS is at its {cap:g} FPS cap")
             if scene.get("videoDecoding"):
                 void.append("a movie was playing")
+            if len(pauses) != pauses_before:
+                void.append("a thermal pause stopped the emulator in this window")
             if w["fps"] is None or w["cores"] is None:
                 void.append("a counter was missing")
             alive = pid() == p and bool(p)
@@ -2177,7 +2230,7 @@ TOOLS = [
     ("thor_clearprops", "Clear all nonempty debug.rpcsx.thor properties after the emulator has stopped, then audit the result.", {"type": "object", "properties": {}}, t_clearprops),
     ("thor_exit_game", "Exit the running game the way the home menu Exit Game does, releasing any process hold first. Reports when the core reached Stopped, when the game activity closed, and any self-join log lines. Follow with thor_boot sameProcess=true to test the next game in the same process.", {"type": "object", "properties": {"timeoutS": {"type": "integer"}}}, t_exit_game),
     ("thor_stop", "Force-stop the emulator, kill stressors, release the screen lock, and report the device is quiet.", {"type": "object", "properties": {}}, t_stop),
-    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC fixed silicon and maxStartJunctionC junction, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. Stops at the CPU-junction limit maxJunctionC (95 C), not at the 72 C fixed-silicon limit of the other tools. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
+    ("thor_arm", "Run ONE A/B arm from a clean start: stop, clear properties, push the vault savestate, cool below maxStartC fixed silicon and maxStartJunctionC junction, set and read back the arm's debug.rpcsx.thor properties, boot with the managed profile, wait for a frame, load the savestate (ok:true required), gate on coresBusy above gateCores with no movie, score a screenshot, sample FPS (frame counter) and cores in windows, pull and check the log, stop, and clear the properties. At pauseJunctionC (93 C) it stops the process until the junction is at resumeJunctionC (80 C), then continues; a window with a pause is void. It stops the arm at maxJunctionC (95 C) only when a pause fails, not at the 72 C fixed-silicon limit of the other tools. Appends the result to runDir/results.jsonl. Call it once per arm in ABBA order, then call thor_ab_table.", {"type": "object", "properties": {
         "name": {"type": "string", "description": "Arm name. Runs with the same name are grouped in the table."},
         "props": {"type": "object", "additionalProperties": {"type": "string"}, "description": "debug.rpcsx.thor.* property to value. Empty for a control arm."},
         "titleId": {"type": "string", "description": "Default BLUS30357."},
@@ -2194,7 +2247,10 @@ TOOLS = [
         "gateTimeoutS": {"type": "integer", "description": "Wait for the scene gate. Default 150."},
         "maxStartC": {"type": "number", "description": "Start ceiling, fixed silicon. Default 70."},
         "maxStartJunctionC": {"type": "number", "description": "Start ceiling, CPU junction. Default 55, as the round script used."},
-        "maxJunctionC": {"type": "number", "description": "Hard stop, CPU junction. Default 95 (chosen by the owner on 2026-09-22)."},
+        "maxJunctionC": {"type": "number", "description": "Hard stop, CPU junction, when a thermal pause fails. Default 95 (chosen by the owner on 2026-09-22)."},
+        "pauseJunctionC": {"type": "number", "description": "Stop the process (SIGSTOP) at this CPU junction and continue when it cools. Default 93; 0 turns the pause off (chosen by the owner on 2026-10-03)."},
+        "resumeJunctionC": {"type": "number", "description": "Continue the process after a thermal pause at this CPU junction. Default 80."},
+        "thermalPauseTimeoutS": {"type": "integer", "description": "Longest thermal pause, 30 to 900 s, before the arm stops. Default 300."},
         "maxSiliconC": {"type": "number", "description": "Optional second hard stop, fixed silicon. No default: a Transformers boot passes 72 C."},
         "coolTimeoutS": {"type": "integer", "description": "Wait to cool below maxStartC. Default 480."},
         "maxHostS": {"type": "number", "description": "Host time limit for the arm, 120 to 1800 s. Default 900."},

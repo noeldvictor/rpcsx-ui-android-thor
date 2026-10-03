@@ -4,6 +4,7 @@
 #include "vkutils/device.h"
 #include "vkutils/thor_rsx_auditor.h"
 #include "Emu/cache_utils.hpp"
+#include "Emu/thor_compile_governor.h"
 #include "util/File.h"
 #include "util/Thread.h"
 
@@ -441,6 +442,10 @@ namespace vk
 		{
 			for (auto&& job : m_work_queue.pop_all())
 			{
+				// Thermal governor (Emu/thor_compile_governor.h): only deferred jobs come here,
+				// so a wait delays a pipeline, never the render thread.
+				::thor::compile_governor::slot thor_compile_slot;
+
 				if (job.is_graphics_job)
 				{
 					auto compiled = int_compile_graphics_pipe(job.graphics_data, job.graphics_modules, job.pipe_layout, job.inputs, {}, job.flags);

@@ -672,14 +672,18 @@ adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
 Three layers, because a frame cap is not thermal protection: the emulator can be
 hot from SPU work while the renderer is already capped.
 
-* **The compile governor** limits how many PPU and SPU compile jobs run at the
-  same time. It reads the CPU temperature every 250 ms. At 85 C or more it
-  removes a job slot. At 80 C or less it gives one back. A first boot then
-  compiles on as many cores as the temperature allows. Measured on Dragon's
-  Crown after a codegen change: without the governor, five first boots stopped
-  at 95 C before the first frame. With it, the CPU stayed at 85 to 94 C and the
-  game drew its first frame.
-* **The thermal guard** lowers the frame limit above 85 C.
+* **The compile governor** limits how many compile jobs run at the same time:
+  PPU and SPU compile, the shader cache compile at boot, and background Vulkan
+  pipeline compile. It reads the CPU temperature every 250 ms. At 85 C or more
+  it removes a job slot, down to 0: then compile pauses until the CPU cools. At
+  80 C or less it gives one back. A job never waits more than 30 s. Measured on
+  Dragon's Crown after a codegen change: without the governor, five first boots
+  stopped at 95 C before the first frame. With it, the game drew its first
+  frame.
+* **The thermal guard** lowers the frame cap in steps at 85 C: 60, 50, 40, then
+  30 FPS. It skips a step that is above the current frame rate, because that
+  step would remove no work. At 80 C it raises the cap again, one step at a
+  time.
 * **The emergency stop** pauses emulation outright if the CPU junction stays at
   or above 100 C. A paused emulator uses about 0.3 cores against 3.9 running, so
   this actually stops the heat.

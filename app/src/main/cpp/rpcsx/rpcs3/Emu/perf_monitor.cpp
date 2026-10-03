@@ -54,7 +54,7 @@ void perf_monitor::operator()()
 	u64 last_flip_time = umax;
 
 	u64 thermal_tick = 0;
-	bool thermal_engaged_logged = false;
+	u32 thermal_cap_logged = 0;
 
 	for (u64 sleep_until = get_system_time();;)
 	{
@@ -97,17 +97,16 @@ void perf_monitor::operator()()
 				Emu.Pause();
 			}
 
-			// Log the EDGES only. A line every 2 s would bury the log, and the
-			// interesting facts are when it engaged, how hot it was, and when it
-			// let go again.
-			if (const bool now_engaged = thor::thermal_guard::engaged(); now_engaged != thermal_engaged_logged)
+			// Log the CHANGES only. A line every 2 s would bury the log, and the
+			// interesting facts are each step, how hot it was, and when it let go.
+			if (const u32 cap = thor::thermal_guard::current_cap_fps(); cap != thermal_cap_logged)
 			{
-				thermal_engaged_logged = now_engaged;
+				thermal_cap_logged = cap;
 
-				if (now_engaged)
+				if (cap)
 				{
-					perf_log.warning("Thermal guard ENGAGED at %u C, limiting to %u FPS",
-						thor::thermal_guard::hottest_celsius(), thor::thermal_guard::g_hot_fps);
+					perf_log.warning("Thermal guard at %u C: frame cap %u FPS (measured %.1f FPS)",
+						thor::thermal_guard::hottest_celsius(), cap, thor::thermal_guard::g_last_fps.load());
 				}
 				else
 				{

@@ -59,6 +59,19 @@
 // forever, and because deliberate frame loss beats being clamped by the hardware.
 // It is NOT a fix for a saturated SPU thread and must not be described as one.
 //
+// ## STEPPED CAP, 2026-10-03 (owner decision: hold 85 C everywhere)
+//
+// The guard no longer jumps from no cap to one 30 FPS cap. It steps: 60, 50, 40, then
+// thermal_guard_fps (30). At or above thermal_guard_c (85 C) it goes one step down, at most
+// once every thermal_guard_step_dwell samples (default 3, about 6 s), so each step has time
+// to act. A step at or above the measured frame rate removes no work, so it is skipped. At or
+// below thermal_guard_release (now 80 C) it goes one step up after thermal_guard_dwell
+// samples (default 8, about 16 s) at that step. Small steps change the load less than one
+// large step, so the sensor drops less, and the flapping recorded below is less likely.
+//
+// The proof above still applies: a scene whose heat is a saturated SPU thread runs below
+// every step, and no frame cap cools it. Only floor_ratio binds there, and it is opt-in.
+//
 // ## What it does NOT do
 //
 // It does not touch thread counts, affinity or the recompilers. Those were tried
@@ -94,10 +107,10 @@ namespace thor::thermal_guard
 	// sampled yet", which reads as cold and engages nothing.
 	inline atomic_t<u32> g_hottest_mc{0};
 
-	// Set by sample(), read by the render path.
-	inline atomic_t<bool> g_engaged{false};
+	// Set by sample(), read by the render path. 0 = no cap; N = the Nth step of the ladder.
+	inline atomic_t<u32> g_level{0};
 
-	// Samples spent engaged, for the dwell below.
+	// Samples since the last step change, for the dwells below.
 	inline atomic_t<u32> g_engaged_samples{0};
 
 	inline u32 read_u32_property(const char* name, u32 fallback) noexcept
@@ -127,7 +140,9 @@ namespace thor::thermal_guard
 
 	// Read once at load, so the render path never parses a property.
 	inline const u32 g_engage_c = read_u32_property("debug.rpcsx.thor.thermal_guard_c", 85);
-	inline const u32 g_release_c = read_u32_property("debug.rpcsx.thor.thermal_guard_release", 70);
+	// 80 since the stepped cap (2026-10-03); it was 70 with one large step.
+	inline const u32 g_release_c = read_u32_property("debug.rpcsx.thor.thermal_guard_release", 80);
+	inline const u32 g_step_dwell = read_u32_property("debug.rpcsx.thor.thermal_guard_step_dwell", 3);
 	// RAISED FROM 20 TO 30 on 2026-08-24, measured.
 	//
 	// The header above already says this guard "does not cool every title" and
@@ -180,6 +195,42 @@ namespace thor::thermal_guard
 		read_u32_property("debug.rpcsx.thor.thermal_guard_dwell", 8);
 
 	inline bool enabled() noexcept { return g_engage_c != 0 && g_hot_fps != 0; }
+
+	// The cap of each step: 60, 50, 40, then g_hot_fps. Steps at or below g_hot_fps are left out.
+	inline constexpr u32 c_upper_steps[] = {60, 50, 40};
+
+	inline u32 step_count() noexcept
+	{
+		u32 n = 1;
+
+		for (const u32 fps : c_upper_steps)
+		{
+			n += fps > g_hot_fps ? 1 : 0;
+		}
+
+		return n;
+	}
+
+	// The cap of step `level` (1-based), or 0 for level 0.
+	inline u32 step_fps(u32 level) noexcept
+	{
+		if (level == 0)
+		{
+			return 0;
+		}
+
+		for (const u32 fps : c_upper_steps)
+		{
+			if (fps > g_hot_fps && --level == 0)
+			{
+				return fps;
+			}
+		}
+
+		return g_hot_fps;
+	}
+
+	inline u32 current_cap_fps() noexcept { return step_fps(g_level.observe()); }
 
 	// The CPU thermal zones, discovered once.
 	//
@@ -274,23 +325,31 @@ namespace thor::thermal_guard
 
 		const u32 celsius = hottest / 1000;
 
-		// Hysteresis PLUS a dwell. Engage high, then stay engaged for a minimum
-		// number of samples before the release threshold is even considered.
-		if (!g_engaged)
+		// Hysteresis PLUS a dwell for each direction. A step down waits g_step_dwell
+		// samples after the last change; a step up waits g_min_engaged_samples.
+		const u32 level = g_level.observe();
+		const u32 since = g_engaged_samples.observe() + 1;
+		g_engaged_samples.release(since);
+
+		if (celsius >= g_engage_c && level < step_count() && (level == 0 || since >= g_step_dwell))
 		{
-			if (celsius >= g_engage_c)
+			// Skip the steps that would not bind: a cap at or above the measured rate
+			// removes no work. The last step stays reachable, for floor_ratio.
+			const double measured = g_last_fps.load();
+			u32 next = level + 1;
+
+			while (next < step_count() && measured > 1.0 && step_fps(next) >= measured)
 			{
-				g_engaged.release(true);
-				g_engaged_samples.release(0);
+				next++;
 			}
+
+			g_level.release(next);
+			g_engaged_samples.release(0);
 		}
-		else if (g_engaged_samples.observe() < g_min_engaged_samples)
+		else if (level > 0 && celsius <= g_release_c && since >= g_min_engaged_samples)
 		{
-			g_engaged_samples.release(g_engaged_samples.observe() + 1);
-		}
-		else if (celsius <= g_release_c)
-		{
-			g_engaged.release(false);
+			g_level.release(level - 1);
+			g_engaged_samples.release(0);
 		}
 	}
 
@@ -348,7 +407,7 @@ namespace thor::thermal_guard
 		return true;
 	}
 
-	inline bool engaged() noexcept { return g_engaged.observe(); }
+	inline bool engaged() noexcept { return g_level.observe() != 0; }
 
 	// The frame limit to impose right now, or 0 for "do not interfere".
 	// A CAP CANNOT COOL A GAME THAT IS ALREADY BELOW IT.
@@ -376,7 +435,7 @@ namespace thor::thermal_guard
 			return 0.0;
 		}
 
-		const double cap = static_cast<double>(g_hot_fps);
+		const double cap = static_cast<double>(current_cap_fps());
 
 		if (g_floor_ratio == 0)
 		{

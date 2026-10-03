@@ -56,6 +56,31 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   junction stayed at 85 to 94 C and the game drew its first frame (lowest 1 of 8 jobs, 7
   reductions). The target overshoots by up to 9 C, because the junction moves faster than
   a running job ends.
+- **Thermal control everywhere, at 85 C (owner decision, 2026-10-03).** The owner wants
+  no run lost to heat. Three parts:
+  1. Compile governor: the floor is now 0 jobs, so compile pauses. Tales of Symphonia
+     Chronicles (BLUS31172) reached 95 to 96 C with 1 job left, because the boot runs
+     more than the compile. A job that waits `compile_max_wait_s` (30) at 0 jobs runs
+     anyway, one at a time, so heat from another source cannot hang a compile. The
+     governor now also covers the RSX shader cache compile at boot and deferred Vulkan
+     pipeline jobs. It does not cover an inline pipeline compile or a run-time SPU
+     compile, because a render or guest thread waits for those.
+  2. Gameplay guard (`Emu/thor_thermal_guard.h`): a stepped frame cap of 60, 50, 40 and
+     30 FPS at 85 C, one step each 6 s, up again at 80 C after 16 s. A step at or above
+     the measured frame rate is skipped. A scene whose heat is one saturated SPU thread
+     runs below every step, so no cap cools it (Transformers combat). There the emergency
+     stop is still the last line.
+  3. `thor_arm`: at `pauseJunctionC` (93 C) it stops the process with SIGSTOP and
+     continues it at `resumeJunctionC` (80 C). A sample window with a pause is void.
+     `firstFrameActiveS` is the boot time without the pauses. The 95 C stop applies only
+     when a pause fails.
+  Measured the same day. Folklore (BCUS98114), cold first boot, first version: the arm
+  paused 60 s at 93 C and reached the first frame at 298.5 s (238.5 s without the pause).
+  The governor logged 33 pauses for 221 s and 17 forced jobs. Defect: the 30 s wait counted
+  per job, so the jobs that waited longest ran one after another, and the floor was 1 job
+  again. Now the wait counts from the last compile start or end, for all jobs together.
+  Odin Sphere Leifthrasir (BLUS31601), cold first boot, fixed version: 7 minutes of compile
+  at 75 to 87 C junction (peak 89 C), no arm pause.
 - **Open: a cold compile can die in Scudo.** Same day, one governed run aborted in
   `scudo::dieOnMapUnmapError` from LLVM `RuntimeDyldELF` (`StringMap` through
   `MallocAllocator::Allocate`, which the prebuilt LLVM inlines, so `b9bfafca0`'s
@@ -63,6 +88,12 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   run was about 5,900, far below 65,530. That run's virtual size was 93 GB of about 512 GB,
   so address space is the first suspect. Next: sample VmSize through a whole cold compile.
   See `docs/arm64/ppu-compile-oom.md`.
+  Second case, 2026-10-03: Odin Sphere Leifthrasir (BLUS31601) aborted after 7 minutes of
+  cold compile with "Scudo OOM: The process has exhausted 256M for size class 262160", in
+  the `LLVM JIT` thread. RAM use went from 4.9 GB to 6.7 GB in 2 s, after a module logged
+  "502554 functions generated (num_func=3396)". This is the per-size-class cap (256 MB),
+  not free memory. The next boot with `ppu_budget_mb=1536` reached the first frame in
+  29.3 s, with the cached modules.
 - **CHD disc images.** `rpcs3/Loader/CHD.cpp` (from ARMSX3), `3rdparty/libchdr`. A `.chd`
   boots, installs and appears in the library like an `.iso`. Make one with
   `chdman createdvd -c zstd` (zstd decodes faster than chdman's LZMA default, so less CPU
