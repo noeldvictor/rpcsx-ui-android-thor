@@ -111,6 +111,7 @@ namespace vk
 		{
 			m_current_query_pool = std::move(m_query_pool_cache.front());
 			m_query_pool_cache.pop_front();
+			m_current_query_pool->reset_refs(); // RPCS3 5df3970a7
 		}
 		else
 		{

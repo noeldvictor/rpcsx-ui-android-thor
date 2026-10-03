@@ -22,8 +22,15 @@ namespace vk
 			info.queryCount = size;
 			CHECK_RESULT(VK_GET_SYMBOL(vkCreateQueryPool)(dev, &info, nullptr, &m_query_pool));
 
+			reset_refs();
+		}
+
+		// From RPCS3 5df3970a7. A pool reused from the cache must take its references again,
+		// or the count leaks.
+		void reset_refs()
+		{
 			// Take 'size' references on this object
-			ref_count.release(static_cast<s32>(size));
+			ref_count.release(static_cast<s32>(size()));
 		}
 
 		~query_pool()

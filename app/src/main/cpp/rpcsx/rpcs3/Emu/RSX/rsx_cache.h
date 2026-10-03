@@ -899,7 +899,7 @@ namespace rsx
 				{
 					for (auto& address : vp.jump_table)
 					{
-						data_block.vp_jump_table[index++] = static_cast<u16>(address);
+						::at32(data_block.vp_jump_table, index++) = static_cast<u16>(address); // RPCS3 2ccdb73a3: bounds check
 					}
 				}
 				else

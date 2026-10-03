@@ -164,7 +164,9 @@ namespace
 					return !vk::is_primitive_native(prim);
 				});
 
-			if (min_index >= max_index)
+			// From RPCS3 18f18b305: one index is a valid draw for POINTS.
+			if (min_index > max_index ||
+				(min_index == max_index && rsx::method_registers.current_draw_clause.primitive != rsx::primitive_type::points))
 			{
 				// empty set, do not draw
 				m_index_buffer_ring_info.unmap();
