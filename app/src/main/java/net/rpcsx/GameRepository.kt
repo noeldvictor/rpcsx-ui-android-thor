@@ -165,12 +165,54 @@ class GameRepository {
             }
         }
 
+        // Repair an entry whose disc image file is gone.
+        //
+        // On 2026-10-03 every ISO on the SD card was converted to a CHD with the same name,
+        // and the ISOs were deleted. games.json still held the ISO paths, and load() does not
+        // check them, so the game list showed each title with its old path and Play failed
+        // with "InvalidFileOrFolder". refresh() drops a missing file, but nothing runs it at
+        // app start.
+        //
+        // Returns the entry unchanged when its file exists, the entry moved to the CHD when an
+        // ISO was replaced by "<same name>.chd", or null to drop it. An entry whose folder
+        // cannot be read is kept as it is: an SD card that is not mounted must not empty the
+        // library.
+        private fun repairMissingImage(info: GameInfo): GameInfo? {
+            if (!info.path.startsWith("/") || info.path.startsWith(RPCSX.rootDirectory)) {
+                return info
+            }
+
+            val file = File(info.path)
+            if (file.exists() || file.parentFile?.isDirectory != true) {
+                return info
+            }
+
+            if (info.path.endsWith(".iso", ignoreCase = true)) {
+                val chd = File(info.path.dropLast(4) + ".chd")
+                if (chd.isFile) {
+                    Log.i("GameRepository", "${info.path} is gone; the entry now uses ${chd.path}")
+                    return info.copy(path = chd.path)
+                }
+            }
+
+            Log.i("GameRepository", "${info.path} is gone; the entry is removed")
+            return null
+        }
+
         suspend fun load() {
+            var repaired = false
             val loadedGames = withContext(Dispatchers.IO) {
                 try {
                     Json.decodeFromString<Array<GameInfo>>(
                         File(RPCSX.rootDirectory + "games.json").readText()
-                    ).map { info -> Game(toStore(info)) }
+                    ).mapNotNull { info ->
+                        val kept = repairMissingImage(info)
+                        if (kept != info) {
+                            repaired = true
+                        }
+                        kept
+                    }.distinctBy { info -> info.path }
+                        .map { info -> Game(toStore(info)) }
                 } catch (_: NotFoundException) {
                     emptyList()
                 } catch (e: Exception) {
@@ -183,6 +225,10 @@ class GameRepository {
                 synchronized(instance) {
                     instance.games.clear()
                     instance.games += loadedGames
+                }
+
+                if (repaired) {
+                    save()
                 }
             }
         }

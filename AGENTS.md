@@ -103,6 +103,21 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   passes `chdman verify` and the core mounts it and decrypts its EBOOT.
 - `thor_arm` takes `managedProfile=false` for a title without a managed profile, and quotes
   paths for the device shell (an apostrophe in "Dragon's Crown" broke `am start`).
+- **After a disc image changes on the SD card, the library repairs itself at app start**
+  (`GameRepository.load()`, 2026-10-03). An entry whose ISO is gone moves to
+  "<same name>.chd" when that file exists, else it is removed. An entry whose folder cannot
+  be read stays, so an SD card that is not mounted does not empty the library. Before this
+  fix, every converted title failed with "InvalidFileOrFolder", because `games.json` still
+  held the deleted ISO paths. A new file (for example a recipe output) appears after a pull
+  to refresh on the game list, which rescans the granted folders.
+- **`/diag` crashed the app after a failed boot** (fixed 2026-10-03). `_rpcsx_diagInfo` read
+  the SPU list from `g_fxo`, which holds uninitialized memory after a failed boot: "Segfault
+  reading location 0000ccccccccdc94", and the control API went down with the app. It now
+  reads the list only while a title runs or is paused.
+- **Build the device APK as `:app:assembleThortest -PrpcsxThorDebuggable=true`,** then
+  `adb install -r`. Without the property the APK is not debuggable: `run-as` fails, so the
+  thor tools cannot read the app's files, and the app ignores the dev core and runs the
+  bundled core. This happened once on 2026-10-03 and was reinstalled at once.
 - **Disc recipes: the language rule (owner, 2026-10-03).** A recipe removes language data
   that the owner does not use, to make the image smaller. Keep Japanese voices and English
   text. When a game has no Japanese voices, keep the English voices. English comes before

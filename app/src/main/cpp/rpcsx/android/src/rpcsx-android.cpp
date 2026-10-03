@@ -2771,7 +2771,18 @@ bool thor_spu_accurate_reservations_effective() noexcept;
 
 extern "C" std::string _rpcsx_diagInfo() {
   std::string spurs = "[]";
-  {
+
+  // Read the SPU list only while a title runs or is paused. After a failed boot
+  // g_fxo holds new, uninitialized memory, and idm::select read a garbage pointer
+  // from it: the app died with "Segfault reading location 0000ccccccccdc94" in
+  // this function, from the control API thread (2026-10-03, after Tales of
+  // Symphonia Chronicles failed with InvalidFileOrFolder).
+  const system_state emu_state = Emu.GetStatus(false);
+  const bool spu_list_valid =
+      (emu_state == system_state::running || emu_state == system_state::paused) &&
+      g_fxo->is_init() && g_fxo->is_init<id_manager::id_map<named_thread<spu_thread>>>();
+
+  if (spu_list_valid) {
     std::string items;
     idm::select<named_thread<spu_thread>>([&](u32, named_thread<spu_thread> &spu) {
       const auto group = spu.group;
