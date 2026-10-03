@@ -48,6 +48,7 @@ LOG_CHANNEL(jit_log, "JIT");
 #include <llvm/Support/CodeGen.h>
 #include <llvm/Config/llvm-config.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
@@ -1266,6 +1267,34 @@ jit_compiler::jit_compiler(const std::unordered_map<std::string, u64>& _link, co
 
 		return true;
 	}();
+
+#ifdef ARCH_ARM64
+	// From ARMSX3 85d074b78. Turn off InterleavedLoadCombine, an IR pass that only the AArch64
+	// backend adds to codegen. It looks for loads split into pieces and joined again with
+	// shuffles, to merge them into one ld2/ld3/ld4. It finds them by recursing through every
+	// shufflevector, bitcast and load behind a candidate, with no depth limit. PS3 vector code
+	// translates into long shuffle chains, and on one function the search did not end: The
+	// Guided Fate Paradox's EBOOT (BLUS31312) stayed in it for more than ten minutes at 100% of
+	// a core, the boot did not finish, and Stop could not join the thread.
+	//
+	// The pass only gives strided loads, which the translators do not emit. The later
+	// InterleavedAccess pass still handles the usual interleaved patterns. LLVM options are
+	// process-wide, so this is set once, before the first compile, and covers SPU codegen too.
+	[[maybe_unused]] static const bool s_llvm_options = []()
+	{
+		auto& options = llvm::cl::getRegisteredOptions();
+
+		if (const auto found = options.find("disable-interleaved-load-combine"); found != options.end())
+		{
+			static_cast<llvm::cl::opt<bool>*>(found->second)->setValue(true);
+			jit_log.notice("LLVM: InterleavedLoadCombine disabled");
+			return true;
+		}
+
+		jit_log.error("LLVM: -disable-interleaved-load-combine not found; InterleavedLoadCombine stays on");
+		return false;
+	}();
+#endif
 
 	std::string result;
 

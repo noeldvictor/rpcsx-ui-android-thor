@@ -2290,6 +2290,25 @@ __forceinline
 #endif
 }
 
+// From ARMSX3 7abf45dc6 and be3f419de. The reservation paths read a 128-byte line and check a
+// timestamp on each side of the read. That is correct only while the loads stay between the
+// two timestamp reads. x86-TSO keeps them there. AArch64 does not, so the barrier must be
+// written, or the check passes for data from a later epoch.
+//
+// The same applies after a comparison that finds a reservation lost because the line's DATA
+// changed while the timestamp did not. An ordinary store does that, and it is how a sleeping
+// SPU learns that a line was written. Without a barrier after the comparison, the next reads
+// can still return data from before the change. ARMSX3 recorded the result on Killzone 3: a
+// SPURS task woken by the PPU read a state byte as 0, stopped on its own assertion, and left
+// main_thread waiting forever.
+//
+// Always true, so it can sit in a && chain. On x86 it is a compiler barrier only.
+static FORCE_INLINE bool rdata_fence()
+{
+	atomic_fence_acquire();
+	return true;
+}
+
 // Return the position of the only changed 16-byte block, or umax when the
 // reservation data differs in zero or multiple blocks. A single-block PUTLLC
 // can then be published atomically instead of exposing a torn 128-byte update
@@ -6464,7 +6483,9 @@ bool spu_thread::do_putllc(const spu_mfc_cmd& args)
 
 			// Writeback of unchanged data. Load the memory twice so a
 			// concurrent 128-byte update cannot pass as a stable snapshot.
-			if (cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res == rtime && cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res.compare_and_swap_test(rtime, rtime + 128))
+			// rdata_fence (ARMSX3 7abf45dc6) keeps the first comparison's loads ahead of the
+			// timestamp check.
+			if (cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && rdata_fence() && res == rtime && cmp_rdata(rdata, vm::_ref<spu_rdata_t>(addr)) && res.compare_and_swap_test(rtime, rtime + 128))
 			{
 				raddr = 0; // Disable notification
 				return true;
@@ -7552,7 +7573,7 @@ bool spu_thread::process_mfc_cmd()
 					// Need to check twice for it to be accurate, the code is before and not after this check for:
 					// 1. Reduce time between reservation accesses so TSX panelty would be lowered
 					// 2. Increase the chance of change detection: if GETLLAR has been called again new data is probably wanted
-					if (this_time == res && cmp_rdata(rdata, data))
+					if (rdata_fence() && this_time == res && cmp_rdata(rdata, data)) // fence: ARMSX3 7abf45dc6
 					{
 						if (this_time != rtime)
 						{
@@ -7835,7 +7856,7 @@ bool spu_thread::process_mfc_cmd()
 						// Quick check if there were reservation changes
 						const u64 new_time = res;
 
-						if (new_time % 128 == 0 && cmp_rdata(rdata, data) && res == new_time && cmp_rdata(rdata, data))
+						if (new_time % 128 == 0 && cmp_rdata(rdata, data) && rdata_fence() && res == new_time && cmp_rdata(rdata, data)) // fence: ARMSX3 7abf45dc6
 						{
 							if (get_mfc_debug_for_runtime())
 							{
@@ -8849,7 +8870,7 @@ bool spu_thread::reservation_check(u32 addr, const decltype(rdata)& data) const
 	if ((addr >> 28) < 2 || (addr >> 28) == 0xd)
 	{
 		// Always-allocated memory does not need strict checking (vm::main or vm::stack)
-		return !cmp_rdata(data, *vm::get_super_ptr<decltype(rdata)>(addr));
+		return !cmp_rdata(data, *vm::get_super_ptr<decltype(rdata)>(addr)) && rdata_fence(); // ARMSX3 be3f419de
 	}
 
 	// Ensure data is allocated (HACK: would raise LR event if not)
@@ -8925,7 +8946,7 @@ bool spu_thread::reservation_check(u32 addr, const decltype(rdata)& data) const
 	const bool res = cmp_rdata(data, vm::_ref<decltype(rdata)>(addr));
 
 	range_lock->release(0);
-	return !res;
+	return !res && rdata_fence(); // ARMSX3 be3f419de
 }
 
 bool spu_thread::reservation_check(u32 addr, u32 hash, atomic_t<u64, 64>* range_lock)
@@ -9009,7 +9030,7 @@ bool spu_thread::reservation_check(u32 addr, u32 hash, atomic_t<u64, 64>* range_
 	const bool res = compute_rdata_hash32(*vm::get_super_ptr<decltype(rdata)>(addr)) == hash;
 
 	range_lock->release(0);
-	return !res;
+	return !res && rdata_fence(); // ARMSX3 be3f419de
 }
 
 usz spu_thread::register_cache_line_waiter(u32 addr)
@@ -9557,7 +9578,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 				{
 					set_lr = true;
 				}
-				else if (!cmp_rdata(rdata, *resrv_mem))
+				else if (!cmp_rdata(rdata, *resrv_mem) && rdata_fence()) // ARMSX3 be3f419de
 				{
 					// Notify threads manually, memory data has likely changed and broke the reservation for others
 					if (vm::reservation_notifier_count(raddr) && vm::reservation_acquire(raddr) == rtime)
@@ -9686,7 +9707,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 						// Abort notifications are handled specially for performance reasons
 						if (auto wait_var = vm::reservation_notifier_begin_wait(raddr, rtime))
 						{
-							if (!cmp_rdata(rdata, *resrv_mem))
+							if (!cmp_rdata(rdata, *resrv_mem) && rdata_fence()) // ARMSX3 be3f419de
 							{
 								raddr = 0;
 								set_events(SPU_EVENT_LR);
@@ -9707,7 +9728,7 @@ s64 spu_thread::get_ch_value(u32 ch)
 
 					if (auto wait_var = vm::reservation_notifier_begin_wait(_raddr, rtime))
 					{
-						if (!cmp_rdata(rdata, *resrv_mem))
+						if (!cmp_rdata(rdata, *resrv_mem) && rdata_fence()) // ARMSX3 be3f419de
 						{
 							raddr = 0;
 							set_events(SPU_EVENT_LR);
