@@ -1270,7 +1270,7 @@ namespace rpcn
 		auto get_usernames = [](vec_stream& stream, std::set<std::string>& usernames)
 		{
 			u32 num_usernames = stream.get<u32>();
-			for (u32 i = 0; i < num_usernames; i++)
+			for (u32 i = 0; i < num_usernames && !stream.is_error(); i++) // From RPCS3 431b16935
 			{
 				std::string username = stream.get_string(false);
 				usernames.insert(std::move(username));

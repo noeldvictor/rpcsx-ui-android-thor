@@ -995,6 +995,19 @@ namespace utils
 		{
 			const auto mapped = this->map(nullptr, prot);
 
+			// From RPCS3 fb4a09215. When map() fails, the exchange below swaps
+			// null for null, succeeds, and the loop never ends. Take a mapping
+			// that another thread installed, or report the failure.
+			if (!mapped)
+			{
+				if ((ptr = m_ptr))
+				{
+					break;
+				}
+
+				return nullptr;
+			}
+
 			// Install mapped memory
 			if (!m_ptr.compare_exchange(ptr, mapped))
 			{

@@ -1258,11 +1258,17 @@ error_code sceNpTrophyGetTrophyUnlockState(u32 context, u32 handle,
 
 	ensure(tropusr);
 
-	const u32 count_ = tropusr->GetTrophiesCount();
+	u32 count_ = tropusr->GetTrophiesCount();
 	*count = count_;
+
+	// From RPCS3 2c961d061: the loop below writes into 128 flag bits, so a
+	// larger count wrote out of bounds.
 	if (count_ > 128)
+	{
 		sceNpTrophy.error(
-			"sceNpTrophyGetTrophyUnlockState: More than 128 trophies detected!");
+			"sceNpTrophyGetTrophyUnlockState: More than 128 trophies detected! (count=%d)", count_);
+		count_ = 128;
+	}
 
 	// Needs hw testing
 	*flags = {};

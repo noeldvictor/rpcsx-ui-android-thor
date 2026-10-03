@@ -174,7 +174,7 @@ void usb_device_passthrough::isochronous_transfer(UsbTransfer* transfer)
 
 	for (u32 index = 0; index < transfer->iso_request.num_packets; index++)
 	{
-		transfer->transfer->iso_packet_desc[index].length = transfer->iso_request.packets[index];
+		transfer->transfer->iso_packet_desc[index].length = ::at32(transfer->iso_request.packets, index); // From RPCS3 38c6b90d7
 	}
 
 	send_libusb_transfer(transfer->transfer);

@@ -414,14 +414,15 @@ std::function<void(void *)> lv2_prx::load(utils::serial &ar) {
       prx = ppu_load_prx(ppu_prx_object{decrypt_self(
                              std::move(file), reinterpret_cast<u8 *>(&klic))},
                          false, path, 0, &ar);
+      // From RPCS3 71d1a4527: check before the first use, not after it.
+      ensure(prx);
+
       prx->m_loaded_flags = std::move(loaded_flags);
       prx->m_external_loaded_flags = std::move(external_flags);
 
       if (state <= PRX_STATE_STARTED) {
         prx->restore_exports();
       }
-
-      ensure(prx);
     } else {
       ensure(g_cfg.savestate.state_inspection_mode.get());
 

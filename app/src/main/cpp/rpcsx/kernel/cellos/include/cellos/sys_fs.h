@@ -123,8 +123,11 @@ enum class lv2_mp_flag {
   no_uid_gid,
   strict_get_block_size,
   cache,
+  // From RPCS3 3efbf060a. The mount point takes the access rules of the
+  // directory the game booted from (/app_home of a disc game is read-only).
+  reflection,
 
-  bitset_last = cache,
+  bitset_last = reflection,
 };
 
 enum class lv2_file_type {

@@ -2381,7 +2381,14 @@ savedata_op(ppu_thread& ppu, u32 operation, u32 version, vm::cptr<char> dirName,
 
 		// Remove old backup
 		fs::remove_all(old_path);
-		fs::sync();
+		fs::sync(new_path);
+
+#ifndef _WIN32
+		if (fs::g_tls_error != fs::error::ok)
+		{
+			cellSaveData.warning("savedata_op(): Failed to sync filesystem of '%s' (%s)", new_path, fs::g_tls_error);
+		}
+#endif
 
 		// Backup old savedata
 		if (!vfs::host::rename(dir_path, old_path, &g_mp_sys_dev_hdd0, false))

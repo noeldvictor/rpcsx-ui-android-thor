@@ -32,7 +32,7 @@ lv2_fs_mount_point g_mp_sys_dev_flash3{"/dev_flash3", "CELL_FS_FAT", "CELL_FS_IO
 lv2_fs_mount_point g_mp_sys_dev_flash2{"/dev_flash2", "CELL_FS_FAT", "CELL_FS_IOS:BUILTIN_FLSH2", 512, 0x8000, 8192, lv2_mp_flag::no_uid_gid, &g_mp_sys_dev_flash3}; // TODO confirm
 lv2_fs_mount_point g_mp_sys_dev_flash{"/dev_flash", "CELL_FS_FAT", "CELL_FS_IOS:BUILTIN_FLSH1", 512, 0x63E00, 8192, lv2_mp_flag::no_uid_gid, &g_mp_sys_dev_flash2};
 lv2_fs_mount_point g_mp_sys_host_root{"/host_root", "CELL_FS_DUMMYFS", "CELL_FS_DUMMY:/", 512, 0x100, 512, lv2_mp_flag::strict_get_block_size + lv2_mp_flag::no_uid_gid, &g_mp_sys_dev_flash};
-lv2_fs_mount_point g_mp_sys_app_home{"/app_home", "CELL_FS_DUMMYFS", "CELL_FS_DUMMY:", 512, 0x100, 512, lv2_mp_flag::strict_get_block_size + lv2_mp_flag::no_uid_gid, &g_mp_sys_host_root};
+lv2_fs_mount_point g_mp_sys_app_home{"/app_home", "CELL_FS_DUMMYFS", "CELL_FS_DUMMY:", 512, 0x100, 512, lv2_mp_flag::strict_get_block_size + lv2_mp_flag::no_uid_gid + lv2_mp_flag::reflection, &g_mp_sys_host_root};
 lv2_fs_mount_point g_mp_sys_dev_root{"/", "CELL_FS_ADMINFS", "CELL_FS_ADMINFS:", 512, 0x100, 512, lv2_mp_flag::read_only + lv2_mp_flag::strict_get_block_size + lv2_mp_flag::no_uid_gid, &g_mp_sys_app_home};
 lv2_fs_mount_point g_mp_sys_no_device{};
 lv2_fs_mount_info g_mi_sys_not_found{}; // wrapper for &g_mp_sys_no_device
@@ -201,6 +201,24 @@ lv2_fs_mount_info_map::lookup(std::string_view path, bool no_cell_fs_path,
               mount_path); // Recursively look up the parent mount info
         if (mount_path)
           *mount_path = iterator->first;
+
+        // From RPCS3 3efbf060a and 3b3c7f4f0. /app_home takes the mount info
+        // of the directory the game booted from, so a disc game's /app_home is
+        // read-only like /dev_bdvd. Do not follow it when the boot directory
+        // is itself under the same root: that recursed forever when
+        // Emu.GetDir() was /app_home/.
+        if (iterator->second.mp->flags & lv2_mp_flag::reflection) {
+          const auto path_root = [](std::string_view p) {
+            p.remove_prefix(std::min(p.find_first_not_of('/'), p.size()));
+            return p.substr(0, p.find('/'));
+          };
+
+          if (const std::string &dir = Emu.GetDir();
+              !dir.empty() && path_root(dir) != path_root(parent_dir)) {
+            return lookup(dir, false, nullptr);
+          }
+        }
+
         return iterator->second;
       }
     } while (parent_dir.length() >
@@ -727,7 +745,12 @@ error_code sys_fs_test(ppu_thread &, u32 arg1, u32 arg2, vm::ptr<u32> arg3,
     }
   }
 
-  buf[buf_size - 1] = 0;
+	// TODO: maybe buf_size == 0 returns an error ?
+	if (buf_size > 0)
+	{
+		buf[buf_size - 1] = 0;
+	}
+
   return CELL_OK;
 }
 

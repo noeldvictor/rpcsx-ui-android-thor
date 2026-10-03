@@ -492,6 +492,7 @@ error_code _sys_ppu_thread_create(ppu_thread &ppu, vm::ptr<u64> thread_id,
         c_max_ppu_name_size - 1; // max size excluding null terminator
 
     if (!vm::read_string(threadname.addr(), max_size, ppu_name, true)) {
+      vm::dealloc(stack_base); // From RPCS3 71d1a4527: the stack leaked here.
       dct.free(stack_size);
       return CELL_EFAULT;
     }

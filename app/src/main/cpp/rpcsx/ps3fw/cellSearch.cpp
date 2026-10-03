@@ -1496,8 +1496,9 @@ error_code cellSearchStartSceneSearch(CellSearchSceneSearchType searchType,
 
 		for (u32 n = 0; n < tagNum; n++)
 		{
-			if (!tags[tagNum] ||
-				!memchr(&tags[tagNum], '\0', CELL_SEARCH_TAG_LEN_MAX))
+			// From RPCS3 d9a59820b: check tag n, not the element past the end.
+			if (!tags[n] ||
+				!memchr(tags[n].get_ptr(), '\0', CELL_SEARCH_TAG_LEN_MAX))
 			{
 				return CELL_SEARCH_ERROR_TAG;
 			}
@@ -1606,7 +1607,7 @@ cellSearchGetContentInfoByOffset(CellSearchId searchId, s32 offset,
 		case CELL_SEARCH_CONTENTTYPE_VIDEO:
 			if (infoBuffer)
 				std::memcpy(infoBuffer.get_ptr(), &content_info->data.video,
-					sizeof(content_info->data.photo));
+					sizeof(content_info->data.video)); // From RPCS3 a1c6b1231
 			break;
 		case CELL_SEARCH_CONTENTTYPE_MUSICLIST:
 			if (infoBuffer)
@@ -1700,7 +1701,7 @@ error_code cellSearchGetContentInfoByContentId(
 		case CELL_SEARCH_CONTENTTYPE_VIDEO:
 			if (infoBuffer)
 				std::memcpy(infoBuffer.get_ptr(), &content_info->data.video,
-					sizeof(content_info->data.photo));
+					sizeof(content_info->data.video)); // From RPCS3 a1c6b1231
 			break;
 		case CELL_SEARCH_CONTENTTYPE_MUSICLIST:
 			if (infoBuffer)
