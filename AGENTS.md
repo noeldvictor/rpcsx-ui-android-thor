@@ -43,6 +43,36 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
 - State what changed, what was verified, and what remains.
 - Do not use hype, filler, or long historical summaries.
 
+## Compile heat and CHD images (2026-10-03)
+
+- **Thermal compile governor, on by default.** `Emu/thor_compile_governor.h`. Each PPU
+  module compile and each SPU cache function takes a slot. A monitor thread reads the
+  `cpu*` zones every 250 ms. At or above `debug.rpcsx.thor.compile_target_c` (default 85 C)
+  it takes slots away; at target minus `compile_band_c` (default 5) it gives one back.
+  `compile_target_c=0` turns it off. The PPU log prints one summary line per compile group
+  ("Thor compile governor: target, peak, lowest of N jobs, reductions").
+  Measured on Dragon's Crown (BLUS30767), cold PPU compile after the codegen key change:
+  without it, five boots stopped at 95 C junction before the first frame; with it, the
+  junction stayed at 85 to 94 C and the game drew its first frame (lowest 1 of 8 jobs, 7
+  reductions). The target overshoots by up to 9 C, because the junction moves faster than
+  a running job ends.
+- **Open: a cold compile can die in Scudo.** Same day, one governed run aborted in
+  `scudo::dieOnMapUnmapError` from LLVM `RuntimeDyldELF` (`StringMap` through
+  `MallocAllocator::Allocate`, which the prebuilt LLVM inlines, so `b9bfafca0`'s
+  `allocate_buffer` override does not see it). 12.5 GB was free and the map count of a later
+  run was about 5,900, far below 65,530. That run's virtual size was 93 GB of about 512 GB,
+  so address space is the first suspect. Next: sample VmSize through a whole cold compile.
+  See `docs/arm64/ppu-compile-oom.md`.
+- **CHD disc images.** `rpcs3/Loader/CHD.cpp` (from ARMSX3), `3rdparty/libchdr`. A `.chd`
+  boots, installs and appears in the library like an `.iso`. Make one with
+  `chdman createdvd -c zstd` (zstd decodes faster than chdman's LZMA default, so less CPU
+  and heat on the Thor). The saving depends on the disc: Dragon's Crown 97% of the ISO,
+  Eternal Sonata 65%. `F:\Projects\ps3-thor\_tools\convert_thor_isos_to_chd.sh` converts
+  every ISO on the Thor's SD card and verifies each one. Delete an ISO only after its CHD
+  passes `chdman verify` and the core mounts it and decrypts its EBOOT.
+- `thor_arm` takes `managedProfile=false` for a title without a managed profile, and quotes
+  paths for the device shell (an apostrophe in "Dragon's Crown" broke `am start`).
+
 ## Subagents and token use
 
 - Do the work yourself, in the main session. Do not start subagents by

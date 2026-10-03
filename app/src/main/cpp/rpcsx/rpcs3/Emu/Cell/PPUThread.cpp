@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Emu/thor_mem_watch.h"
+#include "Emu/thor_compile_governor.h"
 #include "rx/cpu/cell/ppu/Decoder.hpp"
 #include "util/JIT.h"
 #include "util/StrUtil.h"
@@ -7876,6 +7877,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 						total_fn_size += fn.size;
 					}
 
+					// Thermal governor: compile only while the junction allows another job
+					// (Emu/thor_compile_governor.h). Taken before the memory reservation, so a
+					// job that waits here holds no memory.
+					thor::compile_governor::slot thor_compile_slot;
+
 					ppu_log.warning("LLVM: reporting used memory %u (free/total: %u/%u) by %s%s", total_fn_size * 1024 * 16, memory_limit.free_memory(), memory_limit.total_memory(), cache_path, obj_name);
 					auto used_memory = memory_limit.acquire(total_fn_size * 1024 * 16);
 
@@ -8000,6 +8006,13 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 			try_lock_thread);
 
 		threads.join();
+
+		if (thor::compile_governor::enabled())
+		{
+			ppu_log.notice("Thor compile governor: target %u C, peak %u C, lowest %u of %u jobs allowed, %u reductions",
+				thor::compile_governor::g_target_c, +thor::compile_governor::g_peak_c, +thor::compile_governor::g_lowest_allowed,
+				thor::compile_governor::max_jobs(), +thor::compile_governor::g_reductions);
+		}
 
 		g_watchdog_hold_ctr--;
 	}

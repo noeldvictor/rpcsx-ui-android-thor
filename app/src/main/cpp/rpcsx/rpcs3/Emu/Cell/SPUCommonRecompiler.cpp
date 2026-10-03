@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SPURecompiler.h"
+#include "Emu/thor_compile_governor.h"
 
 #include "Emu/System.h"
 #include "Emu/system_config.h"
@@ -1965,6 +1966,9 @@ void spu_cache::initialize(bool build_existing_cache)
 				{
 					continue;
 				}
+
+				// Thermal governor (Emu/thor_compile_governor.h): one slot per function.
+				thor::compile_governor::slot thor_compile_slot;
 
 				// Bound only eager cached-program compilation. Remaining identities stay registered
 				// and use the unchanged LLVM runtime-miss path when the guest executes them.
