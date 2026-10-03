@@ -72,6 +72,25 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   passes `chdman verify` and the core mounts it and decrypts its EBOOT.
 - `thor_arm` takes `managedProfile=false` for a title without a managed profile, and quotes
   paths for the device shell (an apostrophe in "Dragon's Crown" broke `am start`).
+- **Disc recipes: the language rule (owner, 2026-10-03).** A recipe removes language data
+  that the owner does not use, to make the image smaller. Keep Japanese voices and English
+  text. When a game has no Japanese voices, keep the English voices. English comes before
+  every other language, for voices and for text. Remove all other languages.
+- **Disc recipes: first measurements (2026-10-03, file level, from a 7-Zip listing).**
+  Tales of Symphonia Chronicles (9.84 GB) keeps its Japanese voices in separate folders:
+  `SYMPHONIA/RAWDATA/VOICE_JP` (1,025 MB) and `RATATOSK/RAWDATA/SOUND/JA` (709 MB). The
+  English voice files have the same names, one folder up. Its movies (`.usm`, 3.4 GB) can
+  hold two voice tracks in one file; not measured yet. Eternal Sonata (10.84 GB) keeps all
+  data in eight packed archives (`*.files`). No language data is a separate file, so a
+  file-level recipe saves nothing there.
+- **Disc recipes: the plan, not built yet.** Change file data in a copy of the ISO, then run
+  `chdman createdvd -c zstd`. To remove a file, write zeros over its data: the directory
+  stays the same, and CHD stores a hunk of zeros once. To keep Japanese voices when the game
+  plays English by default ("undub"), point the English file's ISO 9660 directory record at
+  the Japanese file's data, then write zeros over the English data. The core reads the ISO
+  9660 records, multi-extent files included (`rpcs3/dev/iso.cpp`). A changed image does not
+  match its dump hash: keep the original CHD on the PC. Test each recipe on the Thor before
+  you delete the original from the SD card.
 
 ## Subagents and token use
 
