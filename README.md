@@ -373,6 +373,66 @@ which precompile cleanly on the new default with no allocator abort; a title tha
 was already close to the limit has not been tested, because the one known example
 in this library has no bootable disc image.
 
+## Smaller disc images: CHD and recipes
+
+**CHD.** The app boots, installs and lists `.chd` disc images like `.iso` images.
+Make one on a PC with MAME's `chdman`:
+
+```sh
+chdman createdvd -i "Game (USA).iso" -o "Game (USA).chd" -c zstd
+chdman verify -i "Game (USA).chd"
+```
+
+Use `-c zstd`. zstd decodes faster than the chdman default (LZMA), so the Thor
+uses less CPU and makes less heat to read the disc. Measured on this library on
+2026-10-03:
+
+| Game | ISO | CHD | Saved |
+| --- | --- | --- | --- |
+| Folklore | 15.58 GB | 10.77 GB | 4.81 GB |
+| Eternal Sonata | 10.84 GB | 7.05 GB | 3.78 GB |
+| Tales of Symphonia Chronicles | 9.84 GB | 8.90 GB | 0.94 GB |
+| Rune Factory: Tides of Destiny | 2.72 GB | 2.23 GB | 0.49 GB |
+| Odin Sphere Leifthrasir | 3.59 GB | 3.13 GB | 0.46 GB |
+| Ragnarok Odyssey Ace | 5.52 GB | 5.40 GB | 0.12 GB |
+| Dragon's Crown | 1.41 GB | 1.37 GB | 0.04 GB |
+
+Most PS3 data is already compressed, so the saving depends on the game. Delete an
+ISO only after its CHD boots. `F:\Projects\ps3-thor\_tools\convert_thor_isos_to_chd.sh`
+converts and verifies every ISO on the Thor's SD card.
+
+**Recipes.** `tools/disc_recipe/disc_recipe.py` removes language data that you do
+not use from a disc image. Each title has one recipe in `tools/disc_recipe/recipes/`.
+A recipe can:
+
+* **redirect** a file to the data of another file. For an undub, the English
+  voice file then plays the Japanese voice data. The game plays Japanese voices
+  with no change to its settings.
+* **blank** a file: its data becomes zeros. The file stays on the disc, so a game
+  that opens it still finds it. CHD stores zeros in almost no space.
+
+```sh
+python tools/disc_recipe/disc_recipe.py list "Game (USA).chd" "PS3_GAME/USRDIR/*"
+python tools/disc_recipe/disc_recipe.py apply tools/disc_recipe/recipes/BLUS31172.json "Tales of Symphonia Chronicles (USA) (En,Fr,De,Es,It).chd"
+```
+
+The tool refuses a source dump that is not the one the recipe was written for. It
+names the output by its content, for example
+`Tales of Symphonia Chronicles (USA) (Ja voice, En text).chd`. A changed image no
+longer matches its dump hash, so keep the original until the new image passes a
+test.
+
+| Recipe | Result | CHD before | CHD after |
+| --- | --- | --- | --- |
+| Tales of Symphonia Chronicles (BLUS31172) | Japanese voices, English text; French, German, Spanish and Italian data removed | 8.90 GB | 7.64 GB |
+
+The Tales of Symphonia recipe is built and verified with `chdman`. On the Thor
+it boots to its first frame with no fatal error (2026-10-03). The voices are not
+checked by ear yet.
+
+The in-app **Trim** tool is different: it deletes language folders from an
+installed folder game. Use recipes for disc images.
+
 ## Thor variants
 
 All three share the same CPU and GPU. The difference is headroom for caches and
@@ -403,7 +463,9 @@ build.
 
 | Area | Change |
 | --- | --- |
-| Library | External PS3 folders and ISOs with SD-card use in mind |
+| Library | External PS3 folders, ISOs and CHDs with SD-card use in mind |
+| Disc images | CHD images (from ARMSX3) boot and install like ISOs |
+| Disc recipes | PC tool: a tested recipe per title removes unused language data from a disc image |
 | Titles and covers | Reads `PARAM.SFO` and `ICON0.PNG` from folders and ISOs |
 | Cheats | Badges, per-game lists, bundled database, toggles |
 | In-game menu | Cheats, Fast Forward 2x, Show FPS, Save/Load State |
@@ -607,9 +669,16 @@ adb shell setprop debug.rpcsx.thor.spu_native_object_cache 0
 
 ### Overheating protection
 
-Two layers, because a frame cap is not thermal protection: the emulator can be
+Three layers, because a frame cap is not thermal protection: the emulator can be
 hot from SPU work while the renderer is already capped.
 
+* **The compile governor** limits how many PPU and SPU compile jobs run at the
+  same time. It reads the CPU temperature every 250 ms. At 85 C or more it
+  removes a job slot. At 80 C or less it gives one back. A first boot then
+  compiles on as many cores as the temperature allows. Measured on Dragon's
+  Crown after a codegen change: without the governor, five first boots stopped
+  at 95 C before the first frame. With it, the CPU stayed at 85 to 94 C and the
+  game drew its first frame.
 * **The thermal guard** lowers the frame limit above 85 C.
 * **The emergency stop** pauses emulation outright if the CPU junction stays at
   or above 100 C. A paused emulator uses about 0.3 cores against 3.9 running, so
@@ -618,6 +687,8 @@ hot from SPU work while the renderer is already capped.
 ```sh
 adb shell setprop debug.rpcsx.thor.thermal_abort_c 95   # stricter
 adb shell setprop debug.rpcsx.thor.thermal_abort_c 0    # disable
+adb shell setprop debug.rpcsx.thor.compile_target_c 80  # cooler, slower first boot
+adb shell setprop debug.rpcsx.thor.compile_target_c 0   # compile governor off
 ```
 
 The default of 100 C is above normal play, which peaks around 94-97 C in a

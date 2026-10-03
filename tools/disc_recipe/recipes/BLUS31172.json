@@ -1,0 +1,33 @@
+{
+  "titleId": "BLUS31172",
+  "title": "Tales of Symphonia Chronicles (USA) (En,Fr,De,Es,It)",
+  "source": {
+    "dataSha1": "de70ebd11dd01165278fcc922d0d277083c3edcc",
+    "bytes": 9839263744
+  },
+  "outputName": "Tales of Symphonia Chronicles (USA) (Ja voice, En text).chd",
+  "result": "Japanese voices and English text in both games. The French, German, Spanish and Italian data is removed.",
+  "ops": [
+    {
+      "id": "symphonia-voice",
+      "op": "redirect",
+      "from": "PS3_GAME/USRDIR/SYMPHONIA/RAWDATA/VOICE_JP/*.AWB",
+      "to": "PS3_GAME/USRDIR/SYMPHONIA/RAWDATA/{name}",
+      "why": "Tales of Symphonia reads RAWDATA/X.AWB for English voices and RAWDATA/VOICE_JP/X.AWB for Japanese voices. Each pair has the same 376 waveform IDs (checked for SCE_001_009.AWB)."
+    },
+    {
+      "id": "ratatosk-voice",
+      "op": "redirect",
+      "from": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/JA/*",
+      "to": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/{name}",
+      "why": "Dawn of the New World reads SOUND/X for English voices and SOUND/JA/X for Japanese voices. Each cue sheet (.ACB) moves with its wave file (.AWB), so each pair stays matched."
+    },
+    {
+      "id": "other-languages",
+      "op": "blank",
+      "paths": ["PS3_GAME/USRDIR/*/ARCHIVE/R0[2-5]/TLFILE.TLDAT"],
+      "why": "ARCHIVE/R01 holds the base data and English. R02 to R05 are the four other languages of the disc (En,Fr,De,Es,It). The small FILEHEADER.TOFHDB files stay, in case the game reads all headers at boot."
+    }
+  ],
+  "tested": []
+}
