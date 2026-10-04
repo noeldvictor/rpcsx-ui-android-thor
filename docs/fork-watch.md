@@ -352,6 +352,17 @@ discarded render targets. The 37 percent figure in Wccftech is the Gran Turismo
 5 light-scene number, 107 to 147 FPS, from the pull request testers. It is
 ported and on by default since 2026-09-17. It is still unmeasured on the Thor.
 
+### 2026-10-04 — RPCS3 master pass
+
+Fetched `origin/master` to `46aee28f8`: 12 commits past `1814fefb9`. ARMSX3 has no new
+commits (`92b931b9f`). `RPCSX/rpcsx` master is still `e8ae148`.
+
+| Commit | Decision |
+| --- | --- |
+| `e68ae2d05` RSX: 32-bit generated indices | **Ported.** Line loops, triangle fans, polygons and quads that the GPU cannot draw directly get a generated index list. It was 16-bit, so a draw of more than 65,535 vertices wrapped around and drew the wrong vertices. Now 32-bit in `BufferUtils.cpp`, the Vulkan and GL uploads and the offload range. Checked on the Thor: Odin Sphere (BLUS31601) draws its title screen through this path (quads; a one-time log line shows it) with no visual error. |
+| `db7d845e0` optimized `iota16`/`iota32` | Not ported. The speedup is an AVX2 path for x86. On ARM64 the new code is the same 16-byte vector store as a plain loop, and this tree's generator does not use `iota16`. |
+| `c673da45f`, `998298f9a`, `46aee28f8` cellGem, `0d866154a`, `0374854c8`, `f5edadb2e`, `103d41944`, `a664f405b`, `5da9f4ab3` PS Move, `1ce71092c` Qt | Not applicable. The Thor has no PS Move, and the Android app does not use the Qt UI. |
+
 ### 2026-10-03 — RPCS3 master pass
 
 Fetched `origin/master` to `1814fefb9`: 163 commits past `d08d568d5`, about 90

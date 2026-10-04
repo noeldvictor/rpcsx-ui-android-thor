@@ -5,6 +5,7 @@
 #include "util/JIT.h"
 #include "util/v128.hpp"
 #include "util/simd.hpp"
+#include "util/atomic.hpp"
 
 #if defined(ARCH_ARM64)
 // Also reached transitively through util/simd.hpp; named here because copy_data_swap_u32_neon
@@ -714,7 +715,18 @@ u32 get_index_type_size(rsx::index_array_type type)
 
 void write_index_array_for_non_indexed_non_native_primitive_to_buffer(char* dst, rsx::primitive_type draw_mode, unsigned count)
 {
-	auto typedDst = reinterpret_cast<u16*>(dst);
+	// 32-bit indices (RPCS3 e68ae2d05). With 16-bit indices a draw of more than 65,535
+	// vertices wrapped around and drew the wrong vertices. The callers size the buffer and
+	// pick the index type to match.
+	auto typedDst = reinterpret_cast<u32*>(dst);
+
+	// Once per process, so a test can show that this path ran.
+	static atomic_t<bool> s_logged{false};
+	if (!s_logged.exchange(true))
+	{
+		rsx_log.notice("Thor RSX: generated 32-bit indices (primitive %u, %u vertices)", static_cast<u32>(draw_mode), count);
+	}
+
 	switch (draw_mode)
 	{
 	case rsx::primitive_type::line_loop:
