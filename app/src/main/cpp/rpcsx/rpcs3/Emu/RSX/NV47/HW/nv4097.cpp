@@ -33,10 +33,10 @@ namespace rsx
 			const u8 subreg = index % 4;
 			const u32 load = REGS(ctx)->transform_constant_load();
 
-			// From RPCS3 373d0ea7f: bounds check. There are 468 transform constants.
-			const u32 load_offset = load + constant_id;
-			ensure(load_offset < 468);
-			REGS(ctx)->transform_constants[load_offset][subreg] = arg;
+			// RPCS3 reverted its bounds check 373d0ea7f in 193975556 (2026-10-04), and so
+			// does this tree: the ensure() stopped the emulator with a fatal error instead of
+			// skipping a write.
+			REGS(ctx)->transform_constants[load + constant_id][subreg] = arg;
 		}
 
 		void set_transform_constant::batch_decode(context* ctx, u32 reg, const std::span<const u32>& args, const std::function<bool(context*, u32, u32)>& notify)
@@ -46,14 +46,11 @@ namespace rsx
 			const u8 subreg = index % 4;
 			const u32 load = REGS(ctx)->transform_constant_load();
 
-			// From RPCS3 373d0ea7f: bounds check before the copy.
-			const u32 last_constant_id = ((reg + ::size32(args) + 3) - NV4097_SET_TRANSFORM_CONSTANT) / 4; // Aligned div
-			ensure(load < 468 && (load + last_constant_id) <= 468);
-
 			auto dst = &REGS(ctx)->transform_constants[load + constant_id][subreg];
 			copy_data_swap_u32(dst, args.data(), ::size32(args));
 
 			// Notify
+			const u32 last_constant_id = ((reg + ::size32(args) + 3) - NV4097_SET_TRANSFORM_CONSTANT) / 4; // Aligned div
 			const u32 load_index = load + constant_id;
 			const u32 load_count = last_constant_id - constant_id;
 
@@ -115,7 +112,6 @@ namespace rsx
 				return;
 			}
 
-			ensure(load + constant_id < 468); // RPCS3 373d0ea7f
 			const auto values = &REGS(ctx)->transform_constants[load + constant_id][subreg];
 
 			const auto fifo_span = RSX(ctx)->fifo_ctrl->get_current_arg_ptr(rcount);

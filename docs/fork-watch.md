@@ -352,6 +352,20 @@ discarded render targets. The 37 percent figure in Wccftech is the Gran Turismo
 5 light-scene number, 107 to 147 FPS, from the pull request testers. It is
 ported and on by default since 2026-09-17. It is still unmeasured on the Thor.
 
+### 2026-10-04 — RPCS3 master, second pass
+
+Fetched `origin/master` to `32b54f186`: 3 commits past `46aee28f8`. ARMSX3 (`92b931b9f`) and
+`RPCSX/rpcsx` (`e8ae148`) have no new commits.
+
+| Commit | Decision |
+| --- | --- |
+| `193975556` Revert "rsx: Add bounds checking to transform constant loading" | **Ported.** This tree took `373d0ea7f` on 2026-10-03 (`0b1abaff2`). Its three `ensure()` checks stop the emulator with a fatal error when a game writes a transform constant past index 467; upstream backed it out the next day. `nv4097.cpp` is back to the code before `373d0ea7f`, as upstream's is. |
+| `32b54f186` rsx/vp: process TXL input for ATTR references | **Ported.** A vertex texture fetch can take its coordinates from a vertex attribute, and the vertex program analysis did not record that input. |
+| `d9608bf0f` Qt settings dialog | Not applicable. |
+
+Test on the Thor: Transformers (`BLUS30357`, ISO) boots to the intro movie and runs
+60 s at 30 FPS. The log has no fatal error, no `ensure` failure and no `VK_ERROR`.
+
 ### 2026-10-04 — RPCS3 master pass
 
 Fetched `origin/master` to `46aee28f8`: 12 commits past `1814fefb9`. ARMSX3 has no new

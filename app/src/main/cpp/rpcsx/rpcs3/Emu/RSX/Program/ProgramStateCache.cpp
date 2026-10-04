@@ -222,7 +222,9 @@ vertex_program_utils::vertex_program_metadata vertex_program_utils::analyse_vert
 			case RSX_VEC_OPCODE_TXL:
 			{
 				result.referenced_textures_mask |= (1 << d2.tex_num);
-				break;
+				// RPCS3 32b54f186: the TXL coordinates can read a vertex attribute, so record
+				// the input reference too.
+				[[fallthrough]];
 			}
 			default:
 			{
