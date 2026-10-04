@@ -161,7 +161,16 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   hold two voice tracks in one file; not measured yet. Eternal Sonata (10.84 GB) keeps all
   data in eight packed archives (`*.files`). No language data is a separate file, so a
   file-level recipe saves nothing there.
-- **Disc recipes: the plan, not built yet.** Change file data in a copy of the ISO, then run
+- **Disc recipes: status 2026-10-03.** `tools/disc_recipe/` is built. Three recipes pass
+  on the Thor, and their original CHDs are deleted on the Thor and the PC (owner
+  choice): Tales of Symphonia Chronicles (8.90 to 8.17 GB), Folklore (10.77 to 8.96 GB),
+  Watch_Dogs (13.57 to 8.89 GB). Check voices by machine with the audio dump and
+  faster-whisper (see "The core's audio dump" above). A recipe that swaps CRI cue sheets
+  (`.ACB`) can silence a game: the Dawn of the New World swap stopped all its audio, so
+  that op is in the recipe's `rejected` list. Test each swap with a control run on the
+  original image. Change `games.json` only with the app stopped, and write it with
+  `run-as` so the app keeps ownership.
+- **Disc recipes: the original plan.** Change file data in a copy of the ISO, then run
   `chdman createdvd -c zstd`. To remove a file, write zeros over its data: the directory
   stays the same, and CHD stores a hunk of zeros once. To keep Japanese voices when the game
   plays English by default ("undub"), point the English file's ISO 9660 directory record at

@@ -6,7 +6,7 @@
     "bytes": 9839263744
   },
   "outputName": "Tales of Symphonia Chronicles (USA) (Ja voice, En text).chd",
-  "result": "Japanese voices and English text in both games. The French, German, Spanish and Italian data is removed.",
+  "result": "Tales of Symphonia: Japanese scene voices by default; set Customize > Voice Language to Japanese for the narration too. Dawn of the New World: set Options > Voice Language to Japanese. English text in both. The French, German, Spanish and Italian data is removed.",
   "ops": [
     {
       "id": "symphonia-voice",
@@ -14,13 +14,6 @@
       "from": "PS3_GAME/USRDIR/SYMPHONIA/RAWDATA/VOICE_JP/*.AWB",
       "to": "PS3_GAME/USRDIR/SYMPHONIA/RAWDATA/{name}",
       "why": "Tales of Symphonia reads RAWDATA/X.AWB for English voices and RAWDATA/VOICE_JP/X.AWB for Japanese voices. Each pair has the same 376 waveform IDs (checked for SCE_001_009.AWB)."
-    },
-    {
-      "id": "ratatosk-voice",
-      "op": "redirect",
-      "from": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/JA/*",
-      "to": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/{name}",
-      "why": "Dawn of the New World reads SOUND/X for English voices and SOUND/JA/X for Japanese voices. Each cue sheet (.ACB) moves with its wave file (.AWB), so each pair stays matched."
     },
     {
       "id": "other-languages",
@@ -35,8 +28,18 @@
     {
       "date": "2026-10-03",
       "device": "AYN Thor, CHD on the SD card",
-      "result": "Boots and plays. Tales of Symphonia with the default Voice Language (English): the scene voices are Japanese (speech detection on an audio dump), but the opening narration is English, because the game reads it from a file this recipe does not change. With Customize > Voice Language = Japanese, the narration is Japanese too, with English text. Dawn of the New World boots to its prologue with no error; its voices were not checked, because the audio dump stops at the switch from the launcher.",
-      "advice": "Set Voice Language to Japanese in Customize (title screen) for Japanese voices everywhere."
+      "outputDataSha1": "3654cfa5e466a4a7a4e1f912d4b87b69e2d8bac1",
+      "result": "Passes, speech detection on audio dumps. Tales of Symphonia: default setting gives Japanese scene voices and an English narration; Voice Language = Japanese gives Japanese narration too. Dawn of the New World with Voice Language = Japanese: Japanese narration, English text, audio works.",
+      "originalDeleted": true
+    }
+  ],
+  "rejected": [
+    {
+      "id": "ratatosk-voice",
+      "op": "redirect",
+      "from": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/JA/*",
+      "to": "PS3_GAME/USRDIR/RATATOSK/RAWDATA/SOUND/{name}",
+      "why": "Removed 2026-10-03: with it, Dawn of the New World plays no audio at all after the launcher starts it (the audio dump stops; the original and the image without this op play audio). Two of the swapped cue sheets differ in size between English and Japanese (WS_TOSM_AMB.ACB, WS_TOSM_BTL_VOICE.ACB); the game may read them with sizes from its own file table. Not proven which file. Use the game's Voice Language option instead."
     }
   ]
 }
