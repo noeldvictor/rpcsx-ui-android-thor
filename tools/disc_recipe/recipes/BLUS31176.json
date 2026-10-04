@@ -33,8 +33,8 @@
     {
       "date": "2026-10-03",
       "device": "AYN Thor, CHD on the SD card",
-      "result": "Not play-tested. The CHD opens and the EBOOT decrypts, but the first boot dies in the cold PPU compile (Scudo: 'exhausted 256M for size class 262160', LLVM JIT thread), also with ppu_budget_mb=1536. The original image has the same compile, so test the recipe after that bug is fixed.",
-      "originalDeleted": false
+      "result": "Passes, after the cold-compile fix (d9291c931). Boots to the title screen, New Game loads the first mission, and the opening cutscene plays English voices (speech detection on an audio dump, 24 s of speech, all English).",
+      "originalDeleted": true
     }
   ]
 }

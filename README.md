@@ -432,9 +432,8 @@ The Tales of Symphonia recipe is built and verified with `chdman`. Tested on the
 Thor on 2026-10-03 with speech detection on an audio dump: with the default voice
 setting, the scene voices are Japanese, but the opening narration stays English.
 **Set Customize > Voice Language to Japanese** on the title screen: then the
-narration is Japanese too, with English text. The Folklore recipe passes the same
-test with English voices. The Watch_Dogs recipe is not play-tested yet: its first
-boot dies in the PPU compile, with or without the recipe (an open memory bug).
+narration is Japanese too, with English text. The Folklore and Watch_Dogs recipes
+pass the same test with English voices.
 
 The in-app **Trim** tool is different: it deletes language folders from an
 installed folder game. Use recipes for disc images.
