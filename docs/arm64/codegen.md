@@ -1142,3 +1142,24 @@ they ran. `debug.rpcsx.thor.shufb_tbl2_or` is therefore **0 by default**.
 And the count is of compiled sites, not of executions. 5,794 says the operation
 is everywhere in the corpus; it does not say how often this particular fallback
 path is the one taken. Both questions need the device.
+
+## Quads index expansion in NEON: 3x faster, and cold (2026-10-04)
+
+RPCS3 `db7d845e0` made the generated-index fill faster with AVX2. The question was
+whether the same idea pays on ARM64.
+
+**What clang already does.** In `write_index_array_for_non_indexed_non_native_primitive_to_buffer`
+(BufferUtils.cpp), line loops compile to `stp q, q` (8 indices per step) and triangle
+fans to `st3 {v.4s, v.4s, v.4s}`. Only the quads case is scalar: six `str w` per quad.
+
+**The kernel.** Two quads are 12 indices, `{0,1,2,2, 3,0,4,5, 6,6,7,4} + 4i`: three
+vector adds and one `st1 {v0.4s-v2.4s}`. `tools/bench/thor_quad_index_bench.cpp`
+compares it with the scalar loop on the Thor: 0 mismatches over 8,193 vertex counts,
+3.2 to 3.5x faster on the X3 and 2.8 to 3.1x on an A510 from 64 vertices up, and
+0.2 ns slower for a single quad.
+
+**Reach decides it.** A counter in the core, in Odin Sphere (BLUS31601) gameplay: about
+235 calls and 10,800 quad vertices per second, 46 vertices per call on average, 772 at
+most. The scalar loop costs about 3 us per second there; NEON would save about 2 us
+per second, 0.0002% of one core. Not taken. Take it only if a title shows quad draws of
+hundreds of thousands of vertices per frame.

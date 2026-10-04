@@ -727,6 +727,11 @@ void write_index_array_for_non_indexed_non_native_primitive_to_buffer(char* dst,
 		rsx_log.notice("Thor RSX: generated 32-bit indices (primitive %u, %u vertices)", static_cast<u32>(draw_mode), count);
 	}
 
+	// The quads case below compiles to six scalar stores per quad; a NEON form is 3x faster
+	// per call (tools/bench/thor_quad_index_bench.cpp), but Odin Sphere sends only about
+	// 10,800 quad vertices per second through here, about 3 us of work per second, so it
+	// is not used (docs/arm64/codegen.md, 2026-10-04). Line loops and fans are vectorized
+	// by clang already.
 	switch (draw_mode)
 	{
 	case rsx::primitive_type::line_loop:
