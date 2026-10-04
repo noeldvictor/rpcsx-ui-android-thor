@@ -217,3 +217,51 @@ The RSX thread died a moment later with `VK_ERROR_MEMORY_MAP_FAILED`, which is
 the same exhaustion reached from a Vulkan map.
 
 Log source: logcat of pid 7704, 2026-09-21 19:13:41 to 19:13:52.
+
+## The cause, measured, and the fix, 2026-10-03
+
+The 256 KB class was the last class to fill, not the first. The thing that grew was
+the PPU **symbol resolver**, and the measurements say so directly.
+
+**What the "functions generated" count is.** It is
+`_module->getFunctionList().size()`, so it counts declarations too. The module that
+closes a JIT group (100 modules) gets `__resolve_symbols`
+(`PPUTranslator::GetSymbolResolver`). That function holds a table of pointers to every
+function of the group, so the module declares all of them: Watch_Dogs (BLUS31176)
+559,355 in one group, Odin Sphere (BLUS31601) 502,556. Every other module reports
+about 1.0 to 1.1 functions per guest function.
+
+**Why that runs out.** Each table entry is an external-symbol relocation. LLVM's
+RuntimeDyld keeps one `StringMap` entry per external symbol, and its value is a
+`SmallVector<RelocationEntry, 64>`, about 3 KB, until the group is finalized. That is
+about 1.7 GB of 3 KB blocks in one link. Scudo's 256 MB region for that class fills,
+Scudo retries each larger class until the 256 KB one is full too ("exhausted 256M for
+size class 262160"), and then it maps every further block on its own.
+
+**The map count, sampled every 2 s on a Watch_Dogs cold compile.** For 7 minutes the
+process held 4,350 to 4,550 maps, with RSS about 1.2 GB. Then, in under 2 s, it went to
+65,531 maps (the kernel's `vm.max_map_count` is 65,530) and RSS to 3.3 GB, and Scudo
+aborted: "internal map failure (NO MEMORY) requesting 8KB", SIGABRT in the `LLVM JIT`
+thread, with 8 GB free.
+
+**The fix.** A JIT group with more than 32,768 functions (`c_thor_lookup_min_funcs`,
+Android only) gets no `__resolve_symbols`. After the link, `ppu_initialize` looks up
+each `__0x<pc>` symbol in the group's engine and stores the same value the generated
+loop stores: `(seg0 << 35) | host` at `exec + (pc << 1)`, with `seg0` added to `pc`
+for a relocatable module. A new settings bit, `thor_symbols_by_lookup_v1`, gives the
+changed module a new object name, so only one module per such group recompiles and
+every other title keeps its cache.
+
+The lookup uses `ExecutionEngine::getPointerToNamedFunction`, not
+`getGlobalValueAddress`. The second one finalizes on every call, and that cost
+24 us per lookup in a 600,000-function group: 34 s of a warm Watch_Dogs boot. The
+first one does not, and the same fill takes 0.43 s.
+
+| Title | Groups filled from C++ | Functions | Fill time | Result |
+| --- | --- | --- | --- | --- |
+| Watch_Dogs (BLUS31176) | 4 | 612,847 + 550,431 + 559,310 + 102,061, 0 not found | 0.43 s | Cold compile: no abort, peak 6,937 maps, RSS 2.2 GB. Reaches its title screen for the first time on this device. |
+| Odin Sphere Leifthrasir (BLUS31601) | 1 | 502,542, 0 not found | 0.18 s | First frame 12 s after boot; largest module now 3,440 functions. |
+
+The earlier mitigations stay: the worker count and the 1536 MB budget limit
+concurrency, and `b9bfafca0` sends LLVM container buffers of 64 KB and more to `mmap`.
+None of them could fix this case, because one link needed 1.7 GB of small blocks.

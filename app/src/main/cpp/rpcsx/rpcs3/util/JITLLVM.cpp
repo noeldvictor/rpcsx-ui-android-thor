@@ -1653,6 +1653,14 @@ u64 jit_compiler::get(const std::string& name)
 	return m_engine->getGlobalValueAddress(name);
 }
 
+u64 jit_compiler::get_finalized(const std::string& name)
+{
+	// MCJIT::getPointerToNamedFunction looks the name up through MCJIT::findSymbol, with no
+	// finalizeLoadedModules. ELF names have no mangling prefix, so the name is the symbol.
+	// A name it cannot find goes to the memory manager's findSymbol, as during the link.
+	return reinterpret_cast<u64>(m_engine->getPointerToNamedFunction(name, false));
+}
+
 const char* fallback_cpu_detection()
 {
 #if defined(ARCH_X64)

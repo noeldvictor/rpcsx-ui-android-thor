@@ -5815,6 +5815,12 @@ namespace
 		std::vector<void (*)(u8*, u64)> symbol_resolvers;
 		std::vector<std::shared_ptr<jit_compiler>> pjit;
 		bool init = false;
+
+		// For a JIT group that fills its jump table from C++ (see c_thor_lookup_min_funcs):
+		// the group's address range, and the (function pc, host address) pairs found for it.
+		// A null range means the group uses __resolve_symbols.
+		std::vector<std::shared_ptr<std::pair<u32, u32>>> thor_lookup_bounds;
+		std::vector<std::vector<std::pair<u32, u64>>> thor_lookup_entries;
 	};
 
 	struct jit_module_manager
@@ -7068,6 +7074,30 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	// Subject to change
 	constexpr u32 c_moudles_per_jit = 100;
 
+	// A JIT group with more functions than this fills its PPU jump table from C++ after the
+	// link, not with the generated __resolve_symbols function.
+	//
+	// WHY. __resolve_symbols holds a table of pointers to every function of the group, so its
+	// object has one external-symbol relocation per function. LLVM's RuntimeDyld keeps each
+	// external symbol in a StringMap entry whose value is a SmallVector of 64 relocations,
+	// about 3 KB, until the group is finalized. Watch_Dogs (BLUS31176) has 559,355 functions in
+	// one group of 100 modules: about 1.7 GB of 3 KB blocks in one link. On Android that fills
+	// Scudo's fixed 256 MB size-class regions one after another, then Scudo maps each further
+	// block on its own, and the process reached the kernel limit of 65,530 memory maps in 2 s:
+	// "Scudo ERROR: internal map failure", SIGABRT in the LLVM JIT thread, with 8 GB free
+	// (2026-10-03; Odin Sphere BLUS31601 with 502,556 functions fails the same way). See
+	// docs/arm64/ppu-compile-oom.md.
+	//
+	// The C++ fill looks up each __0x<pc> symbol in the group's linked engine and stores the
+	// same value the generated loop stores. Only groups above the bound change, so the cache
+	// key of every other module stays the same.
+#ifdef ANDROID
+	constexpr usz c_thor_lookup_min_funcs = 32768;
+#else
+	constexpr usz c_thor_lookup_min_funcs = umax;
+#endif
+	std::vector<std::shared_ptr<std::pair<u32, u32>>> thor_lookup_bounds;
+
 	std::shared_ptr<std::pair<u32, u32>> local_jit_bounds = std::make_shared<std::pair<u32, u32>>(u32{umax}, 0);
 
 	const auto shared_runtime = make_shared<jit_runtime>();
@@ -7507,6 +7537,22 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 					sha1_update(&ctx, reinterpret_cast<const u8*>(addrs.data()), addrs.size() * sizeof(be_t<u32>));
 				}
 
+				// addrs holds the group's functions, then its size.
+				if (addrs.size() - 1 > c_thor_lookup_min_funcs)
+				{
+					part.thor_symbols_by_lookup = true;
+					const usz jit_index = module_counter / c_moudles_per_jit;
+
+					if (thor_lookup_bounds.size() <= jit_index)
+					{
+						thor_lookup_bounds.resize(jit_index + 1);
+					}
+
+					thor_lookup_bounds[jit_index] = local_jit_bounds;
+					ppu_log.notice("Thor PPU: JIT group %u has %u functions; its jump table is filled from C++, not by __resolve_symbols",
+						jit_index, addrs.size() - 1);
+				}
+
 				part.jit_bounds = std::move(local_jit_bounds);
 				local_jit_bounds = std::make_shared<std::pair<u32, u32>>(u32{umax}, 0);
 			}
@@ -7575,8 +7621,11 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				// 2026-10-03: ARMSX3 1001e26be, 59f06562d, 363a11f01 and 6f4bf7a22 change
 				// PPU code generation (single store, fnmadd/fnmsub signs, OE overflow).
 				arm64_codegen_v2,
+				// 2026-10-03: the resolver module of a group above c_thor_lookup_min_funcs has no
+				// __resolve_symbols. Only that one module per such group changes.
+				thor_symbols_by_lookup_v1,
 
-				bitset_last = arm64_codegen_v2,
+				bitset_last = thor_symbols_by_lookup_v1,
 			};
 
 			be_t<rx::EnumBitSet<ppu_settings>> settings{};
@@ -7653,6 +7702,8 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 				settings += ppu_settings::thor_transformers_counter_probe_v1;
 			if (fpos >= info.get_funcs().size() || module_counter % c_moudles_per_jit == c_moudles_per_jit - 1)
 				settings += ppu_settings::contains_symbol_resolver; // Avoid invalidating all modules for this purpose
+			if (part.thor_symbols_by_lookup)
+				settings += ppu_settings::thor_symbols_by_lookup_v1;
 
 			// Write version, hash, CPU, settings
 			//
@@ -8033,6 +8084,9 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 	if (jit_mod.symbol_resolvers.empty() && is_being_used_in_emulation)
 	{
 		jit_mod.symbol_resolvers.resize(jits.size());
+		jit_mod.thor_lookup_bounds = std::move(thor_lookup_bounds);
+		jit_mod.thor_lookup_bounds.resize(jits.size());
+		jit_mod.thor_lookup_entries.resize(jits.size());
 	}
 
 
@@ -8149,6 +8203,68 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		for (auto& sim : jit_mod.symbol_resolvers)
 		{
 			index++;
+
+			if (index < jit_mod.thor_lookup_bounds.size() && jit_mod.thor_lookup_bounds[index])
+			{
+				// The same stores as the loop in PPUTranslator::GetSymbolResolver:
+				// jumptable[(pc (+ seg0 if relocatable)) << 1] = (seg0 << 35) | host address.
+				auto& entries = jit_mod.thor_lookup_entries[index];
+
+				if (is_first)
+				{
+					const auto lookup_start = std::chrono::steady_clock::now();
+					const auto [lo, hi] = *jit_mod.thor_lookup_bounds[index];
+					constexpr auto compare = [](const ppu_function& a, u32 addr)
+					{
+						return a.addr < addr;
+					};
+
+					const auto start = std::lower_bound(info.funcs.begin(), info.funcs.end(), lo, compare);
+					const auto end = std::lower_bound(start, info.funcs.end(), hi, compare);
+					u32 missing = 0;
+					entries.clear();
+					entries.reserve(end - start);
+
+					for (auto it = start; it != end; ++it)
+					{
+						if (!it->size)
+						{
+							continue;
+						}
+
+						const u32 pc = it->addr - reloc;
+						const std::string name = fmt::format("__0x%x", pc);
+						u64 host = jits[index]->get_finalized(name);
+
+						if (!host)
+						{
+							// The link of __resolve_symbols asks the same source for a symbol it does not find.
+							host = symbols_cement(name);
+						}
+
+						if (!host)
+						{
+							missing++;
+							continue;
+						}
+
+						entries.emplace_back(pc, host);
+					}
+
+					const auto lookup_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - lookup_start).count();
+					ppu_log.notice("Thor PPU: JIT group %u jump table filled from C++: %u functions, %u not found, %u ms", index, entries.size(), missing, static_cast<u32>(lookup_ms));
+				}
+
+				const u64 seg0 = info.segs[0].addr;
+
+				for (const auto& [pc, host] : entries)
+				{
+					const u64 pos = (info.is_relocatable ? pc + seg0 : u64{pc}) << 1;
+					*reinterpret_cast<u64*>(vm::g_exec_addr + pos) = (seg0 << (32 + 3)) | host;
+				}
+
+				continue;
+			}
 
 			sim = ensure(!is_first ? sim : reinterpret_cast<void (*)(u8*, u64)>(jits[index]->get("__resolve_symbols")));
 			sim(vm::g_exec_addr, info.segs[0].addr);
@@ -8326,7 +8442,7 @@ static bool ppu_initialize2(jit_compiler& jit, const ppu_module<lv2_obj>& module
 		}
 
 		// Run this only in one module for all functions compiled
-		if (module_part.jit_bounds)
+		if (module_part.jit_bounds && !module_part.thor_symbols_by_lookup)
 		{
 			if ([[maybe_unused]] const auto func = translator.GetSymbolResolver(module_part))
 			{

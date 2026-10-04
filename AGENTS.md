@@ -81,7 +81,7 @@ full topic index is the table in Part 2, section `Where the rest of this lives`.
   again. Now the wait counts from the last compile start or end, for all jobs together.
   Odin Sphere Leifthrasir (BLUS31601), cold first boot, fixed version: 7 minutes of compile
   at 75 to 87 C junction (peak 89 C), no arm pause.
-- **Open: a cold compile can die in Scudo.** Same day, one governed run aborted in
+- **Fixed 2026-10-03: a cold compile died in Scudo.** The cause was the PPU symbol resolver of a JIT group with hundreds of thousands of functions; such a group now fills its jump table from C++ (see the end of `docs/arm64/ppu-compile-oom.md`). History: Same day, one governed run aborted in
   `scudo::dieOnMapUnmapError` from LLVM `RuntimeDyldELF` (`StringMap` through
   `MallocAllocator::Allocate`, which the prebuilt LLVM inlines, so `b9bfafca0`'s
   `allocate_buffer` override does not see it). 12.5 GB was free and the map count of a later

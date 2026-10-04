@@ -598,6 +598,11 @@ public:
 	// Get compiled function address
 	u64 get(const std::string& name);
 
+	// Get the address of a symbol in an engine that is already finalized, without finalizing
+	// again. get() finalizes on every call, and that walks the engine's relocation table each
+	// time: 24 us per lookup in a 600,000-function group (PPUThread.cpp, thor_lookup).
+	u64 get_finalized(const std::string& name);
+
 	// Get CPU info
 	static std::string cpu(const std::string& _cpu);
 
