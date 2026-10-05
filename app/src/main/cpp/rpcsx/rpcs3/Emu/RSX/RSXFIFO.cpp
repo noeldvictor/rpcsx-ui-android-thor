@@ -663,7 +663,13 @@ namespace rsx
 			if (m_remaining_commands)
 			{
 				// Previous block aborted to wait for PUT pointer
-				read_unsafe(data);
+				if (!read_unsafe(data))
+				{
+					// failed reads leave data unchanged (RPCS3 43a42d1a8): run_FIFO()
+					// does not set it first, so it must not run an undefined command
+					data.reg = FIFO_EMPTY;
+				}
+
 				return;
 			}
 

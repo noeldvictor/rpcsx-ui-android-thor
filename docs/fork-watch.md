@@ -352,6 +352,33 @@ discarded render targets. The 37 percent figure in Wccftech is the Gran Turismo
 5 light-scene number, 107 to 147 FPS, from the pull request testers. It is
 ported and on by default since 2026-09-17. It is still unmeasured on the Thor.
 
+### 2026-10-05 — RPCS3 master pass
+
+Fetched `origin/master` to `3e7477107`: 17 commits past `32b54f186`. ARMSX3 (`92b931b9f`) and
+`RPCSX/rpcsx` (`e8ae148`) have no new commits.
+
+| Commit | Decision |
+| --- | --- |
+| `fcbed0bc6` cellVdec: streams without a leading sequence header, reused AU buffers | **Ported** by hand to `ps3fw/cellVdec.cpp`. Each AU is copied when the game queues it, because a game can refill its buffer before the decoder thread reads it. MPEG-2 and MPEG-4 AUs before the first sequence header are skipped, because FFmpeg cannot decode them. Before, an FFmpeg queue error was a fatal `throw_exception`. A full AU queue returns BUSY as a non-error. The 5 s consumer wait logs once as a warning. Upstream's `drain` command is not in this tree. |
+| `43a42d1a8` rsx: Fix FIFO reads while waiting for PUT | **Ported.** `run_FIFO()` declares `FIFO::register_pair command;` with no initial value. When `read_unsafe()` fails inside a packet, `command.reg` was undefined and the RSX thread executed it. The read now returns `FIFO_EMPTY`. |
+| `7b99edcfd` rsx/savestates: Fix `FIFO_control::restore_state()` | Not applicable. It fixes a call with `count == 0` that `a3dc7e6af` added. This tree calls `restore_state()` only when the count is not 0, and the FIFO GET series is still deferred. |
+| `7877ebe43` Fix RSX Debugger | Not applicable. It follows the FIFO GET series, where `ctrl->get` stops showing the execute position. In this tree `ctrl->get` still shows it. |
+| `7b7983ca1` vm/savestates: Rewrite and fix `stack_guarded` | **Deferred.** It changes the stack layout and the savestate format (global version 24 to 25), and `3db7c53c6` had to fix it the next day. The `thor_arm` A/B tests use existing savestates. |
+| `3db7c53c6` vm: fix fill64 | Not applicable. It fixes a bug that `7b7983ca1` added. This tree keeps the correct AArch64 64-bit store loop. |
+| `52de29af0` vk: Don't use rebar for the vertex layout ring | Not applicable. This tree has no heap pools. The Adreno 740 has one memory type for host and device. |
+| `7c3d7c7a2` cellGameData path check | Not ported yet. `cellGameDataGetSizeKB()` measures the folder of the last `cellGameDataCheckCreate2()` call, not the boot folder, and returns 0 when the folder does not exist yet. Rock Band 2 needs it. None of the test titles is known to call it: Transformers calls `cellGameGetSizeKB()`, which is not changed. Port it when a game fails in a game data check. |
+| `a72c4c319` sys_fs: emulate the BD-ROM read speed | Not ported. It is an option that slows reads to the speed of a disc drive. It does not help speed or stability here. |
+| USIO (4), Qt (1), contributors (2), macOS CI (1) | Not applicable. |
+
+Test on the Thor:
+
+- Folklore (`BCUS98147`, CHD, Fast FIFO) ran 100 s at 60 FPS. Its MPEG-2 attract movie
+  decoded 880 units through cellVdec, and the picture was correct. The log has no fatal error,
+  no `Verification failed` and no skipped AU. The 5 s consumer wait warning came one time, with
+  61 pictures in the queue. The old code logged it as an error every 5 s.
+- Transformers (`BLUS30357`, ISO, Atomic FIFO) reached its first frame in 10 s and ran 64 s
+  at 30 FPS. The log has no fatal error, no `Verification failed` and no `VK_ERROR`.
+
 ### 2026-10-04 — RPCS3 master, second pass
 
 Fetched `origin/master` to `32b54f186`: 3 commits past `46aee28f8`. ARMSX3 (`92b931b9f`) and
